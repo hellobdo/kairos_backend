@@ -1,0 +1,214 @@
+trade_id,strategy,instrument_type,stop_price
+310,level break,stock,215.56
+311,level bounce,stock,379.92
+312,level bounce,stock,72.46
+313,undercut & rally,stock,131.76
+314,level break,stock,131.48
+315,level bounce,stock,71.16
+316,level bounce,stock,390.84
+317,level bounce,stock,144.11
+318,level break,stock,395.16
+319,level bounce,stock,111.97
+320,undercut & rally,stock,389.35
+321,level break,stock,71.6
+322,no setup,stock,391.14
+323,no setup,stock,394.85
+324,parabolic short,stock,80.83
+325,level bounce,stock,330.8
+326,level bounce,stock,22.3
+327,level break,stock,36.83
+328,level bounce,stock,373.19
+329,level break,stock,397.41
+330,level bounce,stock,359.55
+331,level bounce,stock,358.34
+332,level bounce,stock,137.03
+333,level bounce,stock,136.91
+334,level break,stock,388.22
+335,level bounce,stock,135.37
+336,level bounce,stock,386.86
+337,level bounce,stock,136.06
+338,level break,stock,136.06
+339,level bounce,stock,136.1
+340,level bounce,stock,404.3
+341,level bounce,stock,401.55
+342,no setup,stock,405.44
+343,no setup,stock,401.49
+344,level bounce,stock,399.36
+345,level bounce,stock,399.17
+346,no setup,stock,73.73
+347,no setup,stock,399.02
+348,no setup,stock,402.22
+349,level bounce,stock,137.72
+350,level break,stock,420.26
+351,level bounce,stock,136.26
+352,level bounce,stock,136.33
+353,level bounce,stock,135.8
+354,level break,stock,136.26
+355,level break,stock,429.46
+356,level break,stock,133.56
+357,level break,stock,126.39
+358,level break,stock,69.81
+359,level break,stock,320.48
+360,level bounce,stock,130.7
+361,level bounce,stock,436.62
+362,level bounce,stock,71.83
+363,no setup,stock,427.02
+364,level bounce,stock,70.59
+365,trendline break,stock,318.91
+366,level bounce,stock,398.72
+367,level break,stock,475.82
+368,level bounce,stock,376.18
+369,level bounce,stock,39.91
+370,no setup,stock,472.08
+371,level bounce,stock,372.86
+372,level break,stock,449.67
+373,level break,stock,443.91
+374,no setup,stock,452.47
+375,no setup,stock,350.3
+376,level bounce,stock,37.54
+377,level bounce,stock,130.52
+378,level break,stock,130.21
+379,level break,stock,80.38
+380,level bounce,stock,428.11
+381,no setup,stock,425.49
+382,cib,stock,424.26
+383,level bounce,stock,161.27
+384,no setup,stock,428.22
+385,no setup,stock,348.62
+386,cib,stock,432.65
+387,level break,stock,152.4
+388,level bounce,stock,394.01
+389,level bounce,stock,142.5
+390,level bounce,stock,257
+391,level bounce,stock,139.81
+392,cib,stock,312.08
+393,cib,stock,504.1
+394,cib,stock,161
+395,level bounce,stock,133
+396,level break,stock,408.6
+397,level bounce,stock,407.5
+398,level bounce,stock,407.45
+399,level break,stock,407.5
+400,level break,stock,407.02
+401,cib,stock,133.25
+402,cib,stock,416.2
+403,cib,stock,135.35
+404,level bounce,stock,515.9
+405,level bounce,stock,516
+406,level break,stock,355.4
+407,level bounce,stock,134.8
+408,level break,stock,516.1
+409,undercut & rally,stock,409
+410,level break,stock,388.55
+411,level break,stock,519.26
+412,level bounce,stock,519.13
+413,cib,stock,388.16
+414,level break,stock,343.31
+415,level bounce,stock,522.12
+416,level bounce,stock,522.1
+417,level bounce,stock,409.4
+418,level bounce,stock,411.2
+419,cib,stock,139.15
+420,cib,stock,525.26
+421,cib,stock,73.32
+422,level break,stock,186
+423,level break,stock,422.2
+424,cib,stock,532.14
+425,no setup,stock,184.45
+426,level bounce,stock,373.44
+427,level bounce,stock,626.03
+428,level bounce,stock,627.36
+429,level bounce,stock,370
+430,level bounce,stock,370.8
+431,level bounce,stock,413.87
+432,level bounce,stock,373.51
+433,level break,stock,529.81
+434,level break,stock,142.8
+435,level bounce,stock,528.7
+436,cib,stock,510.34
+437,cib,stock,516.04
+438,level break,stock,122.7
+439,level break,stock,119.15
+440,level break,stock,118.91
+441,level break,stock,118.91
+442,level break,stock,76.13
+443,level break,stock,76.02
+444,cib,stock,520.8
+445,cib,stock,521.39
+446,level bounce,stock,78.46
+447,level bounce,stock,78.5
+448,level bounce,stock,78.38
+449,level bounce,stock,386.79
+450,no setup,stock,102.45
+451,no setup,stock,102.52
+452,level break,stock,709.58
+453,level bounce,stock,384.51
+454,level break,stock,122.45
+455,level bounce,stock,381.67
+456,level break,stock,382.69
+457,level bounce,stock,328
+458,level break,stock,125.91
+459,undercut & rally,stock,125.94
+460,level break,stock,713.88
+461,level break,stock,126.75
+462,level bounce,stock,131.02
+463,undercut & rally,stock,110.5
+464,level break,stock,112.55
+465,level bounce,stock,345.46
+466,level break,stock,345.48
+467,level break,stock,335.49
+468,level break,stock,718.01
+469,level break,stock,336
+470,level break,stock,718.5
+471,level break,stock,718.79
+472,level break,stock,350.45
+473,level break,stock,117.8
+474,level break,stock,135.65
+475,level break,stock,116.63
+476,level break,stock,136.4
+477,level break,stock,137.24
+478,level bounce,stock,351.1
+479,level bounce,stock,350
+480,no setup,stock,336.3
+481,trendline ft,stock,141.9
+482,trendline break,stock,106.14
+483,trendline ft,stock,63.15
+484,level bounce,stock,84.42
+485,trendline ft,stock,62.62
+486,level bounce,stock,59.17
+487,cib,stock,350.49
+488,no setup,stock,53.99
+489,no setup,stock,107.59
+490,level bounce,stock,45.5
+491,cib,stock,67.89
+492,cib,stock,111.35
+493,cib,stock,13.78
+494,cib,stock,71.82
+495,cib,stock,86.2
+496,trendline break,stock,73.2
+497,level bounce,stock,72.92
+498,trendline break,stock,73
+499,level break,stock,70.25
+500,level bounce,stock,52.06
+501,no setup,stock,326.8
+502,no setup,stock,93.55
+503,cib,stock,50.77
+504,no setup,stock,91.83
+505,no setup,stock,91.01
+506,cib,stock,28.13
+507,no setup,stock,96.13
+508,no setup,stock,43.55
+509,no setup,stock,297.25
+510,no setup,stock,89.75
+511,structure breaks,stock,99.32
+512,no setup,stock,35.03
+513,T on cibs,stock,289.57
+514,trendline ft,stock,45.55
+515,trendline ft,stock,45.48
+516,T on structure breaks,stock,58.27
+517,T on structure breaks,stock,57.78
+518,T on cibs,stock,94.5
+519,T on cibs,stock,50.2
+520,structure breaks,stock,43.26
+521,T on cibs,stock,11.5
+522,T on level bounces,stock,42.3
