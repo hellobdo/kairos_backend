@@ -1,214 +1,214 @@
-trade_id,strategy,instrument_type,stop_price
-310,level break,stock,215.56
-311,level bounce,stock,379.92
-312,level bounce,stock,72.46
-313,undercut & rally,stock,131.76
-314,level break,stock,131.48
-315,level bounce,stock,71.16
-316,level bounce,stock,390.84
-317,level bounce,stock,144.11
-318,level break,stock,395.16
-319,level bounce,stock,111.97
-320,undercut & rally,stock,389.35
-321,level break,stock,71.6
-322,no setup,stock,391.14
-323,no setup,stock,394.85
-324,parabolic short,stock,80.83
-325,level bounce,stock,330.8
-326,level bounce,stock,22.3
-327,level break,stock,36.83
-328,level bounce,stock,373.19
-329,level break,stock,397.41
-330,level bounce,stock,359.55
-331,level bounce,stock,358.34
-332,level bounce,stock,137.03
-333,level bounce,stock,136.91
-334,level break,stock,388.22
-335,level bounce,stock,135.37
-336,level bounce,stock,386.86
-337,level bounce,stock,136.06
-338,level break,stock,136.06
-339,level bounce,stock,136.1
-340,level bounce,stock,404.3
-341,level bounce,stock,401.55
-342,no setup,stock,405.44
-343,no setup,stock,401.49
-344,level bounce,stock,399.36
-345,level bounce,stock,399.17
-346,no setup,stock,73.73
-347,no setup,stock,399.02
-348,no setup,stock,402.22
-349,level bounce,stock,137.72
-350,level break,stock,420.26
-351,level bounce,stock,136.26
-352,level bounce,stock,136.33
-353,level bounce,stock,135.8
-354,level break,stock,136.26
-355,level break,stock,429.46
-356,level break,stock,133.56
-357,level break,stock,126.39
-358,level break,stock,69.81
-359,level break,stock,320.48
-360,level bounce,stock,130.7
-361,level bounce,stock,436.62
-362,level bounce,stock,71.83
-363,no setup,stock,427.02
-364,level bounce,stock,70.59
-365,trendline break,stock,318.91
-366,level bounce,stock,398.72
-367,level break,stock,475.82
-368,level bounce,stock,376.18
-369,level bounce,stock,39.91
-370,no setup,stock,472.08
-371,level bounce,stock,372.86
-372,level break,stock,449.67
-373,level break,stock,443.91
-374,no setup,stock,452.47
-375,no setup,stock,350.3
-376,level bounce,stock,37.54
-377,level bounce,stock,130.52
-378,level break,stock,130.21
-379,level break,stock,80.38
-380,level bounce,stock,428.11
-381,no setup,stock,425.49
-382,cib,stock,424.26
-383,level bounce,stock,161.27
-384,no setup,stock,428.22
-385,no setup,stock,348.62
-386,cib,stock,432.65
-387,level break,stock,152.4
-388,level bounce,stock,394.01
-389,level bounce,stock,142.5
-390,level bounce,stock,257
-391,level bounce,stock,139.81
-392,cib,stock,312.08
-393,cib,stock,504.1
-394,cib,stock,161
-395,level bounce,stock,133
-396,level break,stock,408.6
-397,level bounce,stock,407.5
-398,level bounce,stock,407.45
-399,level break,stock,407.5
-400,level break,stock,407.02
-401,cib,stock,133.25
-402,cib,stock,416.2
-403,cib,stock,135.35
-404,level bounce,stock,515.9
-405,level bounce,stock,516
-406,level break,stock,355.4
-407,level bounce,stock,134.8
-408,level break,stock,516.1
-409,undercut & rally,stock,409
-410,level break,stock,388.55
-411,level break,stock,519.26
-412,level bounce,stock,519.13
-413,cib,stock,388.16
-414,level break,stock,343.31
-415,level bounce,stock,522.12
-416,level bounce,stock,522.1
-417,level bounce,stock,409.4
-418,level bounce,stock,411.2
-419,cib,stock,139.15
-420,cib,stock,525.26
-421,cib,stock,73.32
-422,level break,stock,186
-423,level break,stock,422.2
-424,cib,stock,532.14
-425,no setup,stock,184.45
-426,level bounce,stock,373.44
-427,level bounce,stock,626.03
-428,level bounce,stock,627.36
-429,level bounce,stock,370
-430,level bounce,stock,370.8
-431,level bounce,stock,413.87
-432,level bounce,stock,373.51
-433,level break,stock,529.81
-434,level break,stock,142.8
-435,level bounce,stock,528.7
-436,cib,stock,510.34
-437,cib,stock,516.04
-438,level break,stock,122.7
-439,level break,stock,119.15
-440,level break,stock,118.91
-441,level break,stock,118.91
-442,level break,stock,76.13
-443,level break,stock,76.02
-444,cib,stock,520.8
-445,cib,stock,521.39
-446,level bounce,stock,78.46
-447,level bounce,stock,78.5
-448,level bounce,stock,78.38
-449,level bounce,stock,386.79
-450,no setup,stock,102.45
-451,no setup,stock,102.52
-452,level break,stock,709.58
-453,level bounce,stock,384.51
-454,level break,stock,122.45
-455,level bounce,stock,381.67
-456,level break,stock,382.69
-457,level bounce,stock,328
-458,level break,stock,125.91
-459,undercut & rally,stock,125.94
-460,level break,stock,713.88
-461,level break,stock,126.75
-462,level bounce,stock,131.02
-463,undercut & rally,stock,110.5
-464,level break,stock,112.55
-465,level bounce,stock,345.46
-466,level break,stock,345.48
-467,level break,stock,335.49
-468,level break,stock,718.01
-469,level break,stock,336
-470,level break,stock,718.5
-471,level break,stock,718.79
-472,level break,stock,350.45
-473,level break,stock,117.8
-474,level break,stock,135.65
-475,level break,stock,116.63
-476,level break,stock,136.4
-477,level break,stock,137.24
-478,level bounce,stock,351.1
-479,level bounce,stock,350
-480,no setup,stock,336.3
-481,trendline ft,stock,141.9
-482,trendline break,stock,106.14
-483,trendline ft,stock,63.15
-484,level bounce,stock,84.42
-485,trendline ft,stock,62.62
-486,level bounce,stock,59.17
-487,cib,stock,350.49
-488,no setup,stock,53.99
-489,no setup,stock,107.59
-490,level bounce,stock,45.5
-491,cib,stock,67.89
-492,cib,stock,111.35
-493,cib,stock,13.78
-494,cib,stock,71.82
-495,cib,stock,86.2
-496,trendline break,stock,73.2
-497,level bounce,stock,72.92
-498,trendline break,stock,73
-499,level break,stock,70.25
-500,level bounce,stock,52.06
-501,no setup,stock,326.8
-502,no setup,stock,93.55
-503,cib,stock,50.77
-504,no setup,stock,91.83
-505,no setup,stock,91.01
-506,cib,stock,28.13
-507,no setup,stock,96.13
-508,no setup,stock,43.55
-509,no setup,stock,297.25
-510,no setup,stock,89.75
-511,structure breaks,stock,99.32
-512,no setup,stock,35.03
-513,T on cibs,stock,289.57
-514,trendline ft,stock,45.55
-515,trendline ft,stock,45.48
-516,T on structure breaks,stock,58.27
-517,T on structure breaks,stock,57.78
-518,T on cibs,stock,94.5
-519,T on cibs,stock,50.2
-520,structure breaks,stock,43.26
-521,T on cibs,stock,11.5
-522,T on level bounces,stock,42.3
+prev_trade_id,strategy,entry_type,stop_price
+310,level break,,215.562548
+311,level bounce,,379.915072
+312,level bounce,,72.460048
+313,undercut & rally,,131.7561506
+314,level break,,131.482548
+315,level bounce,,71.155048
+316,level bounce,,390.840072
+317,level bounce,,144.105048
+318,level break,,395.1589139
+319,level bounce,,111.9685095
+320,undercut & rally,,389.35
+321,level break,,71.595048
+322,no setup,,391.1415006
+323,no setup,,394.8532763
+324,parabolic short,,80.82756645
+325,level bounce,,330.800048
+326,level bounce,,22.30290514
+327,level break,,36.83333333
+328,level bounce,,373.1857242
+329,level break,,397.405072
+330,level bounce,,359.550048
+331,level bounce,,358.340072
+332,level bounce,,137.030048
+333,level bounce,,136.908798
+334,level break,,388.220048
+335,level bounce,,135.3650672
+336,level bounce,,386.855072
+337,level bounce,,136.055048
+338,level break,,136.0576746
+339,level bounce,,136.0979051
+340,level bounce,,404.295072
+341,level bounce,,401.550072
+342,no setup,,405.4414766
+343,no setup,,401.490048
+344,level bounce,,399.3567147
+345,level bounce,,399.170048
+346,no setup,,73.73274993
+347,no setup,,399.020048
+348,no setup,,402.2186957
+349,level bounce,,137.720048
+350,level break,,420.262548
+351,level bounce,,136.255048
+352,level bounce,,136.325048
+353,level bounce,,135.8017147
+354,level break,,136.2643402
+355,level break,,429.4629154
+356,level break,,133.5610797
+357,level break,,126.3863034
+358,level break,,69.810072
+359,level break,,320.47506
+360,level bounce,,130.700048
+361,level bounce,,436.620048
+362,level bounce,,71.830056
+363,no setup,,427.020048
+364,level bounce,,70.590072
+365,trendline break,,318.910072
+366,level bounce,,398.7214766
+367,level break,,475.816589
+368,level bounce,,376.175048
+369,level bounce,,39.905072
+370,no setup,,472.080048
+371,level bounce,,372.855048
+372,level break,,449.6673399
+373,level break,,443.9066667
+374,no setup,,452.4673447
+375,no setup,,350.3001391
+376,level bounce,,37.53838133
+377,level bounce,,130.5244918
+378,level break,,130.205048
+379,level break,,80.38
+380,level bounce,,428.1141992
+381,no setup,,425.4854916
+382,cib,,424.2557623
+383,level bounce,,161.270048
+384,no setup,,428.220048
+385,no setup,,348.615048
+386,cib,,432.650048
+387,level break,,152.4
+388,level bounce,,394.010035
+389,level bounce,,142.5
+390,level bounce,,257
+391,level bounce,,139.81
+392,cib,,312.08
+393,cib,,504.1
+394,cib,,161
+395,level bounce,,133
+396,level break,,408.6
+397,level bounce,,407.5
+398,level bounce,,407.45
+399,level break,,407.5
+400,level break,,407.02
+401,cib,,133.25
+402,cib,,416.2
+403,cib,,135.35
+404,level bounce,,515.9
+405,level bounce,,516
+406,level break,,355.4
+407,level bounce,,134.8
+408,level break,,516.1
+409,undercut & rally,,409
+410,level break,,388.55
+411,level break,,519.26
+412,level bounce,,519.13
+413,cib,,388.16
+414,level break,,343.31
+415,level bounce,,522.12
+416,level bounce,,522.1
+417,level bounce,confirmation,409.4
+418,level bounce,confirmation,411.2
+419,cib,confirmation,139.15
+420,cib,confirmation,525.26
+421,cib,confirmation,73.32
+422,level break,anticipation,186
+423,level break,confirmation,422.2
+424,cib,confirmation,532.14
+425,no setup,confirmation,184.45
+426,level bounce,confirmation,373.44
+427,level bounce,confirmation,626.03
+428,level bounce,confirmation,627.36
+429,level bounce,confirmation,370
+430,level bounce,confirmation,370.8
+431,level bounce,confirmation,413.87
+432,level bounce,confirmation,373.51
+433,level break,anticipation,529.805035
+434,level break,anticipation,142.8
+435,level bounce,confirmation,528.7
+436,cib,confirmation,510.34
+437,cib,confirmation,516.04
+438,level break,anticipation,122.7
+439,level break,anticipation,119.15
+440,level break,anticipation,118.91
+441,level break,anticipation,118.91
+442,level break,anticipation,76.13
+443,level break,anticipation,76.02
+444,cib,confirmation,520.8
+445,cib,confirmation,521.39
+446,level bounce,anticipation,78.46
+447,level bounce,confirmation,78.5
+448,level bounce,confirmation,78.38
+449,level bounce,anticipation,386.7865457
+450,no setup,anticipation,102.4519506
+451,no setup,anticipation,102.5219432
+452,level break,anticipation,709.576738
+453,level bounce,anticipation,384.5065981
+454,level break,anticipation,122.4547279
+455,level bounce,anticipation,381.674902
+456,level break,anticipation,382.69
+457,level bounce,confirmation,328
+458,level break,anticipation,125.905035
+459,undercut & rally,anticipation,125.94
+460,level break,anticipation,713.88
+461,level break,anticipation,126.75
+462,level bounce,anticipation,131.02
+463,undercut & rally,anticipation,110.5
+464,level break,anticipation,112.55
+465,level bounce,anticipation,345.460046
+466,level break,anticipation,345.4802219
+467,level break,anticipation,335.4904996
+468,level break,anticipation,718.01
+469,level break,anticipation,336
+470,level break,anticipation,718.5
+471,level break,anticipation,718.79
+472,level break,anticipation,350.45
+473,level break,anticipation,117.8
+474,level break,anticipation,135.646025
+475,level break,anticipation,116.63
+476,level break,anticipation,136.4010068
+477,level break,anticipation,137.2404279
+478,level bounce,anticipation,351.0977315
+479,level bounce,anticipation,349.9977273
+480,no setup,,336.3
+481,trendline ft,confirmation,141.9
+482,trendline break,confirmation,106.14
+483,trendline ft,confirmation,63.15
+484,level bounce,anticipation,84.42
+485,trendline ft,confirmation,62.62
+486,level bounce,anticipation,59.173868
+487,cib,confirmation,350.490035
+488,no setup,,53.99
+489,no setup,,107.5918077
+490,level bounce,confirmation,45.5
+491,cib,confirmation,67.89235582
+492,cib,confirmation,111.35
+493,cib,confirmation,13.78
+494,cib,confirmation,71.82280213
+495,cib,confirmation,86.2
+496,trendline break,anticipation,73.2
+497,level bounce,confirmation,72.92
+498,trendline break,anticipation,73
+499,level break,anticipation,70.25
+500,level bounce,confirmation,52.06
+501,no setup,confirmation,326.8
+502,no setup,anticipation,93.55
+503,cib,confirmation,50.77138737
+504,no setup,anticipation,91.828335
+505,no setup,anticipation,91.005035
+506,cib,confirmation,28.13
+507,no setup,anticipation,96.13498023
+508,no setup,anticipation,43.55
+509,no setup,anticipation,297.25
+510,no setup,,89.745035
+511,structure breaks,anticipation,99.32
+512,no setup,confirmation,35.032535
+513,T on cibs,confirmation,289.5692762
+514,trendline ft,anticipation,45.55
+515,trendline ft,anticipation,45.48
+516,T on structure breaks,anticipation,58.27
+517,T on structure breaks,anticipation,57.78
+518,T on cibs,confirmation,94.5
+519,T on cibs,confirmation,50.2
+520,structure breaks,anticipation,43.26
+521,T on cibs,confirmation,11.5
+522,T on level bounces,confirmation,42.3

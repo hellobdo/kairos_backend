@@ -1,6 +1,7 @@
 # csv file only from trades 310 since that has a strategy assigned to it
 import sqlite3
 import pandas as pd
+from datetime import datetime
 
 columns_to_select = ['prev_trade_id', 'accountId', 'symbol', 'quantity', 'price', 'netCashWithBillable', 'date_and_time', 'commission']
 df = pd.read_csv('../migration/files/executions.csv', usecols=columns_to_select)
@@ -23,6 +24,8 @@ cursor.execute("""
         price REAL NOT NULL,
         net_cash_with_billable REAL NOT NULL,
         date_and_time TEXT NOT NULL,
+        date TEXT NOT NULL,
+        timestamp TEXT NOT NULL,
         commission REAL NOT NULL,
         prev_trade_id INTEGER
     )
@@ -72,17 +75,26 @@ def calculate_trade_id(symbol, quantity):
     }
     return last_trade_id
 
+def calculate_date_and_time(date_and_time):
+    date_part, time_part = date_and_time.split(';')
+    date = datetime.strptime(date_part, "%Y-%m-%d").strftime("%d-%m-%Y")
+    time = datetime.strptime(time_part, "%H%M%S").strftime("%H:%M:%S")
+    return date, time
+
+
 # Insert each row into the executions table
 for index, row in df.iterrows():
     trade_id = calculate_trade_id(row['symbol'], row['quantity'])
+    date = calculate_date_and_time(row['date_and_time'])[0]
+    time = calculate_date_and_time(row['date_and_time'])[1]
     
     cursor.execute("""
         INSERT INTO executions (
             trade_id, account_id, symbol, quantity, price, 
-            net_cash_with_billable, date_and_time, commission, prev_trade_id
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            net_cash_with_billable, date_and_time, date, timestamp, commission, prev_trade_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (trade_id, row['accountId'], row['symbol'], row['quantity'], row['price'], 
-          row['netCashWithBillable'], row['date_and_time'], row['commission'], row['prev_trade_id']))
+          row['netCashWithBillable'], row['date_and_time'], date, time, row['commission'], row['prev_trade_id']))
 
 conn.commit()
 conn.close()

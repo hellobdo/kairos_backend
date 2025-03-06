@@ -8,7 +8,7 @@ df = pd.read_csv('../migration/files/entry_types.csv', usecols=columns_to_select
 conn = sqlite3.connect('../kairos.db')
 cursor = conn.cursor()
 
-# Insert each row into the account_size table
+# Insert each row into the table
 for index, row in df.iterrows():
     
     cursor.execute("""
