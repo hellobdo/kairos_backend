@@ -1,3 +1,0 @@
-name,description
-confirmation,trades taken trading the patterns of the closed candles. These trades make use of market orders for entries and conditional orders for exits.
-anticipation,"trades taken trading the full range of price action, usually done using daily (high-level), 30min (mid-level), and 1min (low-level) charts. These trades make use of conditional orders for both entries and exits."
