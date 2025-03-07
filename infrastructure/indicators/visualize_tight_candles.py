@@ -101,11 +101,15 @@ def analyze_tight_candles(db_path: str,
         output_dir: Directory to save plots and results
     """
     # Get available data if not specified
-    if symbols is None or start_date is None or end_date is None:
-        available_symbols, min_date, max_date = get_available_data(db_path)
-        symbols = symbols or available_symbols
-        start_date = start_date or min_date
-        end_date = end_date or max_date
+    available_symbols, min_date, max_date = get_available_data(db_path)
+    
+    # Handle symbols and dates
+    if symbols is None:
+        symbols = available_symbols
+    if start_date is None:
+        start_date = min_date
+    if end_date is None:
+        end_date = max_date
     
     # Create output directory
     os.makedirs(output_dir, exist_ok=True)
@@ -221,6 +225,7 @@ if __name__ == "__main__":
     db_path = "/Users/brunodeoliveira/Library/Mobile Documents/com~apple~CloudDocs/repos/kairos/kairos.db"
     analyze_tight_candles(
         db_path=db_path,
+        symbols=['QQQ'],
         tightness_threshold=0.1,
         context_bars=20,
         save_plots=True,
