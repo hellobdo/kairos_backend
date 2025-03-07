@@ -64,7 +64,7 @@ def clean_trades(db_path: str, execution_date: str):
 
 def main():
     # Database path
-    db_path = 'data.db'
+    db_path = 'kairos.db'
     
     # Get available execution dates
     execution_dates = get_execution_dates(db_path)
