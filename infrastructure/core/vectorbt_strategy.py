@@ -4,6 +4,7 @@ import numpy as np
 from typing import Dict, List, Optional, Tuple, Union
 from abc import ABC, abstractmethod
 import sqlite3
+from ..risk_management.risk_manager import RiskManager
 
 class VectorBTStrategy(ABC):
     def __init__(self,
@@ -11,8 +12,7 @@ class VectorBTStrategy(ABC):
                  symbols: List[str],
                  start_date: Optional[str] = None,
                  end_date: Optional[str] = None,
-                 initial_capital: float = 100000,
-                 risk_per_trade_pct: float = 0.01):
+                 initial_capital: float = 100000):
         """
         Base class for VectorBT strategies.
         
@@ -22,14 +22,15 @@ class VectorBTStrategy(ABC):
             start_date: Start date in YYYY-MM-DD format
             end_date: End date in YYYY-MM-DD format
             initial_capital: Initial capital for backtesting
-            risk_per_trade_pct: Risk per trade as percentage of capital
         """
         self.db_path = db_path
         self.symbols = symbols
         self.start_date = start_date
         self.end_date = end_date
         self.initial_capital = initial_capital
-        self.risk_per_trade_pct = risk_per_trade_pct
+        
+        # Initialize risk manager with default settings
+        self.risk_manager = RiskManager(db_path)
         
         # Load market data
         self.data = self._load_market_data()
@@ -105,7 +106,9 @@ class VectorBTStrategy(ABC):
         risk_per_share = abs(price[mask] - stop_prices[mask])
         
         # Calculate position size based on risk
-        capital_at_risk = self.initial_capital * self.risk_per_trade_pct
+        # Use risk manager to get risk per trade
+        risk_per_trade_pct = self.risk_manager.risk_per_trade / 100  # Convert percentage to decimal
+        capital_at_risk = self.initial_capital * risk_per_trade_pct
         sizes[mask] = capital_at_risk / risk_per_share
         
         return sizes
@@ -150,11 +153,59 @@ class VectorBTStrategy(ABC):
             print(f"\nBacktesting {symbol}...")
             pf = self.backtest(symbol)
             
-            # Print summary statistics
-            print(f"Total Return: {pf.total_return:.2%}")
-            print(f"Sharpe Ratio: {pf.sharpe_ratio:.2f}")
-            print(f"Max Drawdown: {pf.max_drawdown:.2%}")
-            print(f"# Trades: {len(pf.trades)}")
+            # Get trades data
+            trades = pf.trades
+            
+            # Calculate new metrics
+            total_trades = len(trades)
+            winning_trades = len(trades[trades.return_ > 0])
+            accuracy = winning_trades / total_trades if total_trades > 0 else 0
+            
+            # Risk metrics
+            avg_risk_per_trade = self.risk_manager.risk_per_trade  # This is a percentage
+            
+            # Return metrics
+            avg_win = trades[trades.return_ > 0].return_.mean() if len(trades[trades.return_ > 0]) > 0 else 0
+            avg_loss = trades[trades.return_ < 0].return_.mean() if len(trades[trades.return_ < 0]) > 0 else 0
+            avg_return = trades.return_.mean() if len(trades) > 0 else 0
+            total_return = trades.return_.sum() if len(trades) > 0 else 0
+            
+            # Time-based metrics
+            # Determine the timeframe from the data
+            if len(self.data[symbol]) > 1:
+                timeframe = pd.Timedelta(self.data[symbol].index[1] - self.data[symbol].index[0])
+                if timeframe.days >= 1:
+                    timeframe_str = "day"
+                    periods_factor = 1
+                elif timeframe.seconds // 3600 >= 1:
+                    timeframe_str = "hour"
+                    periods_factor = 24
+                elif timeframe.seconds // 60 >= 1:
+                    timeframe_str = "minute"
+                    periods_factor = 24 * 60
+                else:
+                    timeframe_str = "second"
+                    periods_factor = 24 * 60 * 60
+            else:
+                timeframe_str = "unknown"
+                periods_factor = 1
+            
+            # Calculate trading frequency
+            if len(self.data[symbol]) > 0:
+                total_periods = len(self.data[symbol])
+                avg_trades_per_period = total_trades / (total_periods / periods_factor) if total_periods > 0 else 0
+            else:
+                avg_trades_per_period = 0
+            
+            # Print refined metrics
+            print(f"Total Trades: {total_trades}")
+            print(f"Accuracy: {accuracy:.2%}")
+            print(f"Avg Risk Per Trade: {avg_risk_per_trade:.2%}")
+            print(f"Avg Win: {avg_win:.2%}")
+            print(f"Avg Loss: {avg_loss:.2%}")
+            print(f"Avg Return: {avg_return:.2%}")
+            print(f"Total Return: {total_return:.2%}")
+            print(f"Avg Trades per {timeframe_str}: {avg_trades_per_period:.2f}")
             print("-" * 50)
             
             results[symbol] = pf

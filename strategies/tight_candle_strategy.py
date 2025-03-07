@@ -10,7 +10,6 @@ class TightCandleStrategy(VectorBTStrategy):
                  start_date: str = None,
                  end_date: str = None,
                  initial_capital: float = 100000,
-                 risk_per_trade_pct: float = 0.01,
                  tightness_threshold: float = 0.1,
                  target_risk_reward: float = 2.0):
         """
@@ -22,7 +21,6 @@ class TightCandleStrategy(VectorBTStrategy):
             start_date: Start date in YYYY-MM-DD format
             end_date: End date in YYYY-MM-DD format
             initial_capital: Initial capital for backtesting
-            risk_per_trade_pct: Risk per trade as percentage of capital
             tightness_threshold: Maximum ratio for tight candles
             target_risk_reward: Target risk/reward ratio for take profit
         """
@@ -31,8 +29,7 @@ class TightCandleStrategy(VectorBTStrategy):
             symbols=symbols,
             start_date=start_date,
             end_date=end_date,
-            initial_capital=initial_capital,
-            risk_per_trade_pct=risk_per_trade_pct
+            initial_capital=initial_capital
         )
         
         self.tightness_threshold = tightness_threshold
@@ -125,7 +122,6 @@ def main():
         db_path=db_path,
         symbols=['HOOD', 'META', 'NVDA', 'PLTR', 'QQQ', 'TSLA'],
         initial_capital=100000,
-        risk_per_trade_pct=0.01,
         tightness_threshold=0.1,
         target_risk_reward=2.0
     )

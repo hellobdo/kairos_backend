@@ -113,39 +113,109 @@ class StrategyManager:
             strategy_results = strategy.run_all()
             results[name] = strategy_results
             
-            # Calculate combined statistics
-            total_return = sum(pf.total_return for pf in strategy_results.values())
-            avg_sharpe = sum(pf.sharpe_ratio for pf in strategy_results.values()) / len(strategy_results)
-            max_dd = min(pf.max_drawdown for pf in strategy_results.values())
-            total_trades = sum(len(pf.trades) for pf in strategy_results.values())
-            
-            # Get capital allocation
+            # Get allocated capital
             allocated_capital = self.total_capital * self.capital_allocations[name]
             
+            # Calculate new combined statistics
+            all_trades = []
+            for symbol, pf in strategy_results.items():
+                all_trades.extend(pf.trades.records_readable)
+            
+            # Convert to DataFrame for easier analysis
+            if all_trades:
+                all_trades_df = pd.DataFrame(all_trades)
+                total_trades = len(all_trades_df)
+                winning_trades = len(all_trades_df[all_trades_df['return'] > 0])
+                accuracy = winning_trades / total_trades if total_trades > 0 else 0
+                
+                # Return metrics
+                avg_win = all_trades_df[all_trades_df['return'] > 0]['return'].mean() if winning_trades > 0 else 0
+                avg_loss = all_trades_df[all_trades_df['return'] < 0]['return'].mean() if (total_trades - winning_trades) > 0 else 0
+                avg_return = all_trades_df['return'].mean() if total_trades > 0 else 0
+                total_return = all_trades_df['return'].sum() if total_trades > 0 else 0
+                
+                # Get average risk per trade from risk manager
+                avg_risk_per_trade = strategy.risk_manager.risk_per_trade
+                
+                # Calculate average trades per period
+                timeframes = {}
+                for symbol, pf in strategy_results.items():
+                    data = strategy.data[symbol]
+                    if len(data) > 1:
+                        timeframe = pd.Timedelta(data.index[1] - data.index[0])
+                        if timeframe.days >= 1:
+                            period_type = 'day'
+                        elif timeframe.seconds // 3600 >= 1:
+                            period_type = 'hour'
+                        elif timeframe.seconds // 60 >= 1:
+                            period_type = 'minute'
+                        else:
+                            period_type = 'second'
+                            
+                        if period_type not in timeframes:
+                            timeframes[period_type] = {'count': len(data), 'trades': len(pf.trades)}
+                        else:
+                            timeframes[period_type]['count'] += len(data)
+                            timeframes[period_type]['trades'] += len(pf.trades)
+                
+                # Calculate average trades per most common period type
+                if timeframes:
+                    most_common_period = max(timeframes.items(), key=lambda x: x[1]['count'])[0]
+                    avg_trades_per_period = timeframes[most_common_period]['trades'] / timeframes[most_common_period]['count']
+                else:
+                    most_common_period = 'unknown'
+                    avg_trades_per_period = 0
+            else:
+                total_trades = 0
+                accuracy = 0
+                avg_win = 0
+                avg_loss = 0
+                avg_return = 0
+                total_return = 0
+                avg_risk_per_trade = strategy.risk_manager.risk_per_trade
+                most_common_period = 'unknown'
+                avg_trades_per_period = 0
+            
+            # Store combined stats
             combined_stats.append({
                 'strategy': name,
-                'total_return': total_return,
-                'avg_sharpe': avg_sharpe,
-                'max_drawdown': max_dd,
                 'total_trades': total_trades,
-                'allocated_capital': allocated_capital
+                'allocated_capital': allocated_capital,
+                'accuracy': accuracy,
+                'avg_risk_per_trade': avg_risk_per_trade,
+                'avg_win': avg_win,
+                'avg_loss': avg_loss,
+                'avg_return': avg_return,
+                'total_return': total_return,
+                'period_type': most_common_period,
+                'avg_trades_per_period': avg_trades_per_period
             })
         
         # Print overall summary
         print("\nOverall Performance Summary:")
         print("=" * 50)
         stats_df = pd.DataFrame(combined_stats)
-        print(stats_df.to_string(float_format=lambda x: f"{x:.2%}" if abs(x) < 1 else f"{x:.2f}"))
+        
+        # Format for display
+        for col in ['accuracy', 'avg_win', 'avg_loss', 'avg_return', 'total_return']:
+            if col in stats_df.columns:
+                stats_df[col] = stats_df[col].map(lambda x: f"{x:.2%}" if not pd.isna(x) else 'N/A')
+                
+        stats_df['avg_risk_per_trade'] = stats_df['avg_risk_per_trade'].map(lambda x: f"{x:.2%}")
+        stats_df['allocated_capital'] = stats_df['allocated_capital'].map(lambda x: f"${x:,.2f}")
+        stats_df['avg_trades_per_period'] = stats_df['avg_trades_per_period'].map(lambda x: f"{x:.2f}")
+        
+        print(stats_df.to_string())
         
         # Calculate portfolio-level statistics
-        portfolio_return = sum(s['total_return'] * self.capital_allocations[s['strategy']] 
-                             for s in combined_stats)
-        portfolio_sharpe = sum(s['avg_sharpe'] * self.capital_allocations[s['strategy']] 
-                             for s in combined_stats)
+        portfolio_total_trades = sum(s['total_trades'] for s in combined_stats)
+        portfolio_accuracy = sum(s['accuracy'] * s['total_trades'] for s in combined_stats if isinstance(s['accuracy'], (int, float))) / portfolio_total_trades if portfolio_total_trades > 0 else 0
+        weighted_total_return = sum(s['total_return'] * self.capital_allocations[s['strategy']] for s in combined_stats if isinstance(s['total_return'], (int, float)))
         
         print("\nPortfolio Statistics:")
-        print(f"Total Return: {portfolio_return:.2%}")
-        print(f"Weighted Sharpe Ratio: {portfolio_sharpe:.2f}")
+        print(f"Total Trades: {portfolio_total_trades}")
+        print(f"Portfolio Accuracy: {portfolio_accuracy:.2%}")
+        print(f"Weighted Total Return: {weighted_total_return:.2%}")
         print(f"Total Allocated Capital: ${self.total_capital:,.2f}")
         
         return results 

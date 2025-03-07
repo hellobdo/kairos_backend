@@ -4,7 +4,10 @@ import plotly.graph_objects as go
 from typing import Dict, Optional, List, Union, Tuple
 
 class TightCandle:
-    def __init__(self, tightness_threshold: float = 0.1, context_bars: int = 20):
+    def __init__(self, 
+                 tightness_threshold: float = 0.1, 
+                 context_bars: int = 20,
+                 wick_ratio_threshold: float = 2.0):  # minimum ratio between larger and smaller wick
         """
         Initialize the TightCandle indicator.
         
@@ -12,9 +15,12 @@ class TightCandle:
             tightness_threshold: Maximum ratio of body size to total size for a candle
                                to be considered tight (default 0.1 or 10%)
             context_bars: Number of bars to show before and after the signal (default 20)
+            wick_ratio_threshold: Minimum ratio between larger and smaller wick for T-shape
+                                (default 2.0, meaning larger wick should be at least 2x smaller wick)
         """
         self.tightness_threshold = tightness_threshold
         self.context_bars = context_bars
+        self.wick_ratio_threshold = wick_ratio_threshold
     
     def calculate(self, ohlcv: pd.DataFrame) -> pd.DataFrame:
         """
@@ -31,7 +37,8 @@ class TightCandle:
             - lower_wick: Size of the lower wick
             - tightness: Ratio of body size to total size
             - is_tight: Boolean indicating if the candle is tight
-            - trend: 'bullish' or 'bearish' based on surrounding price action
+            - wick_ratio: Ratio of larger wick to smaller wick
+            - trend: 'bullish' (T-shape), 'bearish' (inverted T-shape), or 'neutral'
         """
         # Calculate basic candle metrics
         df = pd.DataFrame(index=ohlcv.index)
@@ -48,11 +55,28 @@ class TightCandle:
         # Identify tight candles
         df['is_tight'] = df['tightness'] < self.tightness_threshold
         
-        # Calculate trend (using 20-period SMA)
-        sma = ohlcv['close'].rolling(window=20).mean()
+        # Calculate wick ratio (larger wick to smaller wick)
+        df['wick_ratio'] = np.maximum(
+            df['upper_wick'] / df['lower_wick'].where(df['lower_wick'] != 0, np.inf),
+            df['lower_wick'] / df['upper_wick'].where(df['upper_wick'] != 0, np.inf)
+        )
+        
+        # Determine trend based on T-shape analysis
         df['trend'] = 'neutral'
-        df.loc[ohlcv['close'] > sma, 'trend'] = 'bullish'
-        df.loc[ohlcv['close'] < sma, 'trend'] = 'bearish'
+        
+        # T-shape: big lower wick, small upper wick
+        bullish_mask = (
+            (df['lower_wick'] > df['upper_wick']) & 
+            (df['lower_wick'] / df['upper_wick'].where(df['upper_wick'] != 0, np.inf) >= self.wick_ratio_threshold)
+        )
+        df.loc[bullish_mask, 'trend'] = 'bullish'
+        
+        # Inverted T-shape: big upper wick, small lower wick
+        bearish_mask = (
+            (df['upper_wick'] > df['lower_wick']) & 
+            (df['upper_wick'] / df['lower_wick'].where(df['lower_wick'] != 0, np.inf) >= self.wick_ratio_threshold)
+        )
+        df.loc[bearish_mask, 'trend'] = 'bearish'
         
         return df
     
@@ -91,15 +115,6 @@ class TightCandle:
             low=context_data['low'],
             close=context_data['close'],
             name='Price'
-        ))
-        
-        # Add SMA
-        sma = context_data['close'].rolling(window=20).mean()
-        fig.add_trace(go.Scatter(
-            x=context_data.index,
-            y=sma,
-            name='20 SMA',
-            line=dict(color='orange', width=1)
         ))
         
         # Highlight the signal candle
@@ -179,15 +194,6 @@ class TightCandle:
             low=ohlcv['low'],
             close=ohlcv['close'],
             name='Price'
-        ))
-        
-        # Add SMA
-        sma = ohlcv['close'].rolling(window=20).mean()
-        fig.add_trace(go.Scatter(
-            x=ohlcv.index,
-            y=sma,
-            name='20 SMA',
-            line=dict(color='orange', width=1)
         ))
         
         # Add tight candle markers
