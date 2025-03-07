@@ -30,6 +30,94 @@ class DatabaseManager:
         conn.close()
         return True
 
+    def save_trade(self, trade, strategy_name: str, strategy_version: str, execution_date: str):
+        """Save a single trade to the algo_trades table"""
+        if not self.verify_algo_trades_table():
+            return
+        
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            INSERT INTO algo_trades (
+                account_id, symbol, strategy, strategy_version, variant, direction, 
+                entry_date, entry_timestamp, instrument_type, quantity, 
+                entry_price, stop_price, exit_price, exit_date, exit_timestamp, 
+                capital_required, trade_duration, winning_trade, risk_reward, 
+                risk_per_trade, perc_return, risk_size, execution_date, exit_reason
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            'ZZZ',  # account_id (using the backtesting account)
+            trade.symbol,
+            strategy_name,
+            strategy_version,
+            trade.variant,
+            trade.direction,
+            trade.entry_date,
+            trade.entry_timestamp,
+            'STOCK',  # instrument_type
+            trade.quantity,
+            trade.entry_price,
+            trade.stop_price,
+            trade.exit_price,
+            trade.exit_date,
+            trade.exit_timestamp,
+            trade.capital_required,
+            trade.trade_duration,
+            trade.winning_trade,
+            trade.risk_reward,
+            trade.risk_per_trade,
+            trade.perc_return,
+            trade.risk_size,
+            execution_date,
+            trade.exit_reason
+        ))
+        
+        conn.commit()
+        conn.close()
+
+    def update_trade(self, trade, strategy_name: str, strategy_version: str):
+        """Update an existing trade in the algo_trades table"""
+        if not self.verify_algo_trades_table():
+            return
+            
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            UPDATE algo_trades 
+            SET exit_price = ?,
+                exit_date = ?,
+                exit_timestamp = ?,
+                trade_duration = ?,
+                winning_trade = ?,
+                risk_reward = ?,
+                perc_return = ?,
+                exit_reason = ?
+            WHERE symbol = ? 
+                AND entry_date = ? 
+                AND entry_timestamp = ?
+                AND strategy = ?
+                AND strategy_version = ?
+        """, (
+            trade.exit_price,
+            trade.exit_date,
+            trade.exit_timestamp,
+            trade.trade_duration,
+            trade.winning_trade,
+            trade.risk_reward,
+            trade.perc_return,
+            trade.exit_reason,
+            trade.symbol,
+            trade.entry_date,
+            trade.entry_timestamp,
+            strategy_name,
+            strategy_version
+        ))
+        
+        conn.commit()
+        conn.close()
+
     def save_trades(self, trades: List, strategy_name: str, strategy_version: str, variant: str, execution_date: str):
         """Save trades to the algo_trades table"""
         if not trades:

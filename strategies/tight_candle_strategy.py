@@ -43,6 +43,9 @@ class TightCandleStrategy(BaseStrategy):
         self.tightness_threshold = tightness_threshold
         self.stop_loss_amount = stop_loss_amount
         self.target_risk_reward = target_risk_reward
+        
+        # Initialize database manager
+        self.db_manager = DatabaseManager(db_path)
 
     def get_strategy_name(self) -> str:
         return "tight_candle"
@@ -118,6 +121,14 @@ class TightCandleStrategy(BaseStrategy):
             variant=self.variant
         )
         
+        # Save trade to database immediately
+        self.db_manager.save_trade(
+            trade=trade,
+            strategy_name=self.strategy_name,
+            strategy_version=self.strategy_version,
+            execution_date=self.execution_date
+        )
+        
         # Add trade to active trades
         self.active_trades[symbol].append(trade)
         
@@ -135,6 +146,13 @@ class TightCandleStrategy(BaseStrategy):
             exit_date=row['date_and_time'].date().isoformat(),
             exit_timestamp=row['date_and_time'].isoformat(),
             exit_reason=trade.exit_reason
+        )
+        
+        # Update trade in database
+        self.db_manager.update_trade(
+            trade=trade,
+            strategy_name=self.strategy_name,
+            strategy_version=self.strategy_version
         )
         
         # Update capital
