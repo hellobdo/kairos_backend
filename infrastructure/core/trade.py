@@ -6,7 +6,9 @@ from ..reports_and_metrics.trade_metrics import (
     calculate_trade_duration,
     calculate_risk_reward_ratio,
     determine_winning_trade,
-    calculate_trade_return
+    calculate_trade_return,
+    calculate_position_size,
+    calculate_stop_price
 )
 
 class Trade:
@@ -44,6 +46,24 @@ class Trade:
         self.risk_reward: Optional[float] = None
         self.perc_return: Optional[float] = None
         self.exit_reason: Optional[str] = None
+
+    @classmethod
+    def calculate_position_size(cls, entry_price: float, stop_price: float, max_risk_amount: float) -> int:
+        """Calculate the position size based on risk parameters"""
+        return calculate_position_size(entry_price, stop_price, max_risk_amount)
+
+    @classmethod
+    def calculate_stop_price(cls, price: float, direction: str, stop_amount: float) -> float:
+        """Calculate the stop price based on direction and amount"""
+        return calculate_stop_price(price, direction, stop_amount)
+
+    def calculate_take_profit(self, target_risk_reward: float) -> float:
+        """Calculate take profit based on target risk/reward ratio"""
+        price_difference = abs(self.entry_price - self.stop_price)
+        if self.direction == "bullish":
+            return self.entry_price + (price_difference * target_risk_reward)
+        else:
+            return self.entry_price - (price_difference * target_risk_reward)
     
     def set_exit(self, exit_price: float, exit_date: str, exit_timestamp: str, exit_reason: str = ""):
         """Set exit information and calculate trade metrics"""
