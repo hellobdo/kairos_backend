@@ -247,27 +247,4 @@ class TightCandle:
         long_entries = (signals['is_tight'] & (signals['trend'] == 'bullish'))
         short_entries = (signals['is_tight'] & (signals['trend'] == 'bearish'))
         
-        return long_entries, short_entries
-    
-    def calculate_stop_price(self, ohlcv: pd.DataFrame, entry_signal: pd.Series, direction: str) -> pd.Series:
-        """
-        Calculate stop price for entry signals.
-        
-        Args:
-            ohlcv: DataFrame with OHLCV data
-            entry_signal: Boolean series indicating entry points
-            direction: 'long' or 'short'
-            
-        Returns:
-            Series with stop prices for each entry signal
-        """
-        stop_prices = pd.Series(index=ohlcv.index, dtype=float)
-        
-        if direction == 'long':
-            # For long trades, stop is below the low of the tight candle
-            stop_prices[entry_signal] = ohlcv.loc[entry_signal, 'low']
-        else:
-            # For short trades, stop is above the high of the tight candle
-            stop_prices[entry_signal] = ohlcv.loc[entry_signal, 'high']
-            
-        return stop_prices 
+        return long_entries, short_entries 

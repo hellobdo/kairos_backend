@@ -5,6 +5,7 @@ from typing import Dict, List, Optional, Tuple, Union
 from abc import ABC, abstractmethod
 import sqlite3
 from ..risk_management.risk_manager import RiskManager
+from ..trade_metrics.trade_metrics import TradeMetrics
 
 class VectorBTStrategy(ABC):
     def __init__(self,
@@ -113,12 +114,14 @@ class VectorBTStrategy(ABC):
         
         return sizes
     
-    def backtest(self, symbol: str) -> vbt.Portfolio:
+    def backtest(self, symbol: str, strategy_id: int, run_id: int) -> vbt.Portfolio:
         """
         Run backtest for a single symbol.
         
         Args:
             symbol: Symbol to backtest
+            strategy_id: ID of the strategy from algo_strategies table
+            run_id: ID of the backtest run
             
         Returns:
             VectorBT Portfolio object with backtest results
@@ -138,12 +141,38 @@ class VectorBTStrategy(ABC):
             freq='30min'
         )
         
+        # Process trades using TradeMetrics
+        trades_df = TradeMetrics.process_vectorbt_trades(pf, self.risk_manager)
+        
+        if not trades_df.empty:
+            # Add symbol and metadata
+            trades_df['symbol'] = symbol
+            trades_df['strategy_id'] = strategy_id
+            trades_df['run_id'] = run_id
+            trades_df['instrument_type'] = 'stock'
+            
+            # Convert timestamps to string format
+            trades_df['entry_timestamp'] = trades_df['entry_time'].dt.strftime('%Y-%m-%d %H:%M:%S')
+            trades_df['exit_timestamp'] = trades_df['exit_time'].dt.strftime('%Y-%m-%d %H:%M:%S')
+            trades_df['entry_date'] = trades_df['entry_time'].dt.strftime('%Y-%m-%d')
+            trades_df['exit_date'] = trades_df['exit_time'].dt.strftime('%Y-%m-%d')
+            
+            # Drop original timestamp columns
+            trades_df = trades_df.drop(['entry_time', 'exit_time'], axis=1)
+            
+            # Save to database
+            TradeMetrics.save_trades_to_db(trades_df, self.db_path)
+        
         return pf
     
-    def run_all(self) -> Dict[str, vbt.Portfolio]:
+    def run_all(self, strategy_id: int, run_id: int) -> Dict[str, vbt.Portfolio]:
         """
         Run backtest for all symbols.
         
+        Args:
+            strategy_id: ID of the strategy from algo_strategies table
+            run_id: ID of the backtest run
+            
         Returns:
             Dictionary of symbol -> Portfolio results
         """
@@ -151,63 +180,7 @@ class VectorBTStrategy(ABC):
         
         for symbol in self.symbols:
             print(f"\nBacktesting {symbol}...")
-            pf = self.backtest(symbol)
-            
-            # Get trades data
-            trades = pf.trades
-            
-            # Calculate new metrics
-            total_trades = len(trades)
-            winning_trades = len(trades[trades.return_ > 0])
-            accuracy = winning_trades / total_trades if total_trades > 0 else 0
-            
-            # Risk metrics
-            avg_risk_per_trade = self.risk_manager.risk_per_trade  # This is a percentage
-            
-            # Return metrics
-            avg_win = trades[trades.return_ > 0].return_.mean() if len(trades[trades.return_ > 0]) > 0 else 0
-            avg_loss = trades[trades.return_ < 0].return_.mean() if len(trades[trades.return_ < 0]) > 0 else 0
-            avg_return = trades.return_.mean() if len(trades) > 0 else 0
-            total_return = trades.return_.sum() if len(trades) > 0 else 0
-            
-            # Time-based metrics
-            # Determine the timeframe from the data
-            if len(self.data[symbol]) > 1:
-                timeframe = pd.Timedelta(self.data[symbol].index[1] - self.data[symbol].index[0])
-                if timeframe.days >= 1:
-                    timeframe_str = "day"
-                    periods_factor = 1
-                elif timeframe.seconds // 3600 >= 1:
-                    timeframe_str = "hour"
-                    periods_factor = 24
-                elif timeframe.seconds // 60 >= 1:
-                    timeframe_str = "minute"
-                    periods_factor = 24 * 60
-                else:
-                    timeframe_str = "second"
-                    periods_factor = 24 * 60 * 60
-            else:
-                timeframe_str = "unknown"
-                periods_factor = 1
-            
-            # Calculate trading frequency
-            if len(self.data[symbol]) > 0:
-                total_periods = len(self.data[symbol])
-                avg_trades_per_period = total_trades / (total_periods / periods_factor) if total_periods > 0 else 0
-            else:
-                avg_trades_per_period = 0
-            
-            # Print refined metrics
-            print(f"Total Trades: {total_trades}")
-            print(f"Accuracy: {accuracy:.2%}")
-            print(f"Avg Risk Per Trade: {avg_risk_per_trade:.2%}")
-            print(f"Avg Win: {avg_win:.2%}")
-            print(f"Avg Loss: {avg_loss:.2%}")
-            print(f"Avg Return: {avg_return:.2%}")
-            print(f"Total Return: {total_return:.2%}")
-            print(f"Avg Trades per {timeframe_str}: {avg_trades_per_period:.2f}")
-            print("-" * 50)
-            
+            pf = self.backtest(symbol, strategy_id, run_id)
             results[symbol] = pf
-            
+        
         return results 
