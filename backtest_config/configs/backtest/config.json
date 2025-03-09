@@ -1,0 +1,14 @@
+{
+    "database": {
+        "path": "kairos.db"
+    },
+    "backtest": {
+        "portfolio_id": 1,
+        "risk_config_id": 1,
+        "stoploss_config_id": 2,
+        "date_range": {
+            "start": "2023-01-01",
+            "end": "2024-01-01"
+        }
+    }
+} 

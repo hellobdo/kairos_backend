@@ -2,23 +2,67 @@
 
 A modular, extensible backtesting and trading system built on VectorBT designed for developing and testing systematic trading strategies.
 
-## System Architecture
-
-Kairos is organized around a modular architecture that separates concerns:
-
+### File Structure
 ```
-                           ┌─────────────────────┐
-                           │  Strategy Manager   │
-                           │                     │
-                           │ Manages portfolio of│
-                           │ strategies with     │
-                           │ capital allocation  │
-                           └──────────┬──────────┘
-                                      │ manages
-                                      ▼
- ┌───────────────┬──────────────┬────────────────┬────────────────┐
- │               │              │                │                │
- ▼               ▼              ▼                ▼                ▼
+kairos/
+├── backtest_config/               # Configuration files
+│   ├── strategies/               # Individual strategy configs
+│   │   └── tight_candle_qqq.json
+│   └── portfolios/               # Portfolio allocation configs
+│       └── single_qqq.json
+│
+├── infrastructure/               # Core system infrastructure
+│   ├── core/
+│   │   └── vectorbt_strategy.py  # Base strategy class
+│   ├── indicators/
+│   │   ├── tight_candle.py      # Signal generators
+│   │   └── visualize_tight_candles.py
+│   ├── risk_management/
+│   │   └── risk_manager.py      # Risk control system
+│   ├── strategy_management/
+│   │   ├── strategy_creation.py  # Database operations
+│   │   ├── strategy_loader.py    # Config file handling
+│   │   └── strategy_manager.py   # Strategy orchestration
+│   └── trade_metrics/
+│       └── trade_metrics.py      # Trade calculations
+│
+├── strategies/                   # Strategy implementations
+│   └── tight_candle_strategy.py
+│
+├── kairos.db                    # SQLite database
+└── main.py                      # Entry point
+```
+
+### Component Relationships
+```
+                           ┌─────────────────┐
+                           │  StrategyLoader │
+                           │                 │
+                           │ Loads config    │
+                           │ files & creates │
+                           │ strategies      │
+                           └────────┬────────┘
+                                    │ creates
+                                    ▼
+                           ┌─────────────────┐
+                           │StrategyManager  │
+                           │                 │
+                           │Manages portfolio│
+                           │and runs backtest│
+                           └────────┬────────┘
+                                    │ uses
+                                    ▼
+                         ┌───────────────────┐
+                         │ StrategyCreation  │
+                         │                   │
+                         │ Handles database  │
+                         │ operations        │
+                         └─────────┬─────────┘
+                                   │ manages
+                                   ▼
+┌───────────────┬──────────────┬────────────────┬────────────────┐
+│               │              │                │                │
+▼               ▼              ▼                ▼                ▼
 ┌─────────────┐ ┌────────────┐ ┌──────────────┐ ┌──────────────┐ ┌─────────┐
 │ Strategy A  │ │ Strategy B │ │  Strategy C  │ │  Future      │ │   ...   │
 │             │ │            │ │              │ │  Strategies  │ │         │
@@ -31,18 +75,105 @@ Kairos is organized around a modular architecture that separates concerns:
                       ┌──────────────────┐
                       │ VectorBTStrategy │
                       │                  │     ┌───────────────┐
-                      │ Abstract base    │     │  RiskManager  │
-                      │ class for all    │◄────┤               │
+                      │ Abstract base    │◄────┤  RiskManager  │
+                      │ class for all    │     │               │
                       │ strategies       │     │ Risk controls │
                       └────────┬─────────┘     └───────────────┘
                                │
                                │ uses
                                ▼
                   ┌─────────────────────────────┐
-                  │         Indicators          │
-                  │                             │
-                  │ Reusable signal generators  │
-                  └─────────────────────────────┘
+                  │         Indicators          │◄─────┐
+                  │                             │      │
+                  │ Reusable signal generators  │      │
+                  └─────────────────────────────┘      │
+                               │                       │
+                               │ processed by          │ visualized by
+                               ▼                       │
+                  ┌─────────────────────────────┐     │
+                  │       TradeMetrics          │     │
+                  │                             │     │
+                  │ Calculate trade statistics  │     │
+                  └─────────────────────────────┘     │
+                                                      │
+                                            ┌─────────────────┐
+                                            │ Visualization   │
+                                            │                 │
+                                            │ Plot indicators │
+                                            └─────────────────┘
+```
+
+### Database Schema
+```sql
+algo_strategies
+├── strategy_id (PK)
+├── strategy_name
+├── strategy_version
+├── variant
+├── indicator_name
+├── indicator_parameters (JSON)
+├── risk_reward
+├── stop_loss_type
+├── stop_loss_value
+├── tightness_threshold
+├── wick_ratio_threshold
+└── creation_date
+
+backtest_runs
+├── run_id (PK)
+└── execution_date
+
+backtest_strategy_allocations
+├── run_id (FK)
+├── strategy_id (FK)
+└── allocation_percentage
+
+algo_trades
+├── trade_id (PK)
+├── strategy_id (FK)
+├── run_id (FK)
+├── account_id
+├── symbol
+├── direction
+├── entry_date
+├── entry_timestamp
+├── exit_date
+├── exit_timestamp
+├── entry_price
+├── exit_price
+├── stop_price
+├── quantity
+├── instrument_type
+├── capital_required
+├── trade_duration
+├── winning_trade
+├── risk_reward
+├── risk_per_trade
+├── perc_return
+└── risk_size
+```
+
+### Workflow
+```
+1. Configuration Loading
+   JSON Files -> StrategyLoader -> StrategyConfig objects
+
+2. Strategy Creation
+   StrategyLoader
+   └─> StrategyCreation.create_strategy()
+       └─> Saves to algo_strategies table
+           └─> Returns strategy_id
+
+3. Backtest Execution
+   StrategyManager.run_all()
+   ├─> Creates backtest_run -> run_id
+   ├─> Saves allocations to backtest_strategy_allocations
+   └─> For each strategy:
+       └─> VectorBTStrategy
+           ├─> Generates signals using Indicators
+           ├─> Runs backtest using VectorBT
+           └─> Processes trades using TradeMetrics
+               └─> Saves to algo_trades with strategy_id and run_id
 ```
 
 ## Core Components
@@ -160,10 +291,3 @@ risk_manager = RiskManager(
 3. **Extensibility**: New strategies and indicators can be easily added
 4. **Reusability**: Core components are designed for reuse across strategies
 5. **Testability**: Components are structured to facilitate testing
-
-## Roadmap
-
-- [ ] Add more technical indicators
-- [ ] Implement portfolio optimization
-- [ ] Add machine learning capabilities
-- [ ] Create live trading interfaces

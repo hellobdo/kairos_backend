@@ -3,7 +3,6 @@ import numpy as np
 from typing import Dict, Optional, List, Union
 import vectorbt as vbt
 from datetime import datetime
-from ..risk_management.risk_manager import RiskManager
 
 class TradeMetrics:
     @staticmethod
@@ -19,53 +18,6 @@ class TradeMetrics:
             bool: True if trade setup is valid, False otherwise
         """
         return abs(entry_price - stop_price) > 0
-
-    @staticmethod
-    def calculate_risk_size(risk_manager: RiskManager, account_size: float) -> float:
-        """
-        Calculate the risk size in dollars.
-        
-        Args:
-            risk_manager: RiskManager instance for risk calculations
-            account_size: Total account size
-            
-        Returns:
-            Risk size in dollars
-        """
-        return risk_manager.calculate_risk_size(account_size)
-
-    @staticmethod
-    def calculate_position_size(entry_price: float, stop_price: float,
-                              risk_manager: RiskManager, account_size: float) -> int:
-        """
-        Calculate the position size in number of shares/contracts.
-        
-        Args:
-            entry_price: Entry price of the trade
-            stop_price: Stop loss price
-            risk_manager: RiskManager instance for risk calculations
-            account_size: Total account size
-            
-        Returns:
-            Position size in number of shares/contracts (rounded to nearest integer)
-        """
-        risk_size_dollars = TradeMetrics.calculate_risk_size(risk_manager, account_size)
-        price_risk = abs(entry_price - stop_price)
-        return int(round(risk_size_dollars / price_risk))
-
-    @staticmethod
-    def calculate_capital_required(entry_price: float, position_size: int) -> float:
-        """
-        Calculate the capital required for the trade.
-        
-        Args:
-            entry_price: Entry price of the trade
-            position_size: Number of shares/contracts
-            
-        Returns:
-            Capital required in dollars
-        """
-        return float(position_size * entry_price)
 
     @staticmethod
     def calculate_risk_reward(entry_price: float, exit_price: float, stop_price: float, direction: str) -> float:
@@ -88,58 +40,63 @@ class TradeMetrics:
             reward = entry_price - exit_price
             risk = stop_price - entry_price
             
-        return reward / risk
+        return reward / risk if risk != 0 else 0.0
 
     @staticmethod
-    def calculate_percentage_return(risk_per_trade: float, risk_reward: float) -> float:
+    def calculate_percentage_return(entry_price: float, exit_price: float) -> float:
         """
         Calculate the percentage return of a trade.
         
         Args:
-            risk_per_trade: Risk per trade as a percentage
-            risk_reward: Realized risk/reward ratio
+            entry_price: Entry price of the trade
+            exit_price: Exit price of the trade
             
         Returns:
             Percentage return
         """
-        return risk_per_trade * risk_reward
+        return ((exit_price - entry_price) / entry_price) * 100
 
     @staticmethod
-    def is_winning_trade(risk_reward: float) -> int:
+    def is_winning_trade(entry_price: float, exit_price: float, direction: str) -> int:
         """
         Determine if the trade is profitable.
         
         Args:
-            risk_reward: Realized risk/reward ratio
+            entry_price: Entry price of the trade
+            exit_price: Exit price of the trade
+            direction: Trade direction ('long' or 'short')
             
         Returns:
             1 if profitable, 0 if not
         """
-        return 1 if risk_reward > 0 else 0
+        if direction == 'long':
+            return 1 if exit_price > entry_price else 0
+        else:  # short
+            return 1 if exit_price < entry_price else 0
 
     @staticmethod
-    def calculate_trade_duration(entry_time: datetime, exit_time: datetime) -> int:
+    def calculate_trade_duration(entry_timestamp: datetime, exit_timestamp: datetime) -> int:
         """
         Calculate the duration of a trade in minutes.
         
         Args:
-            entry_time: Entry timestamp
-            exit_time: Exit timestamp
+            entry_timestamp: Entry timestamp
+            exit_timestamp: Exit timestamp
             
         Returns:
             Trade duration in minutes
         """
-        duration = exit_time - entry_time
+        duration = exit_timestamp - entry_timestamp
         return int(duration.total_seconds() / 60)
 
     @staticmethod
-    def process_single_trade(trade: pd.Series, risk_manager: RiskManager, account_size: float) -> Optional[Dict]:
+    def process_single_trade(trade: pd.Series, risk_config: Dict, account_size: float) -> Optional[Dict]:
         """
         Process a single trade and calculate all metrics.
         
         Args:
             trade: Series containing trade data from VectorBT
-            risk_manager: RiskManager instance for risk calculations
+            risk_config: Dictionary containing risk management configuration
             account_size: Account size for position sizing
             
         Returns:
@@ -160,19 +117,9 @@ class TradeMetrics:
             direction
         )
         
-        # Calculate position size and related metrics
-        position_size = TradeMetrics.calculate_position_size(
-            trade['Entry Price'],
-            trade['Stop Price'],
-            risk_manager,
-            account_size
-        )
-        
-        # Calculate all required metrics
-        risk_size = TradeMetrics.calculate_risk_size(risk_manager, account_size)
-        capital_required = TradeMetrics.calculate_capital_required(trade['Entry Price'], position_size)
-        perc_return = TradeMetrics.calculate_percentage_return(risk_manager.risk_per_trade, risk_reward)
-        winning_trade = TradeMetrics.is_winning_trade(risk_reward)
+        # Calculate metrics
+        perc_return = TradeMetrics.calculate_percentage_return(trade['Entry Price'], trade['Exit Price'])
+        winning_trade = TradeMetrics.is_winning_trade(trade['Entry Price'], trade['Exit Price'], direction)
         duration = TradeMetrics.calculate_trade_duration(
             pd.to_datetime(trade['Entry Timestamp']),
             pd.to_datetime(trade['Exit Timestamp'])
@@ -180,30 +127,29 @@ class TradeMetrics:
         
         return {
             'symbol': trade['Column'],
-            'entry_time': pd.to_datetime(trade['Entry Timestamp']),
-            'exit_time': pd.to_datetime(trade['Exit Timestamp']),
+            'entry_timestamp': pd.to_datetime(trade['Entry Timestamp']),
+            'exit_timestamp': pd.to_datetime(trade['Exit Timestamp']),
             'entry_price': trade['Entry Price'],
             'exit_price': trade['Exit Price'],
             'stop_price': trade['Stop Price'],
-            'position_size': position_size,
-            'risk_size': risk_size,
-            'risk_per_trade': risk_manager.risk_per_trade,
+            'position_size': abs(trade['Size']),
+            'risk_per_trade': risk_per_trade,
             'risk_reward': risk_reward,
             'perc_return': perc_return,
             'winning_trade': winning_trade,
             'trade_duration': duration,
-            'capital_required': capital_required,
+            'capital_required': trade['Capital Required'],
             'direction': direction
         }
 
     @staticmethod
-    def process_vectorbt_trades(portfolio: vbt.Portfolio, risk_manager: RiskManager) -> pd.DataFrame:
+    def process_vectorbt_trades(portfolio: vbt.Portfolio, risk_config: Dict) -> pd.DataFrame:
         """
         Process VectorBT trade records into our format.
         
         Args:
             portfolio: VectorBT Portfolio object
-            risk_manager: RiskManager instance for risk calculations
+            risk_config: Dictionary containing risk management configuration
             
         Returns:
             DataFrame with processed trade metrics
@@ -211,9 +157,21 @@ class TradeMetrics:
         trades = portfolio.trades.records_readable
         account_size = portfolio.init_cash[0]
         
+        # Calculate stop prices based on risk per trade
+        risk_per_trade_pct = risk_config['risk_per_trade'] / 100  # Convert to decimal
+        risk_per_trade_dollars = account_size * risk_per_trade_pct
+        
+        # Add stop prices to trades
+        trades['Stop Price'] = trades.apply(
+            lambda row: row['Entry Price'] - risk_per_trade_dollars/abs(row['Size'])
+            if row['Size'] > 0 else
+            row['Entry Price'] + risk_per_trade_dollars/abs(row['Size']),
+            axis=1
+        )
+        
         processed_trades = []
         for _, trade in trades.iterrows():
-            trade_metrics = TradeMetrics.process_single_trade(trade, risk_manager, account_size)
+            trade_metrics = TradeMetrics.process_single_trade(trade, risk_config, account_size)
             if trade_metrics is not None:
                 processed_trades.append(trade_metrics)
             
@@ -230,6 +188,75 @@ class TradeMetrics:
         """
         import sqlite3
         
+        # Ensure all required columns are present
+        required_columns = [
+            'symbol', 'entry_timestamp', 'exit_timestamp', 'entry_price',
+            'exit_price', 'stop_price', 'position_size',
+            'risk_per_trade', 'risk_reward', 'perc_return', 'winning_trade',
+            'trade_duration', 'capital_required', 'direction', 'strategy_id',
+            'run_id', 'instrument_type'
+        ]
+        
+        missing_columns = set(required_columns) - set(trades_df.columns)
+        if missing_columns:
+            raise ValueError(f"Missing required columns: {missing_columns}")
+        
         conn = sqlite3.connect(db_path)
         trades_df.to_sql('algo_trades', conn, if_exists='append', index=False)
-        conn.close() 
+        conn.close()
+
+    @staticmethod
+    def calculate_closing_metrics(trade: Dict) -> Dict:
+        """
+        Calculate all metrics for a closed trade.
+        
+        Args:
+            trade: Dictionary containing trade data with:
+                - entry_price: Entry price
+                - exit_price: Exit price
+                - entry_timestamp: Entry timestamp
+                - exit_timestamp: Exit timestamp
+                - stop_price: Initial stop price
+                - direction: Trade direction ('long' or 'short')
+            
+        Returns:
+            Dictionary with closing metrics:
+                - winning_trade: 1 if profitable, 0 if not
+                - trade_duration: Duration in minutes
+                - perc_return: Percentage return
+                - risk_reward: Realized risk/reward ratio
+        """
+        # Convert timestamps if they're strings
+        entry_timestamp = pd.to_datetime(trade['entry_timestamp'])
+        exit_timestamp = pd.to_datetime(trade['exit_timestamp'])
+        
+        # Calculate all closing metrics
+        risk_reward = TradeMetrics.calculate_risk_reward(
+            trade['entry_price'],
+            trade['exit_price'],
+            trade['stop_price'],
+            trade['direction']
+        )
+        
+        perc_return = TradeMetrics.calculate_percentage_return(
+            trade['entry_price'],
+            trade['exit_price']
+        )
+        
+        winning_trade = TradeMetrics.is_winning_trade(
+            trade['entry_price'],
+            trade['exit_price'],
+            trade['direction']
+        )
+        
+        trade_duration = TradeMetrics.calculate_trade_duration(
+            entry_timestamp,
+            exit_timestamp
+        )
+        
+        return {
+            'winning_trade': winning_trade,
+            'trade_duration': trade_duration,
+            'perc_return': perc_return,
+            'risk_reward': risk_reward
+        } 
