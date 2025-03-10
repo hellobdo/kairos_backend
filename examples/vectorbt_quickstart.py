@@ -57,10 +57,10 @@ def run_quickstart_example():
     trade_durations = [(dates[exit_idx] - dates[entry_idx]).days 
                       for entry_idx, exit_idx in zip(trades_df['entry_idx'], trades_df['exit_idx'])]
     
-    # Format the trades DataFrame
+    # Format the trades DataFrame with date and time
     formatted_trades = pd.DataFrame({
-        'Entry Date': dates[trades_df['entry_idx']].strftime('%Y-%m-%d'),
-        'Exit Date': dates[trades_df['exit_idx']].strftime('%Y-%m-%d'),
+        'Entry Date': dates[trades_df['entry_idx']].strftime('%Y-%m-%d %H:%M:%S'),
+        'Exit Date': dates[trades_df['exit_idx']].strftime('%Y-%m-%d %H:%M:%S'),
         'Entry Price': trades_df['entry_price'].round(2),
         'Exit Price': trades_df['exit_price'].round(2),
         'Size': trades_df['size'].round(6),
@@ -68,6 +68,9 @@ def run_quickstart_example():
         'Return %': (trades_df['return'] * 100).round(2),
         'Duration (days)': trade_durations
     })
+    
+    # Set display options to show all rows
+    pd.set_option('display.max_rows', None)
     
     print("\nMA Crossover Strategy Trades:")
     print(formatted_trades)
