@@ -3,9 +3,7 @@
 # Build the Docker image
 docker build -t kairos .
 
-# Run the container with database volume mounted
-docker run -it \
-    --name kairos \
-    -v "$(pwd)/data:/app/data" \
-    -v "$(pwd)/kairos.db:/app/kairos.db" \
+# Run the container with current directory mounted
+docker run -it --rm \
+    -v "$(pwd):/app" \
     kairos 

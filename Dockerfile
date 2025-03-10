@@ -6,6 +6,7 @@ WORKDIR /app
 # Install system dependencies required for numpy and other packages
 RUN apt-get update && apt-get install -y \
     build-essential \
+    sqlite3 \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies directly
@@ -29,12 +30,9 @@ RUN pip install --no-cache-dir \
 # Copy the application
 COPY . .
 
-# Create a volume for the database
-VOLUME ["/app/data"]
-
 # Set environment variables
 ENV PYTHONPATH=/app
 ENV PYTHONUNBUFFERED=1
 
-# Default command to run interactive Python shell
-CMD ["python"] 
+# Start a bash shell by default
+CMD ["/bin/bash"]
