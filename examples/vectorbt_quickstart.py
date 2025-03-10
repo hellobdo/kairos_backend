@@ -44,29 +44,43 @@ def run_quickstart_example():
     entries = fast_ma.ma_crossed_above(slow_ma)
     exits = fast_ma.ma_crossed_below(slow_ma)
     
-    # Create DataFrame with price and MAs
-    ma_df = pd.DataFrame({
-        'Price': price,
-        'Fast MA': fast_ma.ma,
-        'Slow MA': slow_ma.ma,
-        'Buy Signal': entries,
-        'Sell Signal': exits
-    })
-    print("\nLast 5 rows of Price and Signals:")
-    print(ma_df.tail())
-    
     # Run backtest
     pf_ma = vbt.Portfolio.from_signals(price, entries, exits, init_cash=100)
     
-    # Create performance DataFrame for MA Strategy
-    ma_metrics = pd.DataFrame({
-        'Total Profit': [float(pf_ma.total_profit())],
-        'Total Return': [float(pf_ma.total_return())],
-        'Sharpe Ratio': [float(pf_ma.sharpe_ratio())],
-        'Max Drawdown': [float(pf_ma.max_drawdown())]
-    }, index=['MA Crossover'])
-    print("\nMA Crossover Performance:")
-    print(ma_metrics)
+    # Get trades DataFrame
+    trades_df = pf_ma.trades.records
+    
+    # Get the dates from the price index
+    dates = price.index
+    
+    # Calculate trade durations in days
+    trade_durations = [(dates[exit_idx] - dates[entry_idx]).days 
+                      for entry_idx, exit_idx in zip(trades_df['entry_idx'], trades_df['exit_idx'])]
+    
+    # Format the trades DataFrame
+    formatted_trades = pd.DataFrame({
+        'Entry Date': dates[trades_df['entry_idx']].strftime('%Y-%m-%d'),
+        'Exit Date': dates[trades_df['exit_idx']].strftime('%Y-%m-%d'),
+        'Entry Price': trades_df['entry_price'].round(2),
+        'Exit Price': trades_df['exit_price'].round(2),
+        'Size': trades_df['size'].round(6),
+        'PnL': trades_df['pnl'].round(2),
+        'Return %': (trades_df['return'] * 100).round(2),
+        'Duration (days)': trade_durations
+    })
+    
+    print("\nMA Crossover Strategy Trades:")
+    print(formatted_trades)
+    
+    # Print trade statistics
+    print("\nTrade Statistics:")
+    print(f"Total Trades: {len(trades_df)}")
+    print(f"Profitable Trades: {len(trades_df[trades_df['pnl'] > 0])}")
+    print(f"Loss-Making Trades: {len(trades_df[trades_df['pnl'] < 0])}")
+    print(f"Average Profit per Trade: ${trades_df['pnl'].mean():.2f}")
+    print(f"Best Trade: ${trades_df['pnl'].max():.2f}")
+    print(f"Worst Trade: ${trades_df['pnl'].min():.2f}")
+    print(f"Average Trade Duration: {np.mean(trade_durations):.1f} days")
     
     # Example 3: Testing Multiple Window Combinations
     logger.info("\nExample 3: Testing Multiple MA Windows")
