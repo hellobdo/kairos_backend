@@ -2,6 +2,7 @@ import vectorbt as vbt
 import pandas as pd
 import sqlite3
 import logging
+from datetime import datetime
 
 # Configure logging
 logging.basicConfig(
@@ -9,6 +10,30 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+def create_backtest_run():
+    """Create a new backtest run record and return its ID."""
+    conn = sqlite3.connect('kairos.db')
+    cursor = conn.cursor()
+    
+    cursor.execute("""
+        INSERT INTO backtest_runs (
+            portfolio_id,
+            execution_date,
+            stoploss_config_id,
+            risk_config_id
+        ) VALUES (?, ?, ?, ?)
+    """, (
+        1,  # Default portfolio_id
+        datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        1,  # Default stoploss_config_id
+        1   # Default risk_config_id
+    ))
+    
+    run_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return run_id
 
 def load_data_from_db(symbol='QQQ'):
     """Load historical data from SQLite database."""
@@ -39,7 +64,7 @@ def load_data_from_db(symbol='QQQ'):
     conn.close()
     return df
 
-def log_trades(trades_df, run_id=1, strategy_id=1, symbol='QQQ'):
+def log_trades(trades_df, run_id, strategy_id=1, symbol='QQQ'):
     """Log trades to algo_trades table."""
     conn = sqlite3.connect('kairos.db')
     cursor = conn.cursor()
@@ -94,6 +119,11 @@ def log_trades(trades_df, run_id=1, strategy_id=1, symbol='QQQ'):
 def run_tightness_strategy(symbol='QQQ'):
     """Run a simple strategy that trades only on Ultra Tight conditions."""
     
+    # Create backtest run record
+    logger.info("Creating backtest run record...")
+    run_id = create_backtest_run()
+    logger.info(f"Created backtest run with ID: {run_id}")
+    
     # Load data
     logger.info("Loading historical data from database...")
     df = load_data_from_db(symbol)
@@ -138,7 +168,7 @@ def run_tightness_strategy(symbol='QQQ'):
     
     # Log trades to database
     logger.info("Logging trades to database...")
-    log_trades(formatted_trades)
+    log_trades(formatted_trades, run_id)
     logger.info("Trades logged successfully")
 
 if __name__ == "__main__":
