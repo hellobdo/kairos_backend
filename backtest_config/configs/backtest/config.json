@@ -8,7 +8,15 @@
         "stoploss_config_id": 2,
         "date_range": {
             "start": "2023-01-01",
-            "end": "2024-01-01"
+            "end": "2023-05-15"
         }
+    },
+    "risk_management": {
+        "risk_per_trade": 1.0,
+        "max_daily_risk": 5.0
+    },
+    "stop_loss": {
+        "type": "fix_perc",
+        "delta_perc": 1.0
     }
 } 
