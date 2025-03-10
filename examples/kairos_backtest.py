@@ -11,6 +11,14 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Strategy configuration
+SYMBOL = 'QQQ'
+STRATEGY_ID = 1
+PORTFOLIO_ID = 1
+STOPLOSS_CONFIG_ID = 1
+RISK_CONFIG_ID = 1
+STOP_LOSS_PCT = 0.01  # 1% stop loss
+
 def create_backtest_run():
     """Create a new backtest run record and return its ID."""
     conn = sqlite3.connect('kairos.db')
@@ -24,10 +32,10 @@ def create_backtest_run():
             risk_config_id
         ) VALUES (?, ?, ?, ?)
     """, (
-        1,  # Default portfolio_id
+        PORTFOLIO_ID,
         datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-        1,  # Default stoploss_config_id
-        1   # Default risk_config_id
+        STOPLOSS_CONFIG_ID,
+        RISK_CONFIG_ID
     ))
     
     run_id = cursor.lastrowid
@@ -35,7 +43,7 @@ def create_backtest_run():
     conn.close()
     return run_id
 
-def load_data_from_db(symbol='QQQ'):
+def load_data_from_db(symbol):
     """Load historical data from SQLite database."""
     conn = sqlite3.connect('kairos.db')
     
@@ -64,14 +72,26 @@ def load_data_from_db(symbol='QQQ'):
     conn.close()
     return df
 
-def log_trades(trades_df, run_id, strategy_id=1, symbol='QQQ'):
+def log_trades(trades_df, run_id, pf, trades_records, symbol, strategy_id):
     """Log trades to algo_trades table."""
     conn = sqlite3.connect('kairos.db')
     cursor = conn.cursor()
     
-    for _, trade in trades_df.iterrows():
+    for idx, trade in trades_df.iterrows():
         # Calculate trade duration in hours
         duration = (pd.to_datetime(trade['Exit Date']) - pd.to_datetime(trade['Entry Date'])).total_seconds() / 3600
+        
+        # Calculate stop price using configured stop loss percentage
+        stop_price = trade['Entry Price'] * (1 - STOP_LOSS_PCT)
+        
+        # Fixed risk per trade (1%)
+        risk_per_trade = 0.01
+        
+        # Calculate risk size based on cash before trade
+        risk_size = risk_per_trade * pf.cash().iloc[trades_records['entry_idx'][idx] - 1]
+        
+        # Calculate position size based on risk
+        position_size = round(risk_size / abs(trade['Entry Price'] - stop_price))
         
         cursor.execute("""
             INSERT INTO algo_trades (
@@ -101,22 +121,22 @@ def log_trades(trades_df, run_id, strategy_id=1, symbol='QQQ'):
             trade['Exit Date'],
             trade['Entry Price'],
             trade['Exit Price'],
-            trade['Entry Price'] * 0.99,  # Simple stop loss at 1% below entry
-            trade['Size'],
-            trade['Size'] * trade['Entry Price'] * 0.01,  # Risk size (1% of position)
-            0.01,  # Fixed 1% risk per trade
-            abs(trade['PnL']) / (trade['Size'] * trade['Entry Price'] * 0.01),  # Risk/Reward ratio
-            trade['Return %'],
+            stop_price,
+            position_size,  # Using calculated position size
+            risk_size,
+            risk_per_trade * 100,
+            abs(trade['PnL']) / (trade['Size'] * trade['Entry Price'] * 0.01),  # Risk/Reward ratio using 1% of position
+            trade['Return %'] * risk_per_trade / 0.01,  # Scale return by risk (if risk_per_trade=0.5%, return will be halved)
             1 if trade['PnL'] > 0 else 0,  # Winning trade flag
             duration,
-            trade['Size'] * trade['Entry Price'],  # Capital required
-            'long'  # Only long trades in this strategy
+            position_size * trade['Entry Price'],  # Capital required using new position size
+            trade['Direction']  # Use the direction from VectorBT
         ))
     
     conn.commit()
     conn.close()
 
-def run_tightness_strategy(symbol='QQQ'):
+def run_tightness_strategy():
     """Run a simple strategy that trades only on Ultra Tight conditions."""
     
     # Create backtest run record
@@ -126,18 +146,19 @@ def run_tightness_strategy(symbol='QQQ'):
     
     # Load data
     logger.info("Loading historical data from database...")
-    df = load_data_from_db(symbol)
+    df = load_data_from_db(SYMBOL)
     
     # Create entry/exit signals
     entries = (df['tightness'] == 'Ultra Tight') & (df['market_session'] == 'regular')
     exits = (df['tightness'] != 'Ultra Tight') | (df['market_session'] != 'regular')
     
-    # Run backtest
+    # Run backtest with stop loss
     logger.info("Running backtest...")
     pf = vbt.Portfolio.from_signals(
         close=df['close'],
         entries=entries,
         exits=exits,
+        sl_stop=STOP_LOSS_PCT,  # Use configured stop loss percentage
         init_cash=10000,
         fees=0.001,
         freq='30min'
@@ -154,21 +175,37 @@ def run_tightness_strategy(symbol='QQQ'):
         'Exit Price': trades['exit_price'].round(2),
         'Size': trades['size'].round(2),
         'PnL': trades['pnl'].round(2),
-        'Return %': (trades['return'] * 100).round(2)
+        'Return %': (trades['return'] * 100).round(2),
+        'Cash': pf.cash().iloc[trades['entry_idx'] - 1].values,  # Get cash available BEFORE each trade
+        'Direction': ['long' if d == 1 else 'short' for d in trades['direction']]  # Get trade direction
     })
+    
+    # Debug print all trades before filtering
+    print("\nAll trades before filtering:")
+    print(formatted_trades[['Entry Date', 'Cash', 'Entry Price', 'Size']])
+    print("\nCash series info:")
+    print(pf.cash().describe())
+    
+    # Filter out trades where cash was zero
+    valid_trades = formatted_trades[formatted_trades['Cash'] > 0].copy()
+    logger.info(f"Filtered out {len(formatted_trades) - len(valid_trades)} trades with zero cash")
+    
+    # Debug print cash values
+    print("\nCash values at trade entries:")
+    print(valid_trades[['Entry Date', 'Cash']])
     
     # Print results
     print("\nTrade List:")
-    print(formatted_trades)
+    print(valid_trades)
     
     print("\nStrategy Performance:")
     print(f"Total Return: {(pf.total_return() * 100):.2f}%")
-    print(f"Total Trades: {len(trades)}")
+    print(f"Total Trades: {len(valid_trades)}")
     print(f"Win Rate: {(pf.trades.win_rate() * 100):.2f}%")
     
     # Log trades to database
     logger.info("Logging trades to database...")
-    log_trades(formatted_trades, run_id)
+    log_trades(valid_trades, run_id, pf, trades, SYMBOL, STRATEGY_ID)
     logger.info("Trades logged successfully")
 
 if __name__ == "__main__":
