@@ -39,21 +39,67 @@ def load_data_from_db(symbol='QQQ'):
     conn.close()
     return df
 
-def run_tightness_strategy():
+def log_trades(trades_df, run_id=1, strategy_id=1, symbol='QQQ'):
+    """Log trades to algo_trades table."""
+    conn = sqlite3.connect('kairos.db')
+    cursor = conn.cursor()
+    
+    for _, trade in trades_df.iterrows():
+        # Calculate trade duration in hours
+        duration = (pd.to_datetime(trade['Exit Date']) - pd.to_datetime(trade['Entry Date'])).total_seconds() / 3600
+        
+        cursor.execute("""
+            INSERT INTO algo_trades (
+                run_id,
+                strategy_id,
+                symbol,
+                entry_timestamp,
+                exit_timestamp,
+                entry_price,
+                exit_price,
+                stop_price,
+                position_size,
+                risk_size,
+                risk_per_trade,
+                risk_reward,
+                perc_return,
+                winning_trade,
+                trade_duration,
+                capital_required,
+                direction
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            run_id,
+            strategy_id,
+            symbol,
+            trade['Entry Date'],
+            trade['Exit Date'],
+            trade['Entry Price'],
+            trade['Exit Price'],
+            trade['Entry Price'] * 0.99,  # Simple stop loss at 1% below entry
+            trade['Size'],
+            trade['Size'] * trade['Entry Price'] * 0.01,  # Risk size (1% of position)
+            0.01,  # Fixed 1% risk per trade
+            abs(trade['PnL']) / (trade['Size'] * trade['Entry Price'] * 0.01),  # Risk/Reward ratio
+            trade['Return %'],
+            1 if trade['PnL'] > 0 else 0,  # Winning trade flag
+            duration,
+            trade['Size'] * trade['Entry Price'],  # Capital required
+            'long'  # Only long trades in this strategy
+        ))
+    
+    conn.commit()
+    conn.close()
+
+def run_tightness_strategy(symbol='QQQ'):
     """Run a simple strategy that trades only on Ultra Tight conditions."""
     
     # Load data
     logger.info("Loading historical data from database...")
-    df = load_data_from_db('QQQ')
+    df = load_data_from_db(symbol)
     
-    # Create entry signals when:
-    # 1. Tightness becomes Ultra Tight
-    # 2. Only during regular market session
+    # Create entry/exit signals
     entries = (df['tightness'] == 'Ultra Tight') & (df['market_session'] == 'regular')
-    
-    # Create exit signals when:
-    # 1. Tightness is no longer Ultra Tight OR
-    # 2. Market session ends
     exits = (df['tightness'] != 'Ultra Tight') | (df['market_session'] != 'regular')
     
     # Run backtest
@@ -62,9 +108,9 @@ def run_tightness_strategy():
         close=df['close'],
         entries=entries,
         exits=exits,
-        init_cash=10000,  # Starting with $10,000
-        fees=0.001,  # 0.1% trading fee
-        freq='30min'  # Specify the data frequency
+        init_cash=10000,
+        fees=0.001,
+        freq='30min'
     )
     
     # Get trades
@@ -81,13 +127,6 @@ def run_tightness_strategy():
         'Return %': (trades['return'] * 100).round(2)
     })
     
-    # Calculate average return manually
-    avg_return = trades['return'].mean() * 100 if len(trades) > 0 else 0
-    
-    # Set display options
-    pd.set_option('display.max_rows', None)
-    pd.set_option('display.width', None)
-    
     # Print results
     print("\nTrade List:")
     print(formatted_trades)
@@ -96,20 +135,11 @@ def run_tightness_strategy():
     print(f"Total Return: {(pf.total_return() * 100):.2f}%")
     print(f"Total Trades: {len(trades)}")
     print(f"Win Rate: {(pf.trades.win_rate() * 100):.2f}%")
-    print(f"Average Trade Return: {avg_return:.2f}%")
-    print(f"Max Drawdown: {(pf.max_drawdown() * 100):.2f}%")
-    print(f"Sharpe Ratio: {pf.sharpe_ratio():.2f}")
     
-    # Additional statistics
-    print("\nDetailed Statistics:")
-    print(f"Best Trade: ${trades['pnl'].max():.2f}")
-    print(f"Worst Trade: ${trades['pnl'].min():.2f}")
-    print(f"Average PnL per Trade: ${trades['pnl'].mean():.2f}")
-    
-    # Calculate unique trading days using pandas
-    unique_days = df.index.normalize().nunique()
-    print(f"Total Trading Days: {unique_days}")
-    print(f"Average Trades per Day: {len(trades) / unique_days:.2f}")
+    # Log trades to database
+    logger.info("Logging trades to database...")
+    log_trades(formatted_trades)
+    logger.info("Trades logged successfully")
 
 if __name__ == "__main__":
     run_tightness_strategy() 
