@@ -27,9 +27,6 @@ RUN pip install --no-cache-dir \
     isort>=5.12.0 \
     jupyter>=1.0.0
 
-# Copy the application
-COPY . .
-
 # Set environment variables
 ENV PYTHONPATH=/app
 ENV PYTHONUNBUFFERED=1
