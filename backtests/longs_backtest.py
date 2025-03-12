@@ -5,6 +5,7 @@ import logging
 from datetime import datetime
 import numpy as np
 from helpers.get_stoploss_config import get_stoploss_config
+from helpers.get_risk_config import get_risk_config
 
 # Configure logging
 logging.basicConfig(
@@ -73,7 +74,7 @@ def load_data_from_db(symbol):
     conn.close()
     return df
 
-def log_trades(trades_df, run_id, pf, trades_records, symbol, strategy_id, stop_config):
+def log_trades(trades_df, run_id, pf, trades_records, symbol, strategy_id, stop_config, risk_config):
     """Log trades to algo_trades table."""
     conn = sqlite3.connect('data/algos.db')
     cursor = conn.cursor()
@@ -92,8 +93,8 @@ def log_trades(trades_df, run_id, pf, trades_records, symbol, strategy_id, stop_
             stop_value = stop_config['stop_func'](entry_price)
             stop_price = entry_price * (1 - stop_value)
         
-        # Fixed risk per trade (1%)
-        risk_per_trade = 0.01
+        # Get risk per trade from configuration
+        risk_per_trade = risk_config['risk_per_trade']
         
         # Calculate risk size based on cash before trade
         risk_size = risk_per_trade * pf.cash().iloc[trades_records['entry_idx'][idx] - 1]
@@ -132,9 +133,9 @@ def log_trades(trades_df, run_id, pf, trades_records, symbol, strategy_id, stop_
             stop_price,
             position_size,  # Using calculated position size
             risk_size,
-            risk_per_trade * 100,
-            abs(trade['PnL']) / (trade['Size'] * trade['Entry Price'] * 0.01),  # Risk/Reward ratio using 1% of position
-            trade['Return %'] * risk_per_trade / 0.01,  # Scale return by risk (if risk_per_trade=0.5%, return will be halved)
+            risk_per_trade * 100,  # Convert back to percentage for storage
+            abs(trade['PnL']) / (trade['Size'] * trade['Entry Price'] * risk_per_trade),  # Risk/Reward ratio using configured risk
+            trade['Return %'] * risk_per_trade / 0.01,  # Scale return by risk
             1 if trade['PnL'] > 0 else 0,  # Winning trade flag
             duration,
             position_size * trade['Entry Price'],  # Capital required using new position size
@@ -215,11 +216,17 @@ def run_backtest(df, entries, exits, stop_config):
 def run_tightness_strategy():
     """Run a simple strategy that trades only on Ultra Tight conditions."""
     
-    # Get stoploss configuration
+    # Get configurations
     logger.info(f"Getting stoploss configuration for ID {STOPLOSS_CONFIG_ID}...")
     stop_config = get_stoploss_config(STOPLOSS_CONFIG_ID)
     if not stop_config:
         logger.error("Failed to get stoploss configuration")
+        return
+        
+    logger.info(f"Getting risk configuration for ID {RISK_CONFIG_ID}...")
+    risk_config = get_risk_config(RISK_CONFIG_ID)
+    if not risk_config:
+        logger.error("Failed to get risk configuration")
         return
     
     # Create backtest run record
@@ -334,7 +341,7 @@ def run_tightness_strategy():
     
     # Log trades to database
     logger.info("Logging trades to database...")
-    log_trades(valid_trades, run_id, pf, trades, SYMBOL, STRATEGY_ID, stop_config)
+    log_trades(valid_trades, run_id, pf, trades, SYMBOL, STRATEGY_ID, stop_config, risk_config)
     logger.info("Trades logged successfully")
 
 if __name__ == "__main__":
