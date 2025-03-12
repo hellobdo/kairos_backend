@@ -13,7 +13,7 @@ def clean_algo_trades():
     """Clean the algo_trades table by deleting all records."""
     try:
         # Get the path to the database relative to the workspace root
-        db_path = Path('data/kairos.db')
+        db_path = Path('data/algos.db')
         
         # Connect to the database
         logger.info(f"Connecting to database at {db_path}")
