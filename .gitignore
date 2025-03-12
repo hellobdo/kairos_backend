@@ -38,10 +38,5 @@ myenv/
 # Jupyter Notebook
 .ipynb_checkpoints
 
-# Data files
-*.csv
-*.db
-*.sqlite3
-
 # Logs
 *.log 
