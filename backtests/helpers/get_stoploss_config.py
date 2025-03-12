@@ -1,8 +1,6 @@
 import sqlite3
 import logging
 from pathlib import Path
-import json
-from typing import Dict, Union, Optional
 
 # Configure logging
 logging.basicConfig(
@@ -11,36 +9,30 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-def get_stoploss_config(stoploss_id: int) -> Optional[Dict]:
+def get_stoploss_config(stoploss_id: int) -> dict:
     """
-    Retrieve stoploss configuration from manager_stoploss table.
+    Get stoploss configuration from the database.
     
     Args:
-        stoploss_id: The ID of the stoploss configuration to retrieve
+        stoploss_id (int): ID of the stoploss configuration to retrieve
         
     Returns:
-        Dictionary containing the stoploss configuration formatted for VectorBT,
-        or None if not found
+        dict: Dictionary containing stoploss configuration with keys:
+            - stop_type: 'perc', 'abs', or 'variable'
+            - stop_value: float value for fixed stops
+            - stop_func: function for variable stops (if applicable)
+            - name: name of the stoploss configuration
+            - description: description of the stoploss configuration
     """
     try:
-        # Connect to database
-        db_path = Path('data/algos.db')
-        conn = sqlite3.connect(db_path)
+        conn = sqlite3.connect('data/algos.db')
         cursor = conn.cursor()
         
         # Get stoploss configuration
         cursor.execute("""
-            SELECT 
-                ms.id,
-                ms.type,
-                ms.delta_perc,
-                ms.delta_abs,
-                ms.variable_style_id,
-                msvs.name as style_name
-            FROM manager_stoploss ms
-            LEFT JOIN manager_stoploss_variable_styles msvs 
-                ON ms.variable_style_id = msvs.id
-            WHERE ms.id = ?
+            SELECT type, delta_abs, delta_perc, name, description
+            FROM manager_stoploss
+            WHERE id = ?
         """, (stoploss_id,))
         
         row = cursor.fetchone()
@@ -48,106 +40,62 @@ def get_stoploss_config(stoploss_id: int) -> Optional[Dict]:
             logger.error(f"No stoploss configuration found for ID {stoploss_id}")
             return None
             
-        stoploss_id, stop_type, delta_perc, delta_abs, variable_style_id, style_name = row
+        stop_type, delta_abs, delta_perc, name, description = row
         
-        # Format basic config
-        config = {
-            'id': stoploss_id,
-            'type': stop_type,
-            'delta_perc': delta_perc,
-            'delta_abs': delta_abs
-        }
-        
-        # If it's a variable style stoploss, get the price ranges
-        if variable_style_id:
-            cursor.execute("""
-                SELECT 
-                    min_price,
-                    max_price,
-                    delta_perc,
-                    delta_abs
-                FROM manager_stoploss_price_ranges
-                WHERE style_id = ?
-                ORDER BY min_price
-            """, (variable_style_id,))
-            
-            price_ranges = []
-            for range_row in cursor.fetchall():
-                min_price, max_price, range_delta_perc, range_delta_abs = range_row
-                price_ranges.append({
-                    'min_price': min_price,
-                    'max_price': max_price,
-                    'delta_perc': range_delta_perc,
-                    'delta_abs': range_delta_abs
-                })
-            
-            config['variable_style'] = {
-                'name': style_name,
-                'price_ranges': price_ranges
+        # Convert database type to internal type
+        if stop_type == 'fix_abs':
+            return {
+                'stop_type': 'abs',
+                'stop_value': delta_abs,
+                'name': name,
+                'description': description
             }
-        
-        # Convert to VectorBT format
-        vectorbt_config = format_for_vectorbt(config)
-        
-        return vectorbt_config
-        
+        elif stop_type == 'fix_perc':
+            return {
+                'stop_type': 'perc',
+                'stop_value': delta_perc / 100.0,  # Convert percentage to decimal
+                'name': name,
+                'description': description
+            }
+        elif stop_type == 'variable':
+            # For variable stoploss, we need to get the ranges
+            cursor.execute("""
+                SELECT price_min, price_max, stop_perc
+                FROM manager_stoploss_ranges
+                WHERE stoploss_id = ?
+                ORDER BY price_min
+            """, (stoploss_id,))
+            
+            ranges = cursor.fetchall()
+            if not ranges:
+                logger.error(f"No ranges found for variable stoploss ID {stoploss_id}")
+                return None
+                
+            # Create a function that returns the appropriate stop percentage based on price
+            def get_stop_perc(price):
+                for price_min, price_max, stop_perc in ranges:
+                    if (price_min is None or price >= price_min) and (price_max is None or price < price_max):
+                        return stop_perc / 100.0  # Convert percentage to decimal
+                return ranges[-1][2] / 100.0  # Use last range's percentage as default
+            
+            return {
+                'stop_type': 'custom',
+                'stop_func': get_stop_perc,
+                'name': name,
+                'description': description
+            }
+            
     except sqlite3.Error as e:
-        logger.error(f"Database error: {e}")
-        raise
-        
+        logger.error(f"Database error: {str(e)}")
+        return None
     finally:
-        if 'conn' in locals():
-            conn.close()
-
-def format_for_vectorbt(config: Dict) -> Dict:
-    """
-    Format the stoploss configuration for VectorBT usage.
-    
-    Args:
-        config: Raw stoploss configuration from database
+        conn.close()
         
-    Returns:
-        Dictionary formatted for VectorBT
-    """
-    stop_type = config['type']
-    
-    if stop_type == 'fix_perc':
-        return {
-            'stop_type': 'perc',
-            'stop_value': config['delta_perc'] / 100  # Convert percentage to decimal
-        }
-    elif stop_type == 'fix_abs':
-        return {
-            'stop_type': 'abs',
-            'stop_value': config['delta_abs']
-        }
-    elif stop_type == 'variable':
-        # For variable stoploss, we'll need to implement a custom stoploss function
-        # that uses the price ranges
-        price_ranges = config['variable_style']['price_ranges']
-        
-        def get_stop_value(price):
-            for range_config in price_ranges:
-                if range_config['min_price'] <= price <= range_config['max_price']:
-                    if range_config['delta_perc'] is not None:
-                        return range_config['delta_perc'] / 100
-                    return range_config['delta_abs']
-            # Default to the first range if price is below min
-            if price < price_ranges[0]['min_price']:
-                return price_ranges[0]['delta_perc'] / 100 if price_ranges[0]['delta_perc'] is not None else price_ranges[0]['delta_abs']
-            # Default to the last range if price is above max
-            return price_ranges[-1]['delta_perc'] / 100 if price_ranges[-1]['delta_perc'] is not None else price_ranges[-1]['delta_abs']
-        
-        return {
-            'stop_type': 'custom',
-            'stop_func': get_stop_value
-        }
-    else:
-        raise ValueError(f"Unsupported stop type: {stop_type}")
+    return None
 
 if __name__ == "__main__":
     # Example usage with stoploss_config_id = 3
     config = get_stoploss_config(3)
     if config:
         logger.info("Retrieved stoploss configuration:")
-        logger.info(json.dumps(config, indent=2, default=str))  # default=str to handle custom functions 
+        logger.info(config) 
