@@ -6,14 +6,16 @@ on:
       - 'backtests/longs_backtest.py'
       - 'backtests/shorts_backtest.py'
       - 'backtests/helpers/tests.py'
-      - 'requirements.txt'
+      - 'Dockerfile'
+      - 'docker-compose.yml'
       - 'data/algos.db'
   pull_request:
     paths:
       - 'backtests/longs_backtest.py'
       - 'backtests/shorts_backtest.py'
       - 'backtests/helpers/tests.py'
-      - 'requirements.txt'
+      - 'Dockerfile'
+      - 'docker-compose.yml'
       - 'data/algos.db'
 
 jobs:
@@ -23,32 +25,13 @@ jobs:
     steps:
     - uses: actions/checkout@v2
 
-    - name: Set up Python
-      uses: actions/setup-python@v2
-      with:
-        python-version: '3.10'
-
-    - name: Install dependencies
+    - name: Build and run tests in Docker
       run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-
-    - name: Set up database
-      run: |
-        mkdir -p data
-        sqlite3 data/algos.db < data/init_db.sql
-
-    - name: Run tests for longs backtest
-      run: |
-        python backtests/helpers/tests.py backtests/longs_backtest.py
-      continue-on-error: true
-
-    - name: Run tests for shorts backtest
-      run: |
-        python backtests/helpers/tests.py backtests/shorts_backtest.py
-      continue-on-error: true
+        docker-compose build
+        docker-compose run --rm test
 
     - name: Check test results
+      if: always()
       run: |
         if [ ${{ job.status }} == 'failure' ]; then
           echo "Tests failed!"
