@@ -17,8 +17,6 @@ logger = logging.getLogger(__name__)
 
 # Strategy configuration
 SYMBOL = 'QQQ'
-STRATEGY_ID = 1
-PORTFOLIO_ID = 1
 STOPLOSS_CONFIG_ID = 3
 RISK_CONFIG_ID = 1
 
@@ -29,13 +27,11 @@ def create_backtest_run():
     
     cursor.execute("""
         INSERT INTO backtest_runs (
-            portfolio_id,
             execution_date,
             stoploss_config_id,
             risk_config_id
-        ) VALUES (?, ?, ?, ?)
+        ) VALUES (?, ?, ?)
     """, (
-        PORTFOLIO_ID,
         datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         STOPLOSS_CONFIG_ID,
         RISK_CONFIG_ID
@@ -75,8 +71,8 @@ def load_data_from_db(symbol):
     conn.close()
     return df
 
-def log_trades(trades_df, run_id, pf, trades_records, symbol, strategy_id, stop_config, risk_config):
-    """Log trades to algo_trades table."""
+def log_trades(trades_df, run_id, pf, trades_records, symbol, stop_config, risk_config):
+    """Log trades to trades table."""
     conn = sqlite3.connect('data/algos.db')
     cursor = conn.cursor()
     
@@ -97,9 +93,8 @@ def log_trades(trades_df, run_id, pf, trades_records, symbol, strategy_id, stop_
         duration = (pd.to_datetime(exit_timestamp) - pd.to_datetime(entry_timestamp)).total_seconds() / 3600
         
         cursor.execute("""
-            INSERT INTO algo_trades (
+            INSERT INTO trades (
                 run_id,
-                strategy_id,
                 symbol,
                 entry_timestamp,
                 exit_timestamp,
@@ -115,10 +110,9 @@ def log_trades(trades_df, run_id, pf, trades_records, symbol, strategy_id, stop_
                 trade_duration,
                 capital_required,
                 direction
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             run_id,
-            strategy_id,
             symbol,
             entry_timestamp,
             exit_timestamp,
@@ -402,7 +396,7 @@ def run_tightness_strategy():
     
     # Log trades to database
     logger.info("Logging trades to database...")
-    log_trades(valid_trades, run_id, pf, trades, SYMBOL, STRATEGY_ID, stop_config, risk_config)
+    log_trades(valid_trades, run_id, pf, trades, SYMBOL, stop_config, risk_config)
     logger.info("Trades logged successfully")
 
 if __name__ == "__main__":
