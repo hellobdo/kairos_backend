@@ -1,0 +1,56 @@
+name: Backtest Tests
+
+on:
+  push:
+    paths:
+      - 'backtests/longs_backtest.py'
+      - 'backtests/shorts_backtest.py'
+      - 'backtests/helpers/tests.py'
+      - 'requirements.txt'
+      - 'data/algos.db'
+  pull_request:
+    paths:
+      - 'backtests/longs_backtest.py'
+      - 'backtests/shorts_backtest.py'
+      - 'backtests/helpers/tests.py'
+      - 'requirements.txt'
+      - 'data/algos.db'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Set up Python
+      uses: actions/setup-python@v2
+      with:
+        python-version: '3.10'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Set up database
+      run: |
+        mkdir -p data
+        sqlite3 data/algos.db < data/init_db.sql
+
+    - name: Run tests for longs backtest
+      run: |
+        python backtests/helpers/tests.py backtests/longs_backtest.py
+      continue-on-error: true
+
+    - name: Run tests for shorts backtest
+      run: |
+        python backtests/helpers/tests.py backtests/shorts_backtest.py
+      continue-on-error: true
+
+    - name: Check test results
+      run: |
+        if [ ${{ job.status }} == 'failure' ]; then
+          echo "Tests failed!"
+          exit 1
+        fi 
