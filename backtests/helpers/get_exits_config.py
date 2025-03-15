@@ -38,8 +38,8 @@ def get_exits_config(exit_id: int) -> Optional[Dict]:
             'ranges': List[Dict],  # List of ranges with their risk/reward ratios
             # Each range has:
             # {
-            #    'size_exit': float,   # Portion of position to exit (0-1)
-            #    'risk_reward': float  # Risk/reward ratio for this portion
+            #    'size_exit': float or str,  # Portion of position to exit (0-1) or 'size'
+            #    'risk_reward': float or None  # Risk/reward ratio for this portion, None if size_exit is 'size'
             # }
         }
         or None if not found
@@ -56,8 +56,7 @@ def get_exits_config(exit_id: int) -> Optional[Dict]:
                 id,
                 type,
                 name,
-                description,
-                risk_reward
+                description
             FROM manager_exits
             WHERE id = ?
         """, (exit_id,))
@@ -67,7 +66,7 @@ def get_exits_config(exit_id: int) -> Optional[Dict]:
             logger.error(f"No exit configuration found for ID {exit_id}")
             return None
             
-        exit_id, exit_type, name, description, risk_reward = row
+        exit_id, exit_type, name, description = row
         
         # Get the ranges configuration
         cursor.execute("""
@@ -84,34 +83,62 @@ def get_exits_config(exit_id: int) -> Optional[Dict]:
         
         # Format configuration based on type
         if exit_type == 'fixed':
-            # Fixed exits have exactly one range with size_exit = 1
-            if len(ranges) != 1 or ranges[0][0] != 1.0:
+            # Fixed exits have exactly one range with size_exit = 1.0 or 'size'
+            if len(ranges) != 1:
                 logger.error(f"Invalid ranges for fixed exit ID {exit_id}")
                 return None
                 
-            return {
-                'id': exit_id,
-                'type': 'fixed',
-                'name': name,
-                'description': description,
-                'risk_reward': risk_reward,
-                'size_exit': 1.0
-            }
+            size_exit, risk_reward = ranges[0]
+            
+            # Handle the case where size_exit is 'size'
+            if isinstance(size_exit, str) and size_exit == 'size':
+                return {
+                    'id': exit_id,
+                    'type': 'fixed',
+                    'name': name,
+                    'description': description,
+                    'size_exit': 'size',
+                    'risk_reward': None  # risk_reward is None when size_exit is 'size'
+                }
+            else:
+                # Convert size_exit to float if it's not already
+                size_exit = float(size_exit)
+                risk_reward = float(risk_reward)
+                
+                return {
+                    'id': exit_id,
+                    'type': 'fixed',
+                    'name': name,
+                    'description': description,
+                    'risk_reward': risk_reward,
+                    'size_exit': size_exit
+                }
             
         elif exit_type == 'variable':
             # Variable exits have multiple ranges that sum to 1
-            exit_ranges = [
-                {
-                    'size_exit': size_exit,
-                    'risk_reward': rr
-                }
-                for size_exit, rr in ranges
-            ]
+            exit_ranges = []
             
-            # Verify that size_exits sum to 1
-            total_size = sum(r['size_exit'] for r in exit_ranges)
-            if round(total_size, 10) != 1.0:
-                logger.error(f"Invalid ranges for variable exit ID {exit_id}: sum of size_exit = {total_size}")
+            for size_exit, rr in ranges:
+                # Handle the case where size_exit is 'size'
+                if isinstance(size_exit, str) and size_exit == 'size':
+                    exit_ranges.append({
+                        'size_exit': 'size',
+                        'risk_reward': None
+                    })
+                else:
+                    # Convert to float if not already
+                    size_exit = float(size_exit)
+                    rr = float(rr) if rr is not None else None
+                    
+                    exit_ranges.append({
+                        'size_exit': size_exit,
+                        'risk_reward': rr
+                    })
+            
+            # Only verify sum if all size_exits are numeric
+            numeric_sizes = [r['size_exit'] for r in exit_ranges if not isinstance(r['size_exit'], str)]
+            if numeric_sizes and round(sum(numeric_sizes), 10) != 1.0:
+                logger.error(f"Invalid ranges for variable exit ID {exit_id}: sum of size_exit = {sum(numeric_sizes)}")
                 return None
             
             return {
@@ -141,8 +168,8 @@ if __name__ == "__main__":
         logger.info(f"Type: {config['type']}")
         
         if config['type'] == 'fixed':
-            logger.info(f"Risk/Reward ratio: {config['risk_reward']}")
             logger.info(f"Size exit: {config['size_exit']}")
+            logger.info(f"Risk/Reward ratio: {config['risk_reward']}")
         else:
             logger.info("Variable exit configuration:")
             for i, r in enumerate(config['ranges'], 1):

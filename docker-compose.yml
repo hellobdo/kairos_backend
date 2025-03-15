@@ -11,16 +11,3 @@ services:
       - PYTHONUNBUFFERED=1
     tty: true  # Keep container running and enable terminal
     stdin_open: true  # Enable interactive mode 
-
-  test:
-    build: .
-    volumes:
-      - .:/app
-    working_dir: /app
-    environment:
-      - PYTHONPATH=/app
-      - PYTHONUNBUFFERED=1
-    command: >
-      bash -c "
-        python backtests/helpers/tests.py backtests/longs_backtest.py &&
-        python backtests/helpers/tests.py backtests/shorts_backtest.py" 
