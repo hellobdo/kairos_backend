@@ -1,0 +1,19 @@
+{
+    "database": {
+        "path": "data/algos.db"
+    },
+    "backtest": {
+        "symbol": "QQQ",
+        "entry_config_id": 1,
+        "stoploss_config_id": 3,
+        "risk_config_id": 1,
+        "exit_config_id": 1,
+        "swing_config_id": 1,
+        "exits_swings_config_id": null,
+        "init_cash": 10000,
+        "date_range": {
+            "start": "2023-01-01",
+            "end": "2023-05-15"
+        }
+    }
+} 

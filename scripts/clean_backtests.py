@@ -10,7 +10,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 def clean_table(conn, table_name):
-    """Clean a table by deleting all records."""
+    """Clean a table by deleting all records and resetting autoincrement IDs."""
     cursor = conn.cursor()
     
     # Get current count
@@ -22,15 +22,20 @@ def clean_table(conn, table_name):
     logger.info(f"Deleting all records from {table_name}...")
     cursor.execute(f"DELETE FROM {table_name}")
     
+    # Reset autoincrement counter for the primary key
+    logger.info(f"Resetting autoincrement ID for {table_name}...")
+    cursor.execute(f"DELETE FROM sqlite_sequence WHERE name='{table_name}'")
+    
     # Get new count
     cursor.execute(f"SELECT COUNT(*) FROM {table_name}")
     final_count = cursor.fetchone()[0]
     
     logger.info(f"Successfully deleted {initial_count - final_count} records from {table_name}")
     logger.info(f"Records remaining in {table_name}: {final_count}")
+    logger.info(f"Autoincrement ID reset for {table_name}")
 
 def clean_tables():
-    """Clean the algo_trades and backtest_runs tables by deleting all records."""
+    """Clean the trades and backtest_runs tables by deleting all records and resetting autoincrement IDs."""
     try:
         # Get the path to the database relative to the workspace root
         db_path = Path('data/algos.db')
@@ -40,7 +45,7 @@ def clean_tables():
         conn = sqlite3.connect(db_path)
         
         # Clean tables
-        tables_to_clean = ['algo_trades', 'backtest_runs']
+        tables_to_clean = ['trades', 'backtest_runs']
         for table in tables_to_clean:
             clean_table(conn, table)
         
