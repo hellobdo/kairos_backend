@@ -7,6 +7,7 @@ import numpy as np
 import math
 from helpers.get_stoploss_config import get_stoploss_config
 from helpers.get_risk_config import get_risk_config
+from helpers.get_exits_config import get_exits_config
 
 # Configure logging
 logging.basicConfig(
@@ -19,6 +20,7 @@ logger = logging.getLogger(__name__)
 SYMBOL = 'QQQ'
 STOPLOSS_CONFIG_ID = 3
 RISK_CONFIG_ID = 1
+EXIT_CONFIG_ID = 1  # Add exit config ID
 
 def create_backtest_run():
     """Create a new backtest run record and return its ID."""
@@ -180,10 +182,7 @@ def run_backtest(df, entries, exits, stop_config, risk_config):
         # For a long position:
         # risk_amount = position_size * (entry_price - stop_price)
         # therefore: position_size = risk_amount / (entry_price - stop_price)
-        position_size = risk_amount / abs(price - stop_price)
-        
-        # Round to nearest integer (for test consistency)
-        position_size = round(position_size)  # Use round to match test expectations
+        position_size = round(risk_amount / abs(price - stop_price))
         
         # Removed special case handling - all trades are now treated equally
         
@@ -259,6 +258,16 @@ def run_tightness_strategy():
     if not risk_config:
         logger.error("Failed to get risk configuration")
         return
+
+    logger.info(f"Getting exit configuration for ID {EXIT_CONFIG_ID}...")
+    exit_config = get_exits_config(EXIT_CONFIG_ID)
+    if not exit_config:
+        logger.error("Failed to get exit configuration")
+        return
+        
+    if exit_config['type'] != 'fixed':
+        logger.error("Currently only supporting fixed exits")
+        return
     
     # Create backtest run record
     logger.info("Creating backtest run record...")
@@ -269,23 +278,69 @@ def run_tightness_strategy():
     logger.info("Loading historical data from database...")
     df = load_data_from_db(SYMBOL)
     
-    # Create entry/exit signals
+    # Create entry signals
     is_regular_session = (df['market_session'] == 'regular')
     is_ultra_tight = (df['tightness'] == 'Ultra Tight')
     
     # Long signals - enter when ultra tight during regular session
     entries = is_ultra_tight & is_regular_session
-    exits = ~is_ultra_tight & is_regular_session  # Exit when not ultra tight
+    
+    # Initialize exits Series
+    exits = pd.Series(False, index=df.index)
+    
+    # For each entry signal, calculate the stop price and track returns
+    entry_indices = df.index[entries]
+    for entry_idx in entry_indices:
+        entry_price = df.loc[entry_idx, 'close']
+        
+        # Calculate stop price based on config
+        if stop_config['stop_type'] == 'perc':
+            stop_price = entry_price * (1 - stop_config['stop_value'])
+        elif stop_config['stop_type'] == 'abs':
+            stop_price = entry_price - stop_config['stop_value']
+        else:  # custom function
+            stop_value = stop_config['stop_func'](entry_price)
+            stop_price = entry_price * (1 - stop_value)
+        
+        # Calculate risk (entry to stop)
+        risk = entry_price - stop_price
+        
+        # Look at future prices until either target is hit or stop is hit
+        future_prices = df.loc[entry_idx:, 'close']
+        for current_idx, current_price in future_prices.items():
+            # Skip entry point
+            if current_idx == entry_idx:
+                continue
+                
+            # Calculate reward (entry to current)
+            reward = current_price - entry_price
+            
+            # Calculate current R:R
+            current_rr = reward / risk if risk != 0 else 0
+            
+            # Check if target R:R is hit
+            if current_rr >= exit_config['risk_reward']:
+                exits[current_idx] = True
+                break
+            
+            # Check if stop is hit
+            if current_price <= stop_price:
+                exits[current_idx] = True
+                break
+    
+    # Add regular session filter to exits
+    exits = exits & is_regular_session
     
     print("\nSignal Generation:")
     print(f"Regular session periods: {is_regular_session.sum()}")
     print(f"Ultra tight periods: {is_ultra_tight.sum()}")
-    print(f"NOT ultra tight periods: {(~is_ultra_tight).sum()}")
+    print(f"Exit signals (R:R >= {exit_config['risk_reward']}): {exits.sum()}")
     
     # Add detailed signal analysis
     print("\nDetailed Signal Analysis:")
     print(f"  Total entry signals: {entries.sum()}")
     print(f"  Total exit signals: {exits.sum()}")
+    print(f"  Exit configuration: {exit_config['name']} (R:R = {exit_config['risk_reward']})")
     
     # Sample of signal dates
     print("\nSignal Dates Sample:")
@@ -393,6 +448,8 @@ def run_tightness_strategy():
     print(f"Total Return: {(pf.total_return() * 100):.2f}%")
     print(f"Total Trades: {len(valid_trades)}")
     print(f"Win Rate: {(pf.trades.win_rate() * 100):.2f}%")
+    print(f"Exit Type: {exit_config['type']}")
+    print(f"Exit Risk/Reward: {exit_config['risk_reward']}")
     
     # Log trades to database
     logger.info("Logging trades to database...")

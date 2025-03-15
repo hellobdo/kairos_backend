@@ -27,9 +27,5 @@ RUN pip install --no-cache-dir \
     isort>=5.12.0 \
     jupyter>=1.0.0
 
-# Set environment variables
-ENV PYTHONPATH=/app
-ENV PYTHONUNBUFFERED=1
-
 # Start a bash shell by default
 CMD ["/bin/bash"]
