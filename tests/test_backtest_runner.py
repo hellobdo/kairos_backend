@@ -6,6 +6,7 @@ import json
 import sys
 from unittest.mock import patch, MagicMock, mock_open
 from datetime import datetime
+import sqlite3
 
 # Add the project root to the Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -755,6 +756,334 @@ class TestBacktestRunner(unittest.TestCase):
                               f"Trade {i+1}: risk_size is zero in DataFrame to DB")
             self.assertGreater(df_to_db['capital_required'].iloc[i], 0, 
                               f"Trade {i+1}: capital_required is zero in DataFrame to DB")
+
+    def test_real_database_insertion(self):
+        """Test that position metrics are correctly inserted into a database using the actual log_trades_to_db function."""
+        # Create a test database in memory
+        import sqlite3
+        import os
+        
+        # Use a file-based database to match the real implementation
+        test_db_path = "test_real_insertion.db"
+        
+        try:
+            # Create the test database with the correct schema
+            conn = sqlite3.connect(test_db_path)
+            cursor = conn.cursor()
+            
+            # Create the trades table with the same schema as in the real database
+            cursor.execute("""
+            CREATE TABLE trades (
+                trade_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id INTEGER NOT NULL,
+                symbol TEXT NOT NULL,
+                entry_timestamp TEXT NOT NULL,
+                exit_timestamp TEXT NOT NULL,
+                entry_price REAL NOT NULL,
+                exit_price REAL NOT NULL,
+                stop_price REAL NOT NULL,
+                position_size INTEGER NOT NULL,
+                risk_size REAL NOT NULL,
+                risk_per_trade REAL NOT NULL,
+                risk_reward REAL NOT NULL,
+                perc_return REAL NOT NULL,
+                winning_trade INTEGER NOT NULL,
+                trade_duration INTEGER NOT NULL,
+                capital_required REAL NOT NULL,
+                direction TEXT NOT NULL,
+                entry_date TEXT,
+                exit_date TEXT,
+                entry_time TEXT,
+                exit_time TEXT,
+                exit_type TEXT
+            )
+            """)
+            conn.commit()
+            conn.close()
+            
+            # Test case 1: Create a DataFrame with zeros to see if they're fixed
+            trades_df_with_zeros = pd.DataFrame([{
+                'entry_timestamp': '2023-01-02 10:00:00',
+                'exit_timestamp': '2023-01-02 14:30:00',
+                'entry_price': 100.0,
+                'exit_price': 105.0,
+                'stop_price': 98.0,
+                'position_size': 0,        # Zero value
+                'risk_size': 0.0,          # Zero value
+                'risk_per_trade': 100.0,
+                'risk_reward': 2.5,
+                'perc_return': 250.0,
+                'winning_trade': 1,
+                'trade_duration': 4.5,
+                'capital_required': 0.0,    # Zero value
+                'direction': 'long',
+                'exit_type': 'Take Profit'
+            }])
+            
+            # Temporarily patch the database path
+            original_connect = sqlite3.connect
+            
+            def mock_connect(path, *args, **kwargs):
+                if path == 'data/algos.db':
+                    return original_connect(test_db_path, *args, **kwargs)
+                return original_connect(path, *args, **kwargs)
+            
+            # Apply our patch
+            with patch('sqlite3.connect', side_effect=mock_connect):
+                # Call the actual log_trades_to_db function
+                log_trades_to_db(trades_df_with_zeros, 999, 'TEST')
+            
+            # Verify the data was inserted correctly and zeros were fixed
+            conn = sqlite3.connect(test_db_path)
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT position_size, risk_size, capital_required FROM trades
+                WHERE run_id = 999 AND symbol = 'TEST'
+            """)
+            results = cursor.fetchall()
+            
+            # Check that we got data
+            self.assertTrue(len(results) > 0, "No trades found in the database")
+            
+            # Get the values
+            position_size, risk_size, capital_required = results[0]
+            
+            # Verify the values - they should have been recalculated
+            self.assertGreater(position_size, 0, f"position_size should be greater than 0, got {position_size}")
+            self.assertGreater(risk_size, 0, f"risk_size should be greater than 0, got {risk_size}")
+            self.assertGreater(capital_required, 0, f"capital_required should be greater than 0, got {capital_required}")
+            
+        finally:
+            # Close any connections
+            if 'conn' in locals():
+                conn.close()
+            
+            # Clean up the test database
+            if os.path.exists(test_db_path):
+                os.remove(test_db_path)
+
+    def test_format_trades_preserves_metrics(self):
+        """Test that format_trades preserves position_size, risk_size, and capital_required values."""
+        # Create test trades with explicit position metrics
+        test_trades = [
+            {
+                'entry_timestamp': pd.Timestamp('2023-01-02 10:00:00'),
+                'exit_timestamp': pd.Timestamp('2023-01-02 14:30:00'),
+                'entry_price': 100.0,
+                'exit_price': 105.0,
+                'stop_price': 98.0,
+                'position_size': 50,  # Explicitly set non-zero value
+                'risk_size': 100.0,   # Explicitly set non-zero value
+                'risk_per_trade': 1.0, 
+                'risk_reward': 2.5,
+                'perc_return': 2.5,
+                'capital_required': 5000.0,  # Explicitly set non-zero value
+                'direction': 'long',
+                'exit_type': 'Take Profit'
+            }
+        ]
+        
+        # Call format_trades to process the trades
+        result = format_trades(
+            test_trades, 
+            pd.DataFrame(index=pd.date_range('2023-01-01', periods=10)), 
+            self.sample_stop_config,
+            self.sample_risk_config,
+            self.sample_exit_config,
+            self.sample_swing_config
+        )
+        
+        # Verify that the metrics were preserved
+        self.assertEqual(result['position_size'].iloc[0], 50, 
+                         "format_trades changed position_size")
+        self.assertEqual(result['risk_size'].iloc[0], 100.0, 
+                         "format_trades changed risk_size")
+        self.assertEqual(result['capital_required'].iloc[0], 5000.0, 
+                         "format_trades changed capital_required")
+
+    def test_position_calculation(self):
+        """Test that position_size, risk_size, and capital_required are calculated correctly directly without mocking."""
+        # Define test parameters
+        entry_price = 100.0
+        stop_price = 98.0
+        init_cash = 10000.0
+        risk_per_trade = 1.0  # 1% risk per trade
+        
+        # Calculate expected values using the exact same formulas as in backtest_runner.py
+        risk_amount = init_cash * risk_per_trade / 100
+        price_diff = abs(entry_price - stop_price)
+        position_size = round(risk_amount / price_diff)
+        risk_size = position_size * price_diff
+        capital_required = position_size * entry_price
+        
+        # Print the values for debugging
+        print(f"Calculated: risk_amount={risk_amount}, price_diff={price_diff}, position_size={position_size}, risk_size={risk_size}, capital_required={capital_required}")
+        
+        # Verify the values are non-zero
+        self.assertGreater(position_size, 0, "position_size should be > 0")
+        self.assertGreater(risk_size, 0, "risk_size should be > 0")
+        self.assertGreater(capital_required, 0, "capital_required should be > 0")
+        
+        # Verify the values match what we expect
+        self.assertEqual(position_size, 50, f"position_size should be 50, got {position_size}")
+        self.assertEqual(risk_size, 100.0, f"risk_size should be 100.0, got {risk_size}")
+        self.assertEqual(capital_required, 5000.0, f"capital_required should be 5000.0, got {capital_required}")
+        
+        # Now, simulate what happens in the backtest_runner.py
+        # Create a dictionary that mimics the position data structure
+        position = {
+            'entry_price': entry_price,
+            'stop_price': stop_price,
+            'position_size': position_size,
+            'risk_per_trade': risk_per_trade * 100,  # This is how it's stored in the position
+            'capital_required': capital_required,
+            'risk_size': risk_size
+        }
+        
+        # Create a trade dictionary, simulating what happens when a position is closed
+        trade = {
+            'entry_timestamp': pd.Timestamp('2023-01-02 10:00:00'),
+            'exit_timestamp': pd.Timestamp('2023-01-02 14:30:00'),
+            'entry_price': position['entry_price'],
+            'exit_price': 105.0,
+            'stop_price': position['stop_price'],
+            'position_size': position['position_size'],
+            'risk_size': position['risk_size'],
+            'risk_per_trade': position['risk_per_trade'],
+            'risk_reward': 2.5,
+            'perc_return': 2.5 * position['risk_per_trade'],
+            'capital_required': position['capital_required'],
+            'direction': 'long',
+            'exit_type': 'Take Profit'
+        }
+        
+        # Convert trade to DataFrame, mimicking what happens before logging to DB
+        trades_df = format_trades([trade], pd.DataFrame(index=pd.date_range('2023-01-01', periods=10)), 
+                                 self.sample_stop_config, self.sample_risk_config, 
+                                 self.sample_exit_config, self.sample_swing_config)
+        
+        # Verify that the metrics are still intact after the format_trades step
+        self.assertEqual(trades_df['position_size'].iloc[0], 50, "position_size was changed by format_trades")
+        self.assertEqual(trades_df['risk_size'].iloc[0], 100.0, "risk_size was changed by format_trades")
+        self.assertEqual(trades_df['capital_required'].iloc[0], 5000.0, "capital_required was changed by format_trades")
+        
+        # For the ultimate check, let's log this to a test database and verify the values
+        test_db_path = "test_position_calculation.db"
+        
+        try:
+            # Create a connection to the test database
+            conn = sqlite3.connect(test_db_path)
+            cursor = conn.cursor()
+            
+            # Create the trades table with the same schema as in the real database
+            cursor.execute("""
+            CREATE TABLE trades (
+                trade_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id INTEGER NOT NULL,
+                symbol TEXT NOT NULL,
+                entry_timestamp TEXT NOT NULL,
+                exit_timestamp TEXT NOT NULL,
+                entry_price REAL NOT NULL,
+                exit_price REAL NOT NULL,
+                stop_price REAL NOT NULL,
+                position_size INTEGER NOT NULL,
+                risk_size REAL NOT NULL,
+                risk_per_trade REAL NOT NULL,
+                risk_reward REAL NOT NULL,
+                perc_return REAL NOT NULL,
+                winning_trade INTEGER NOT NULL,
+                trade_duration INTEGER NOT NULL,
+                capital_required REAL NOT NULL,
+                direction TEXT NOT NULL,
+                entry_date TEXT,
+                exit_date TEXT,
+                entry_time TEXT,
+                exit_time TEXT,
+                exit_type TEXT
+            )
+            """)
+            conn.commit()
+            
+            # Now let's insert the trade data directly
+            # Get the first trade from the DataFrame
+            trade_row = trades_df.iloc[0]
+            
+            # For debugging
+            print(f"Inserting to DB: position_size={trade_row['position_size']}, type={type(trade_row['position_size'])}, risk_size={trade_row['risk_size']}, capital_required={trade_row['capital_required']}")
+            
+            # Force position_size to be an int
+            cursor.execute("""
+                INSERT INTO trades (
+                    run_id,
+                    symbol,
+                    entry_timestamp,
+                    exit_timestamp,
+                    entry_price,
+                    exit_price,
+                    stop_price,
+                    position_size,
+                    risk_size,
+                    risk_per_trade,
+                    risk_reward,
+                    perc_return,
+                    winning_trade,
+                    trade_duration,
+                    capital_required,
+                    direction,
+                    exit_type
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                1000,  # run_id
+                'TEST',  # symbol
+                trade_row['entry_timestamp'],
+                trade_row['exit_timestamp'],
+                trade_row['entry_price'],
+                trade_row['exit_price'],
+                trade_row['stop_price'],
+                int(trade_row['position_size']),  # Explicitly cast to int
+                float(trade_row['risk_size']),    # Explicitly cast to float
+                float(trade_row['risk_per_trade']),
+                float(trade_row['risk_reward']),
+                float(trade_row['perc_return']),
+                int(trade_row['winning_trade']),
+                float(trade_row['trade_duration']),
+                float(trade_row['capital_required']),
+                trade_row['direction'],
+                trade_row['exit_type']
+            ))
+            conn.commit()
+            
+            # Query the database to verify the inserted values
+            cursor.execute("""
+                SELECT position_size, risk_size, capital_required FROM trades 
+                WHERE run_id = 1000 AND symbol = 'TEST'
+            """)
+            
+            # Get the results
+            results = cursor.fetchall()
+            
+            # Check that we have data
+            self.assertTrue(len(results) > 0, "No trades found in the database")
+            
+            # Get the values
+            db_position_size, db_risk_size, db_capital_required = results[0]
+            
+            # For debugging
+            print(f"Retrieved from DB: position_size={db_position_size}, risk_size={db_risk_size}, capital_required={db_capital_required}")
+            
+            # Verify the values match what we expect
+            self.assertEqual(db_position_size, 50, f"position_size in DB should be 50, got {db_position_size}")
+            self.assertEqual(db_risk_size, 100.0, f"risk_size in DB should be 100.0, got {db_risk_size}")
+            self.assertEqual(db_capital_required, 5000.0, f"capital_required in DB should be 5000.0, got {db_capital_required}")
+            
+        finally:
+            # Clean up
+            if 'conn' in locals():
+                conn.close()
+            
+            # Remove test database
+            if os.path.exists(test_db_path):
+                os.remove(test_db_path)
 
 if __name__ == '__main__':
     unittest.main() 

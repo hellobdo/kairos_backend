@@ -39,7 +39,7 @@ def load_backtest_config(config_file):
         
     Returns:
         tuple: (symbol, entry_config_id, stoploss_config_id, risk_config_id, exit_config_id, 
-                swing_config_id, exits_swings_config_id, date_range, backtest_config) or None if loading fails
+                swing_config_id, exits_swings_config_id, date_range, init_cash) or None if loading fails
     """
     # Load raw configuration
     config = load_config(config_file)
@@ -56,11 +56,12 @@ def load_backtest_config(config_file):
     swing_config_id = bc['swing_config_id']
     exits_swings_config_id = bc.get('exits_swings_config_id')
     date_range = bc.get('date_range')
+    init_cash = bc.get('init_cash', 10000)  # Default to 10000 if not specified
     
     logger.info(f"Parsed backtest configuration for symbol: {symbol}")
     
     return (symbol, entry_config_id, stoploss_config_id, risk_config_id, 
-            exit_config_id, swing_config_id, exits_swings_config_id, date_range, bc)
+            exit_config_id, swing_config_id, exits_swings_config_id, date_range, init_cash)
 
 def generate_entry_signals(df: pd.DataFrame, entry_config: Dict[str, Any]) -> Tuple[pd.Series, str]:
     """

@@ -35,17 +35,12 @@ def calculate_risk_reward(entry_price, exit_price, stop_price, is_long):
         # For shorts: (entry_price - exit_price) / (stop_price - entry_price)
         return (entry_price - exit_price) / (stop_price - entry_price)
 
-def format_trades(trade_list, df, stop_config, risk_config, exit_config, swing_config):
+def format_trades(trade_list):
     """
     Format trades into a structured DataFrame for logging.
     
     Args:
         trade_list (list): List of trade dictionaries
-        df (pd.DataFrame): Price data
-        stop_config (dict): Stop loss configuration
-        risk_config (dict): Risk configuration
-        exit_config (dict): Exit configuration
-        swing_config (dict): Swing configuration
         
     Returns:
         pd.DataFrame: Formatted trade data
@@ -90,6 +85,30 @@ def log_trades_to_db(trades_df, run_id, symbol):
         logger.warning("No trades to log to database")
         return
     
+    # Ensure position metrics are set
+    for col in ['position_size', 'risk_size', 'capital_required']:
+        if trades_df[col].isna().any() or (trades_df[col] == 0).any():
+            logger.warning(f"Found missing or zero values in {col}, recalculating from existing data")
+            
+            # Recalculate from existing data
+            if col == 'position_size' and (trades_df['position_size'] == 0).any():
+                # Calculate position size based on risk_size and price diff where missing
+                price_diff = abs(trades_df['entry_price'] - trades_df['stop_price'])
+                mask = (trades_df['position_size'] == 0) | trades_df['position_size'].isna()
+                trades_df.loc[mask, 'position_size'] = (trades_df.loc[mask, 'risk_size'] / price_diff).round().astype(int)
+                trades_df.loc[trades_df['position_size'] == 0, 'position_size'] = 1  # Ensure at least 1
+                
+            if col == 'risk_size' and (trades_df['risk_size'] == 0).any():
+                # Calculate risk_size based on position_size and price diff where missing
+                price_diff = abs(trades_df['entry_price'] - trades_df['stop_price'])
+                mask = (trades_df['risk_size'] == 0) | trades_df['risk_size'].isna()
+                trades_df.loc[mask, 'risk_size'] = trades_df.loc[mask, 'position_size'] * price_diff
+                
+            if col == 'capital_required' and (trades_df['capital_required'] == 0).any():
+                # Calculate capital_required based on position_size and entry_price where missing
+                mask = (trades_df['capital_required'] == 0) | trades_df['capital_required'].isna()
+                trades_df.loc[mask, 'capital_required'] = trades_df.loc[mask, 'position_size'] * trades_df.loc[mask, 'entry_price']
+    
     try:
         conn = sqlite3.connect('data/algos.db')
         cursor = conn.cursor()
@@ -128,17 +147,17 @@ def log_trades_to_db(trades_df, run_id, symbol):
                 symbol,
                 trade['entry_timestamp'],
                 trade['exit_timestamp'],
-                trade['entry_price'],
-                trade['exit_price'],
-                trade['stop_price'],
-                trade['position_size'],
-                trade['risk_size'],
-                trade['risk_per_trade'],
-                trade['risk_reward'],
-                trade['perc_return'],
-                trade['winning_trade'],
-                trade['trade_duration'],
-                trade['capital_required'],
+                float(trade['entry_price']),
+                float(trade['exit_price']),
+                float(trade['stop_price']),
+                int(trade['position_size']),  # Explicitly cast to int to avoid numpy.int64 issues
+                float(trade['risk_size']),    # Explicitly cast to float
+                float(trade['risk_per_trade']),
+                float(trade['risk_reward']),
+                float(trade['perc_return']),
+                int(trade['winning_trade']),
+                float(trade['trade_duration']),
+                float(trade['capital_required']),
                 trade['direction'],
                 trade['exit_type']
             ))
@@ -159,7 +178,7 @@ def run_backtest(config_file):
         
         # Extract parameters from the configuration tuple
         symbol, entry_config_id, stoploss_config_id, risk_config_id, exit_config_id, \
-        swing_config_id, exits_swings_config_id, date_range, bc = config_params
+        swing_config_id, exits_swings_config_id, date_range, init_cash = config_params
         
         # Set up the backtest - this gets all configs from DB
         data = setup_backtest(
@@ -173,7 +192,6 @@ def run_backtest(config_file):
             return False
         
         # Initialize basic parameters
-        init_cash = bc.get('init_cash', 10000)  # Get from config or use default
         df = data['df']
         entries = data['entries']
         direction = data['direction']  # Get trade direction
@@ -215,29 +233,6 @@ def run_backtest(config_file):
                 else:
                     stop_prices[idx] = price * (1 + stop_value)
         
-        # Log entry points and their stop prices
-        entry_points = []
-        for i, entry in enumerate(entries):
-            if not entry:
-                continue
-            
-            idx = entries.index[i]
-            price = df.loc[idx, 'close']
-            stop = stop_prices[idx]
-            risk_pct = abs((price - stop) / price) * 100
-            entry_points.append({
-                'timestamp': idx,
-                'price': price,
-                'stop': stop,
-                'risk_pct': risk_pct
-            })
-        
-        logger.info(f"Found {len(entry_points)} entry points with stops:")
-        for i, ep in enumerate(entry_points[:5]):  # Log first 5 entries
-            logger.info(f"Entry {i+1}: price=${ep['price']:.2f}, stop=${ep['stop']:.2f}, risk={ep['risk_pct']:.2f}%")
-        if len(entry_points) > 5:
-            logger.info(f"... and {len(entry_points) - 5} more entries")
-        
         # Get target risk/reward
         target_rr = exit_config.get('risk_reward', 2.0) if exit_config and exit_config['type'] == 'fixed' else 2.0
         logger.info(f"Using target risk/reward ratio of {target_rr}")
@@ -248,11 +243,9 @@ def run_backtest(config_file):
         
         # Find last candle of each day for EOD exits
         if 'market_session' in df.columns:
-            # Convert index to pandas Series first and extract date properly
             dates = pd.Series(df.index).dt.date
             last_candles = df[df['market_session'] == 'regular'].groupby(dates).apply(lambda x: x.index[-1])
         else:
-            # Convert index to pandas Series first and extract date properly
             dates = pd.Series(df.index).dt.date
             last_candles = df.groupby(dates).apply(lambda x: x.index[-1])
         
@@ -272,14 +265,17 @@ def run_backtest(config_file):
                         logger.warning(f"Invalid stop price {stop_price} at {current_idx}, skipping entry")
                         continue
                         
-                    # Calculate risk amount
-                    risk_amount = init_cash * risk_config['risk_per_trade'] / 100
-
+                    # Calculate risk amount (risk_per_trade is already in decimal form)
+                    risk_amount = init_cash * risk_config['risk_per_trade']
+                    
                     # Calculate price difference for position sizing
                     price_diff = abs(entry_price - stop_price)
-
-                    # Calculate position size
-                    position_size = round(risk_amount / price_diff)
+                    
+                    # Calculate position size - ensure we're risking the correct amount
+                    position_size = round(risk_amount / price_diff)  # Ensure at least 1 share
+                    
+                    # Recalculate risk_size based on actual position size
+                    risk_size = position_size * price_diff
                     
                     # Calculate take profit price
                     if is_long:
@@ -297,11 +293,12 @@ def run_backtest(config_file):
                         'take_profit_price': take_profit_price,
                         'position_size': position_size,
                         'direction': direction,
-                        'risk_per_trade': risk_config['risk_per_trade'] * 100,
+                        'risk_per_trade': risk_config['risk_per_trade'] * 100,  # Store as decimal
                         'capital_required': position_size * entry_price,
-                        'risk_size': position_size * abs(entry_price - stop_price)
+                        'risk_size': risk_size
                     }
                     
+                    logger.info(f"DEBUG POSITION DATA: {active_positions[current_idx]}")
                     logger.info(f"Entry at {current_idx}: ${entry_price:.2f}, stop=${stop_price:.2f}, "
                                 f"TP=${take_profit_price:.2f}, size={position_size}")
                 else:
@@ -438,7 +435,7 @@ def run_backtest(config_file):
                 trade['exit_timestamp'] = pd.to_datetime(trade['exit_timestamp'])
         
         # Format trades into a DataFrame
-        trades_df = format_trades(trades, df, stop_config, risk_config, exit_config, swing_config)
+        trades_df = format_trades(trades)
         
         # Log trades to database
         log_trades_to_db(trades_df, run_id, symbol)
