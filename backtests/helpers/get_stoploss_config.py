@@ -60,10 +60,10 @@ def get_stoploss_config(stoploss_id: int) -> dict:
         elif stop_type == 'variable':
             # For variable stoploss, we need to get the ranges
             cursor.execute("""
-                SELECT price_min, price_max, stop_perc
-                FROM manager_stoploss_ranges
-                WHERE stoploss_id = ?
-                ORDER BY price_min
+                SELECT min_price, max_price, delta_perc, delta_abs
+                FROM manager_stoploss_price_ranges
+                WHERE style_id = ?
+                ORDER BY min_price
             """, (stoploss_id,))
             
             ranges = cursor.fetchall()
@@ -73,10 +73,29 @@ def get_stoploss_config(stoploss_id: int) -> dict:
                 
             # Create a function that returns the appropriate stop percentage based on price
             def get_stop_perc(price):
-                for price_min, price_max, stop_perc in ranges:
-                    if (price_min is None or price >= price_min) and (price_max is None or price < price_max):
-                        return stop_perc / 100.0  # Convert percentage to decimal
-                return ranges[-1][2] / 100.0  # Use last range's percentage as default
+                for min_price, max_price, delta_perc, delta_abs in ranges:
+                    if (min_price is None or price >= min_price) and (max_price is None or price < max_price):
+                        # Use delta_perc if available, otherwise calculate from delta_abs
+                        if delta_perc is not None:
+                            return delta_perc / 100.0  # Convert percentage to decimal
+                        elif delta_abs is not None:
+                            # If we have an absolute delta, convert to percentage
+                            return delta_abs / price if price != 0 else 0.01
+                        else:
+                            # Neither available, use default
+                            return 0.01  # Default to 1%
+                
+                # Default to using the last range's values
+                last_range = ranges[-1]
+                last_delta_perc = last_range[2]  # delta_perc
+                last_delta_abs = last_range[3]  # delta_abs
+                
+                if last_delta_perc is not None:
+                    return last_delta_perc / 100.0
+                elif last_delta_abs is not None and price != 0:
+                    return last_delta_abs / price
+                else:
+                    return 0.01  # Default to 1%
             
             return {
                 'stop_type': 'custom',
