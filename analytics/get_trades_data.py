@@ -114,10 +114,14 @@ def calculate_metrics(group_by_run_id=True, db_path='data/algos.db', run_id=None
             'nr_of_trades': grouped.size(),
             'accuracy': grouped['winning_trade'].mean() if 'winning_trade' in trades_df.columns else None,
             'risk_per_trade': grouped['risk_per_trade'].mean() if 'risk_per_trade' in trades_df.columns else None,
-            'avg_win': grouped.apply(lambda x: x[x['winning_trade'] == 1]['risk_reward'].mean() 
-                                    if 'winning_trade' in x.columns and 'risk_reward' in x.columns else None),
-            'avg_loss': grouped.apply(lambda x: x[x['winning_trade'] == 0]['risk_reward'].mean() 
-                                     if 'winning_trade' in x.columns and 'risk_reward' in x.columns else None),
+            'avg_win': grouped[['winning_trade', 'risk_reward']].apply(
+                lambda x: x[x['winning_trade'] == 1]['risk_reward'].mean() 
+                if 'winning_trade' in x.columns and 'risk_reward' in x.columns else None
+            ) if all(col in trades_df.columns for col in ['winning_trade', 'risk_reward']) else None,
+            'avg_loss': grouped[['winning_trade', 'risk_reward']].apply(
+                lambda x: x[x['winning_trade'] == 0]['risk_reward'].mean() 
+                if 'winning_trade' in x.columns and 'risk_reward' in x.columns else None
+            ) if all(col in trades_df.columns for col in ['winning_trade', 'risk_reward']) else None,
             'avg_return': grouped['risk_reward'].mean() if 'risk_reward' in trades_df.columns else None,
             'total_return': grouped['perc_return'].sum() if 'perc_return' in trades_df.columns else None
         })
@@ -180,7 +184,10 @@ def generate_html_report(metrics_dict, output_file='analytics/reports/metrics_re
         for col in formatted_df.columns:
             if col in ['date', 'run_id', 'year_week', 'year_month', 'nr_of_trades']:
                 continue
-            if pd.api.types.is_numeric_dtype(formatted_df[col]):
+            if col == 'accuracy' and pd.api.types.is_numeric_dtype(formatted_df[col]):
+                # Format accuracy as percentage with 4 decimal places
+                formatted_df[col] = formatted_df[col].map(lambda x: f"{x*100:.4f}%" if pd.notnull(x) else "")
+            elif pd.api.types.is_numeric_dtype(formatted_df[col]):
                 formatted_df[col] = formatted_df[col].map(lambda x: f"{x:.2f}" if pd.notnull(x) else "")
         
         # Add section for this period
