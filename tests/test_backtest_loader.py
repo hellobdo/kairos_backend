@@ -313,5 +313,41 @@ class TestBacktestLoader(unittest.TestCase):
         mock_load_data.assert_called_once()
         self.assertEqual(mock_load_data.call_args[0][0], 'QQQ')
 
-if __name__ == '__main__':
-    unittest.main() 
+if __name__ == "__main__":
+    # Use a simpler approach - just run the tests and print results
+    print("Running tests for backtest loader functions...")
+    
+    # Suppress unittest output
+    result = unittest.TextTestRunner(verbosity=1).run(unittest.defaultTestLoader.loadTestsFromModule(sys.modules[__name__]))
+    
+    # Print custom summary with checkmarks
+    print("\n=== Test Results ===")
+    tests_run = result.testsRun
+    failures = len(result.failures)
+    errors = len(result.errors)
+    skipped = len(result.skipped) if hasattr(result, 'skipped') else 0
+    
+    print(f"Total tests: {tests_run}")
+    print(f"Passed: {tests_run - failures - errors - skipped} ✓")
+    
+    # Print failures and errors with X marks
+    if failures > 0:
+        print(f"Failed: {failures} ✗")
+        for i, failure in enumerate(result.failures, 1):
+            print(f"  ✗ {i}. {failure[0]}")
+    
+    if errors > 0:
+        print(f"Errors: {errors} ✗")
+        for i, error in enumerate(result.errors, 1):
+            print(f"  ✗ {i}. {error[0]}")
+            
+    if skipped > 0:
+        print(f"Skipped: {skipped} ⚠")
+        
+    # Indicate overall success/failure
+    if failures == 0 and errors == 0:
+        print("\n✓ All tests passed!")
+    else:
+        print("\n✗ Some tests failed.")
+        
+    sys.exit(not result.wasSuccessful()) 
