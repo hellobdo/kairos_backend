@@ -1,0 +1,53 @@
+name: Test Config Getters
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'backtests/helpers/get_*.py'
+      - 'tests/test_getters_config.py'
+      - 'data/algos.db'
+      - '.github/workflows/test-getters.yml'
+  pull_request:
+    branches: [main, master]
+    paths:
+      - 'backtests/helpers/get_*.py'
+      - 'tests/test_getters_config.py'
+      - 'data/algos.db'
+      - '.github/workflows/test-getters.yml'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        lfs: true  # Enable Git LFS to ensure algos.db is properly checked out
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        if [ -f requirements.txt ]; then
+          pip install -r requirements.txt
+        else
+          # Install minimal dependencies if requirements.txt is not available
+          pip install pandas numpy
+        fi
+        
+    - name: Verify database exists
+      run: |
+        if [ ! -f "data/algos.db" ]; then
+          echo "Error: algos.db database file not found in data directory"
+          exit 1
+        fi
+        echo "Database file found, proceeding with tests"
+        
+    - name: Run getter config tests
+      run: |
+        python tests/test_getters_config.py 

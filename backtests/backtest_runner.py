@@ -3,18 +3,38 @@ import logging
 import json
 import pandas as pd
 import numpy as np
-import vectorbt as vbt
 import sys
 import os
+from datetime import datetime
 
 # Add project root to sys.path to allow imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from backtests.backtest_loader import setup_backtest
-from backtests.helpers.trade_logger import log_trades, format_trades, print_performance_metrics
+from backtests.helpers.trade_logger import format_trades, log_trades_to_db, print_performance_metrics
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+def calculate_risk_reward(entry_price, exit_price, stop_price, is_long):
+    """
+    Calculate risk/reward ratio for a trade.
+    
+    Args:
+        entry_price (float): Entry price
+        exit_price (float): Exit price
+        stop_price (float): Stop price
+        is_long (bool): Whether this is a long trade
+        
+    Returns:
+        float: Risk/reward ratio
+    """
+    if is_long:
+        # For longs: (exit_price - entry_price) / (entry_price - stop_price)
+        return (exit_price - entry_price) / (entry_price - stop_price)
+    else:
+        # For shorts: (entry_price - exit_price) / (stop_price - entry_price)
+        return (entry_price - exit_price) / (stop_price - entry_price)
 
 def load_config(config_file):
     """Load configuration from a JSON file."""
@@ -27,8 +47,122 @@ def load_config(config_file):
         logger.error(f"Error loading configuration: {e}")
         return None
 
+def format_trades(trade_list, df, stop_config, risk_config, exit_config, swing_config):
+    """
+    Format trades into a structured DataFrame for logging.
+    
+    Args:
+        trade_list (list): List of trade dictionaries
+        df (pd.DataFrame): Price data
+        stop_config (dict): Stop loss configuration
+        risk_config (dict): Risk configuration
+        exit_config (dict): Exit configuration
+        swing_config (dict): Swing configuration
+        
+    Returns:
+        pd.DataFrame: Formatted trade data
+    """
+    if not trade_list:
+        return pd.DataFrame()
+    
+    # Initialize DataFrame from trades
+    trades_df = pd.DataFrame(trade_list)
+    
+    # Add additional calculations & formatting
+    trades_df['winning_trade'] = (trades_df['pnl'] > 0).astype(int)
+    trades_df['trade_duration'] = (trades_df['exit_timestamp'] - trades_df['entry_timestamp']).dt.total_seconds() / 3600
+    
+    # Ensure correct types
+    trades_df['entry_timestamp'] = trades_df['entry_timestamp'].dt.strftime('%Y-%m-%d %H:%M:%S')
+    trades_df['exit_timestamp'] = trades_df['exit_timestamp'].dt.strftime('%Y-%m-%d %H:%M:%S')
+    
+    # Log summary of trade classifications
+    logger.info(f"Classification Summary:")
+    exit_counts = trades_df['exit_type'].value_counts()
+    for exit_type, count in exit_counts.items():
+        rr_values = trades_df[trades_df['exit_type'] == exit_type]['risk_reward']
+        logger.info(f"  {exit_type}: {count} trades")
+        if len(rr_values) > 0:
+            logger.info(f"    Avg R:R: {rr_values.mean():.2f}, Min: {rr_values.min():.2f}, Max: {rr_values.max():.2f}")
+    
+    return trades_df
+
+def log_trades_to_db(trades_df, run_id, symbol):
+    """
+    Log trades to database.
+    
+    Args:
+        trades_df (pd.DataFrame): Formatted trade data
+        run_id (int): Backtest run ID
+        symbol (str): Trading symbol
+    """
+    import sqlite3
+    
+    if trades_df.empty:
+        logger.warning("No trades to log to database")
+        return
+    
+    try:
+        conn = sqlite3.connect('data/algos.db')
+        cursor = conn.cursor()
+        
+        # First check if any trades already exist for this run_id
+        cursor.execute("SELECT COUNT(*) FROM trades WHERE run_id = ?", (run_id,))
+        existing_count = cursor.fetchone()[0]
+        
+        if existing_count > 0:
+            logger.warning(f"Found {existing_count} existing trades for run_id {run_id}. Deleting before inserting new trades.")
+            cursor.execute("DELETE FROM trades WHERE run_id = ?", (run_id,))
+        
+        for _, trade in trades_df.iterrows():
+            cursor.execute("""
+                INSERT INTO trades (
+                    run_id,
+                    symbol,
+                    entry_timestamp,
+                    exit_timestamp,
+                    entry_price,
+                    exit_price,
+                    stop_price,
+                    position_size,
+                    risk_size,
+                    risk_per_trade,
+                    risk_reward,
+                    perc_return,
+                    winning_trade,
+                    trade_duration,
+                    capital_required,
+                    direction,
+                    exit_type
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                run_id,
+                symbol,
+                trade['entry_timestamp'],
+                trade['exit_timestamp'],
+                trade['entry_price'],
+                trade['exit_price'],
+                trade['stop_price'],
+                trade['position_size'],
+                trade['risk_size'],
+                trade['risk_per_trade'],
+                trade['risk_reward'],
+                trade['perc_return'],
+                trade['winning_trade'],
+                trade['trade_duration'],
+                trade['capital_required'],
+                trade['direction'],
+                trade['exit_type']
+            ))
+        
+        conn.commit()
+        conn.close()
+        logger.info(f"Successfully logged {len(trades_df)} trades to database for run_id {run_id}")
+    except Exception as e:
+        logger.error(f"Error logging trades to database: {e}")
+
 def run_backtest(config_file):
-    """Run a backtest using configurations from a file."""
+    """Run a backtest using configurations from a file without VectorBT."""
     try:
         # Load configuration
         config = load_config(config_file)
@@ -58,328 +192,266 @@ def run_backtest(config_file):
         exit_config = data['exit_config']
         stop_config = data['stop_config']
         risk_config = data['risk_config']
+        swing_config = data['swing_config']
+        run_id = data['run_id']
         
-        # Calculate stop prices for each entry - we'll need these for custom exits
-        stop_prices = pd.Series(index=df.index, dtype=float)
-        
-        # Determine if long or short for calculating stops
+        # Determine if long or short
         is_long = direction.lower() == 'long'
         logger.info(f"Running {direction} strategy backtest")
         
-        # Calculate the ACTUAL stop prices that will be used for both position sizing and R:R calculation
-        if stop_config['stop_type'] == 'perc':
-            for i, entry in enumerate(entries):
-                if entry:
-                    idx = entries.index[i]
-                    price = df.loc[idx, 'close']
-                    if is_long:
-                        # For longs, stop is below entry price
-                        stop_prices[idx] = price * (1 - stop_config['stop_value'])
-                    else:
-                        # For shorts, stop is above entry price
-                        stop_prices[idx] = price * (1 + stop_config['stop_value'])
-        elif stop_config['stop_type'] == 'abs':
-            for i, entry in enumerate(entries):
-                if entry:
-                    idx = entries.index[i]
-                    price = df.loc[idx, 'close']
-                    if is_long:
-                        # For longs, stop is below entry price
-                        stop_prices[idx] = price - stop_config['stop_value']
-                    else:
-                        # For shorts, stop is above entry price
-                        stop_prices[idx] = price + stop_config['stop_value']
-        else:  # custom
-            for i, entry in enumerate(entries):
-                if entry:
-                    idx = entries.index[i]
-                    price = df.loc[idx, 'close']
-                    stop_value = stop_config['stop_func'](price)
-                    if is_long:
-                        # For longs, stop is below entry price
-                        stop_prices[idx] = price * (1 - stop_value)
-                    else:
-                        # For shorts, stop is above entry price
-                        stop_prices[idx] = price * (1 + stop_value)
+        # Calculate stop prices for each entry
+        stop_prices = pd.Series(index=df.index, dtype=float)
         
-        # Save all entry points and their stop prices for debugging
-        entry_stops = []
+        # Calculate the stop prices for each entry
         for i, entry in enumerate(entries):
-            if entry:
-                idx = entries.index[i]
-                price = df.loc[idx, 'close']
-                stop = stop_prices[idx]
-                risk_pct = abs((price - stop) / price) * 100
-                entry_stops.append({
-                    'idx': idx,
-                    'price': price,
-                    'stop': stop,
-                    'risk_pct': risk_pct
-                })
-        
-        logger.info(f"Found {len(entry_stops)} entry points with stops:")
-        for i, es in enumerate(entry_stops[:5]):  # Log first 5 entries
-            logger.info(f"Entry {i+1}: price=${es['price']:.2f}, stop=${es['stop']:.2f}, risk={es['risk_pct']:.2f}%")
-        if len(entry_stops) > 5:
-            logger.info(f"... and {len(entry_stops) - 5} more entries")
-        
-        # Build portfolio kwargs
-        kwargs = {
-            'close': df['close'],
-            'entries': entries,
-            'init_cash': init_cash,
-            'fees': 0.0,
-            'freq': '30min',
-            'upon_long_conflict': 'exit',
-            'accumulate': False,
-        }
-        
-        # Calculate position sizes based on risk management
-        sizes = pd.Series(0.0, index=df.index)
-        
-        # For each entry point, calculate appropriate position size
-        for i, entry in enumerate(entries):
-            if entry:
-                idx = entries.index[i]
-                entry_price = df.loc[idx, 'close']
-                
-                # Find the stop price for this entry
-                stop_price = stop_prices.loc[idx]
-                
-                # Calculate risk per position in dollars
-                risk_amount = init_cash * risk_config['risk_per_trade']
-                
-                # Calculate position size based on price difference
+            if not entry:
+                continue
+            
+            idx = entries.index[i]
+            price = df.loc[idx, 'close']
+            
+            if stop_config['stop_type'] == 'perc':
                 if is_long:
-                    price_diff = entry_price - stop_price
+                    stop_prices[idx] = price * (1 - stop_config['stop_value'])
                 else:
-                    price_diff = stop_price - entry_price
-                
-                # Avoid division by zero
-                if price_diff <= 0:
-                    logger.warning(f"Invalid price difference at {idx}: entry={entry_price}, stop={stop_price}")
-                    continue
-                
-                # Calculate shares based on risk amount and price difference
-                shares = risk_amount / price_diff
-                # Round to whole number of shares
-                shares = round(shares, 0)
-                sizes.loc[idx] = shares
-                
-                logger.info(f"Entry at {idx}: price=${entry_price:.2f}, stop=${stop_price:.2f}, "
-                           f"shares={shares}, risk=${risk_amount:.2f}")
+                    stop_prices[idx] = price * (1 + stop_config['stop_value'])
+            elif stop_config['stop_type'] == 'abs':
+                if is_long:
+                    stop_prices[idx] = price - stop_config['stop_value']
+                else:
+                    stop_prices[idx] = price + stop_config['stop_value']
+            else:  # custom
+                stop_value = stop_config['stop_func'](price)
+                if is_long:
+                    stop_prices[idx] = price * (1 - stop_value)
+                else:
+                    stop_prices[idx] = price * (1 + stop_value)
         
-        # Add size to portfolio kwargs
-        kwargs['size'] = sizes
+        # Log entry points and their stop prices
+        entry_points = []
+        for i, entry in enumerate(entries):
+            if not entry:
+                continue
+            
+            idx = entries.index[i]
+            price = df.loc[idx, 'close']
+            stop = stop_prices[idx]
+            risk_pct = abs((price - stop) / price) * 100
+            entry_points.append({
+                'timestamp': idx,
+                'price': price,
+                'stop': stop,
+                'risk_pct': risk_pct
+            })
         
-        # Set direction based on entry configuration
-        if not is_long:
-            # For shorts, set direction to -1 (VectorBT uses 1 for long, -1 for short)
-            kwargs['direction'] = -1
-            logger.info("Setting VectorBT direction to short (-1)")
+        logger.info(f"Found {len(entry_points)} entry points with stops:")
+        for i, ep in enumerate(entry_points[:5]):  # Log first 5 entries
+            logger.info(f"Entry {i+1}: price=${ep['price']:.2f}, stop=${ep['stop']:.2f}, risk={ep['risk_pct']:.2f}%")
+        if len(entry_points) > 5:
+            logger.info(f"... and {len(entry_points) - 5} more entries")
         
-        # Configure stop loss based on type and direction
-        if stop_config['stop_type'] == 'perc':
-            # For shorts, we need to set different parameters
-            if is_long:
-                kwargs['sl_stop'] = stop_config['stop_value']
-            else:
-                kwargs['sl_stop'] = stop_config['stop_value']
-                # For shorts, sl_stop is above entry price
-                kwargs['sl_stop_above'] = True
-        elif stop_config['stop_type'] == 'abs':
-            if is_long:
-                kwargs['sl_stop_abs'] = stop_config['stop_value']
-            else:
-                kwargs['sl_stop_abs'] = stop_config['stop_value']
-                # For shorts, sl_stop_abs is an absolute increase
-                kwargs['sl_stop_above'] = True
+        # Get target risk/reward
+        target_rr = exit_config.get('risk_reward', 2.0) if exit_config and exit_config['type'] == 'fixed' else 2.0
+        logger.info(f"Using target risk/reward ratio of {target_rr}")
+        
+        # Process each day individually
+        trades = []
+        active_positions = {}  # {entry_timestamp: position_data}
+        
+        # Find last candle of each day for EOD exits
+        if 'market_session' in df.columns:
+            last_candles = df[df['market_session'] == 'regular'].groupby(df.index.date).apply(lambda x: x.index[-1])
         else:
-            if is_long:
-                kwargs['sl_stop_custom'] = stop_config['stop_func']
-            else:
-                # For shorts, we need a modified function that returns positive percentages
-                def short_stop_func(price):
-                    return stop_config['stop_func'](price)
-                kwargs['sl_stop_custom'] = short_stop_func
-                kwargs['sl_stop_above'] = True
+            last_candles = df.groupby(df.index.date).apply(lambda x: x.index[-1])
         
-        # Create a Series to hold custom stop prices for each entry
-        # This is needed because VectorBT may not exit exactly at the stop price
-        stop_level_series = pd.Series(np.nan, index=df.index)
-        
-        # Configure stop loss settings for VectorBT
-        # For long positions:
-        #   - sl_stop without sl_stop_above: exit when price goes BELOW the level
-        # For short positions:
-        #   - sl_stop with sl_stop_above: exit when price goes ABOVE the level
-        if is_long:
-            if stop_config['stop_type'] == 'perc':
-                # Percentage-based stop
-                kwargs['sl_stop'] = stop_config['stop_value']
-            else:
-                # We need to use a custom stop loss approach for absolute stops
-                # Fill the stop_level_series with actual stop prices where we have entries
-                for i, entry in enumerate(entries):
-                    if entry:
-                        idx = entries.index[i]
-                        stop_level_series[idx] = stop_prices[idx]
-                
-                # Tell VectorBT to use our custom stop series
-                kwargs['sl_stop_price'] = stop_level_series
-        else:
-            # For shorts
-            if stop_config['stop_type'] == 'perc':
-                kwargs['sl_stop'] = stop_config['stop_value']
-                kwargs['sl_stop_above'] = True  # For shorts, exit when price goes above level
-            else:
-                # Custom stop series for absolute stops
-                for i, entry in enumerate(entries):
-                    if entry:
-                        idx = entries.index[i]
-                        stop_level_series[idx] = stop_prices[idx]
-                
-                kwargs['sl_stop_price'] = stop_level_series
-                kwargs['sl_stop_above'] = True  # For shorts, exit when price goes above level
-        
-        # Create custom exits based on risk/reward if fixed exit configuration
-        # Also track which exit timestamps were from take profits
-        take_profit_exits = {}  # Dictionary to track which exits were take profits
-        
-        if exit_config['type'] == 'fixed' and exit_config['risk_reward'] > 0:
-            target_rr = exit_config['risk_reward']
-            logger.info(f"Using dynamic risk/reward exits with target R:R of {target_rr}")
+        # Iterate through each candle
+        for i in range(len(df.index)):
+            current_idx = df.index[i]
             
-            # Pre-calculate exits based on risk/reward ratio
-            exits = pd.Series(False, index=df.index)
-            
-            # Track open positions and their entry details
-            open_positions = {}  # {entry_idx: {'price': price, 'stop': stop_price}}
-            
-            # Scan through the data chronologically
-            for i in range(len(df)):
-                idx = df.index[i]
-                
-                # Check for entry signal
-                if entries.iloc[i]:
-                    # Record entry information
-                    entry_price = df.loc[idx, 'close']
-                    stop_price = stop_prices.loc[idx]
+            # 1. Check for entry signals
+            if entries.iloc[i]:
+                # Only open a new position if no positions are currently open
+                if not active_positions:
+                    entry_price = df['close'].iloc[i]
+                    stop_price = stop_prices.iloc[i]
                     
-                    # Verify we have a valid stop price
-                    if pd.isna(stop_price) or stop_price == 0:
-                        logger.warning(f"Invalid stop price {stop_price} at {idx}, skipping entry")
+                    # Skip invalid entries
+                    if pd.isna(stop_price) or stop_price <= 0:
+                        logger.warning(f"Invalid stop price {stop_price} at {current_idx}, skipping entry")
                         continue
                         
-                    # Calculate the exact take profit price based on the target R:R
+                    # Calculate risk amount
+                    risk_amount = init_cash * risk_config['risk_per_trade'] / 100
+                    
+                    # Calculate price difference for position sizing
+                    price_diff = abs(entry_price - stop_price)
+                    
+                    # Calculate position size
+                    position_size = int(risk_amount / price_diff)
+                    
+                    # Calculate take profit price
                     if is_long:
-                        # For longs: TP = entry + (entry - stop) * target_rr
                         risk = entry_price - stop_price
                         take_profit_price = entry_price + (risk * target_rr)
                     else:
-                        # For shorts: TP = entry - (stop - entry) * target_rr
                         risk = stop_price - entry_price
                         take_profit_price = entry_price - (risk * target_rr)
                     
-                    open_positions[idx] = {
-                        'price': entry_price, 
-                        'stop': stop_price,
-                        'tp_price': take_profit_price
+                    # Store position information
+                    active_positions[current_idx] = {
+                        'entry_timestamp': current_idx,
+                        'entry_price': entry_price,
+                        'stop_price': stop_price,
+                        'take_profit_price': take_profit_price,
+                        'position_size': position_size,
+                        'direction': direction,
+                        'risk_per_trade': risk_config['risk_per_trade'],
+                        'capital_required': position_size * entry_price,
+                        'risk_size': position_size * abs(entry_price - stop_price)
                     }
-                    logger.info(f"Entry at {idx}: ${entry_price:.2f}, stop=${stop_price:.2f}, TP=${take_profit_price:.2f}")
-                    continue
-                
-                # Check all open positions for potential exit
-                for entry_idx, position in list(open_positions.items()):
-                    entry_price = position['price']
-                    stop_price = position['stop']
-                    take_profit_price = position['tp_price']
                     
-                    # Check if price hits take profit level
-                    if is_long:
-                        # For longs: use high price for take profit
-                        current_price = df.loc[idx, 'high']
-                        if current_price >= take_profit_price:
-                            logger.info(f"Taking profit at {idx}: ${current_price:.2f} >= ${take_profit_price:.2f} (target R:R={target_rr})")
-                            exits.loc[idx] = True
-                            # Mark this as a take profit exit
-                            take_profit_exits[idx] = {
-                                'entry_idx': entry_idx, 
-                                'entry_price': entry_price,
-                                'stop_price': stop_price,
-                                'exit_price': take_profit_price,
-                                'rr': target_rr
-                            }
-                            # Remove the position from open positions
-                            del open_positions[entry_idx]
-                    else:
-                        # For shorts: use low price for take profit
-                        current_price = df.loc[idx, 'low']
-                        if current_price <= take_profit_price:
-                            logger.info(f"Taking profit at {idx}: ${current_price:.2f} <= ${take_profit_price:.2f} (target R:R={target_rr})")
-                            exits.loc[idx] = True
-                            # Mark this as a take profit exit
-                            take_profit_exits[idx] = {
-                                'entry_idx': entry_idx, 
-                                'entry_price': entry_price,
-                                'stop_price': stop_price,
-                                'exit_price': take_profit_price,
-                                'rr': target_rr
-                            }
-                            # Remove the position from open positions
-                            del open_positions[entry_idx]
+                    logger.info(f"Entry at {current_idx}: ${entry_price:.2f}, stop=${stop_price:.2f}, "
+                                f"TP=${take_profit_price:.2f}, size={position_size}")
+                else:
+                    # Skip entry signal because a position is already open
+                    logger.info(f"Skipping entry signal at {current_idx} - position already open")
             
-            # Add pre-calculated exits to kwargs
-            if 'exits' in kwargs:
-                kwargs['exits'] = kwargs['exits'] | exits
-            else:
-                kwargs['exits'] = exits
+            # 2. Check for exits on active positions
+            for entry_time, position in list(active_positions.items()):
+                # Get current prices
+                high_price = df['high'].iloc[i]
+                low_price = df['low'].iloc[i]
+                close_price = df['close'].iloc[i]
+                
+                # Variables for checking exit conditions
+                exit_price = None
+                exit_type = None
+                
+                # Check for stop loss hit
+                if is_long and low_price <= position['stop_price']:
+                    # Long position hit stop loss
+                    exit_price = position['stop_price']  # Exit at exact stop price
+                    exit_type = "Stop Loss"
+                elif not is_long and high_price >= position['stop_price']:
+                    # Short position hit stop loss
+                    exit_price = position['stop_price']  # Exit at exact stop price
+                    exit_type = "Stop Loss"
+                
+                # Check for take profit hit (if stop loss wasn't hit)
+                elif is_long and high_price >= position['take_profit_price'] and not exit_price:
+                    # Long position hit take profit
+                    exit_price = position['take_profit_price']  # Exit at exact take profit price
+                    exit_type = "Take Profit"
+                elif not is_long and low_price <= position['take_profit_price'] and not exit_price:
+                    # Short position hit take profit
+                    exit_price = position['take_profit_price']  # Exit at exact take profit price
+                    exit_type = "Take Profit"
+                
+                # Check for end of day exit
+                elif current_idx in last_candles and not exit_price:
+                    # End of day exit
+                    exit_price = close_price  # Exit at close price
+                    exit_type = "End of Day"
+                
+                # Process exit if conditions are met
+                if exit_price:
+                    # Calculate risk/reward ratio
+                    risk_reward = calculate_risk_reward(
+                        position['entry_price'], 
+                        exit_price, 
+                        position['stop_price'], 
+                        is_long
+                    )
+                    
+                    # Calculate percentage return
+                    perc_return = risk_reward * position['risk_per_trade']
+                    
+                    # Create trade record
+                    trade = {
+                        'entry_timestamp': position['entry_timestamp'],
+                        'exit_timestamp': current_idx,
+                        'entry_price': position['entry_price'],
+                        'exit_price': exit_price,
+                        'stop_price': position['stop_price'],
+                        'position_size': position['position_size'],
+                        'risk_size': position['risk_size'],
+                        'risk_per_trade': position['risk_per_trade'],
+                        'risk_reward': risk_reward,
+                        'perc_return': perc_return,
+                        'capital_required': position['capital_required'],
+                        'direction': position['direction'],
+                        'exit_type': exit_type
+                    }
+                    
+                    # Add trade to list
+                    trades.append(trade)
+                    
+                    # Log trade
+                    logger.info(f"Exit at {current_idx}: ${exit_price:.2f}, type={exit_type}, R:R={risk_reward:.2f}")
+                    
+                    # Remove position from active positions
+                    del active_positions[entry_time]
+        
+        # Check for any positions still open at the end of data
+        for entry_time, position in list(active_positions.items()):
+            # Force close at last available price
+            last_idx = df.index[-1]
+            last_price = df['close'].iloc[-1]
             
-            logger.info(f"Generated {exits.sum()} take profit exit signals at R:R={target_rr}")
-        
-        # Remove exit_func if it exists in kwargs (it's not supported)
-        if 'exit_func' in kwargs:
-            del kwargs['exit_func']
-        
-        # Add EOD exits if swings not allowed
-        if data['swing_config']['id'] == 1 and data['swing_config']['swings_allowed'] == 0:
-            if 'market_session' in df.columns:
-                last_candles = df[df['market_session'] == 'regular'].groupby(df.index.date).apply(lambda x: x.index[-1])
-            else:
-                last_candles = df.groupby(df.index.date).apply(lambda x: x.index[-1])
+            risk_reward = calculate_risk_reward(
+                position['entry_price'], 
+                last_price, 
+                position['stop_price'], 
+                is_long
+            )
             
-            eod_exits = pd.Series(False, index=df.index)
-            eod_exits.loc[last_candles] = True
+            # Calculate percentage return
+            perc_return = risk_reward * position['risk_per_trade']
             
-            # Combine with any existing exits
-            if 'exits' in kwargs:
-                kwargs['exits'] = kwargs['exits'] | eod_exits
-            else:
-                kwargs['exits'] = eod_exits
+            # Create trade record
+            trade = {
+                'entry_timestamp': position['entry_timestamp'],
+                'exit_timestamp': last_idx,
+                'entry_price': position['entry_price'],
+                'exit_price': last_price,
+                'stop_price': position['stop_price'],
+                'position_size': position['position_size'],
+                'risk_size': position['risk_size'],
+                'risk_per_trade': position['risk_per_trade'],
+                'risk_reward': risk_reward,
+                'perc_return': perc_return,
+                'capital_required': position['capital_required'],
+                'direction': position['direction'],
+                'exit_type': "End of Backtest"
+            }
+            
+            # Add trade to list
+            trades.append(trade)
+            logger.info(f"Forced exit at end of data: ${last_price:.2f}, R:R={risk_reward:.2f}")
         
-        # Run the VectorBT portfolio
-        logger.info(f"Running VectorBT portfolio backtest for {direction} strategy...")
-        pf = vbt.Portfolio.from_signals(**kwargs)
-        trades = pf.trades.records
-        
-        if len(trades) == 0:
+        if not trades:
             logger.warning("No trades were generated")
             return False
         
-        # Format and log trades
-        logger.info(f"Processing {len(trades)} trades...")
-        context = {
-            'pf': pf, 
-            'direction': direction,
-            'take_profit_exits': take_profit_exits  # Pass our take profit exit info
-        }
-        formatted_trades = format_trades(df, trades, stop_config, risk_config, exit_config, data['swing_config'], context)
-        print_performance_metrics(pf, formatted_trades, exit_config)
-        log_trades(formatted_trades, data['run_id'], pf, trades, symbol, stop_config, risk_config)
+        # Convert timestamps to datetime objects for proper calculation
+        for trade in trades:
+            if isinstance(trade['entry_timestamp'], str):
+                trade['entry_timestamp'] = pd.to_datetime(trade['entry_timestamp'])
+            if isinstance(trade['exit_timestamp'], str):
+                trade['exit_timestamp'] = pd.to_datetime(trade['exit_timestamp'])
+        
+        # Format trades into a DataFrame
+        trades_df = format_trades(trades, df, stop_config, risk_config, exit_config, swing_config)
+        
+        # Print performance metrics
+        print_performance_metrics(trades_df, exit_config)
+        
+        # Log trades to database
+        log_trades_to_db(trades_df, run_id, symbol)
         
         return True
     except Exception as e:
-        logger.error(f"Error: {e}", exc_info=True)
+        logger.error(f"Error running backtest: {e}", exc_info=True)
         return False
 
 def main():
