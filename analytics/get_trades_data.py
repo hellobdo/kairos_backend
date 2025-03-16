@@ -185,8 +185,8 @@ def generate_html_report(metrics_dict, output_file='analytics/reports/metrics_re
             if col in ['date', 'run_id', 'year_week', 'year_month', 'nr_of_trades']:
                 continue
             if col == 'accuracy' and pd.api.types.is_numeric_dtype(formatted_df[col]):
-                # Format accuracy as percentage with 4 decimal places
-                formatted_df[col] = formatted_df[col].map(lambda x: f"{x*100:.4f}%" if pd.notnull(x) else "")
+                # Format accuracy as percentage with 2 decimal places
+                formatted_df[col] = formatted_df[col].map(lambda x: f"{x*100:.2f}%" if pd.notnull(x) else "")
             elif pd.api.types.is_numeric_dtype(formatted_df[col]):
                 formatted_df[col] = formatted_df[col].map(lambda x: f"{x:.2f}" if pd.notnull(x) else "")
         
