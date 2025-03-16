@@ -113,7 +113,7 @@ class TestBacktestLoader(unittest.TestCase):
             
             # Unpack the result
             symbol, entry_config_id, stoploss_config_id, risk_config_id, exit_config_id, \
-            swing_config_id, exits_swings_config_id, date_range, bc = result
+            swing_config_id, exits_swings_config_id, date_range, init_cash = result
             
             # Check each value
             self.assertEqual(symbol, 'QQQ')
@@ -124,7 +124,7 @@ class TestBacktestLoader(unittest.TestCase):
             self.assertEqual(swing_config_id, 1)
             self.assertIsNone(exits_swings_config_id)
             self.assertEqual(date_range, {"start": "2023-01-01", "end": "2023-05-15"})
-            self.assertEqual(bc, self.sample_config['backtest'])
+            self.assertEqual(init_cash, 10000)
     
     def test_load_backtest_config_error(self):
         """Test the load_backtest_config function with an error scenario."""
