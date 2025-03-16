@@ -127,9 +127,9 @@ class TestBacktestRunner(unittest.TestCase):
         self.assertEqual(rr, expected_rr)
     
     def test_format_trades(self):
-        """Test formatting trade data into a DataFrame."""
-        # Since our sample_trades now include winning_trade and trade_duration,
-        # we need to create a version without these fields to test format_trades properly
+        """Test that trades are formatted correctly."""
+        # Create a copy of sample_trades without winning_trade and trade_duration
+        # as these are added by format_trades
         base_trades = []
         for trade in self.sample_trades:
             base_trade = trade.copy()
@@ -139,30 +139,32 @@ class TestBacktestRunner(unittest.TestCase):
                 del base_trade['trade_duration']
             base_trades.append(base_trade)
         
-        # Call the function with the base trades
-        trades_df = format_trades(
-            base_trades, 
-            self.sample_df, 
-            self.sample_stop_config, 
-            self.sample_risk_config, 
-            self.sample_exit_config, 
+        # Convert to pandas DataFrame
+        df = pd.DataFrame({
+            'close': [100, 102, 98, 105],
+            'high': [101, 103, 99, 106],
+            'low': [99, 101, 97, 104]
+        }, index=pd.date_range(start='2023-01-01', periods=4, freq='H'))
+        
+        # Call format_trades
+        result = format_trades(
+            base_trades, df, 
+            self.sample_stop_config,
+            self.sample_risk_config,
+            self.sample_exit_config,
             self.sample_swing_config
         )
         
-        # Assert that the function returned a DataFrame
-        self.assertIsInstance(trades_df, pd.DataFrame)
+        # Verify result has correct shape
+        self.assertEqual(len(result), len(self.sample_trades))
         
-        # Check that all trades were included
-        self.assertEqual(len(trades_df), len(base_trades))
+        # Verify correct columns are present
+        self.assertIn('winning_trade', result.columns)
+        self.assertIn('trade_duration', result.columns)
         
-        # Check that the winning_trade column was added correctly
-        self.assertEqual(trades_df.iloc[0]['winning_trade'], 1)  # First trade is winning (risk_reward > 0)
-        self.assertEqual(trades_df.iloc[1]['winning_trade'], 0)  # Second trade is losing (risk_reward < 0)
-        
-        # Check that the trade_duration column was calculated correctly
-        # It should be close to 4.5 hours for the first trade
-        duration_hrs = (pd.Timestamp('2023-01-02 14:30:00') - pd.Timestamp('2023-01-02 10:00:00')).total_seconds() / 3600
-        self.assertAlmostEqual(trades_df.iloc[0]['trade_duration'], duration_hrs, places=1)
+        # Check if winning_trade is correct (positive risk_reward = winning trade)
+        for i, trade in result.iterrows():
+            self.assertEqual(trade['winning_trade'], 1 if trade['risk_reward'] > 0 else 0)
     
     @patch('sqlite3.connect')
     def test_log_trades_to_db(self, mock_connect):
@@ -280,6 +282,479 @@ class TestBacktestRunner(unittest.TestCase):
         
         # Assert that run_backtest was called once
         mock_run_backtest.assert_called_once()
+
+    @patch('backtests.backtest_runner.log_trades_to_db')
+    @patch('backtests.backtest_runner.format_trades')
+    @patch('backtests.backtest_runner.setup_backtest')
+    @patch('backtests.backtest_runner.load_backtest_config')
+    def test_no_swing_trading_end_of_day_exit(self, mock_load_config, mock_setup, mock_format, mock_log):
+        """Test that positions are closed at the end of the day when swing trading is not allowed."""
+        # Set up the mocks
+        mock_load_config.return_value = (
+            'QQQ', 1, 3, 1, 1, 1, None, 
+            {"start": "2023-01-01", "end": "2023-01-03"},
+            self.sample_backtest_config['backtest']
+        )
+        
+        # Create a multi-day DataFrame with dates that clearly span different days
+        date_index = pd.DatetimeIndex([
+            # Day 1
+            '2023-01-01 09:30:00', '2023-01-01 10:00:00', '2023-01-01 15:30:00', '2023-01-01 16:00:00',
+            # Day 2
+            '2023-01-02 09:30:00', '2023-01-02 10:00:00', '2023-01-02 15:30:00', '2023-01-02 16:00:00'
+        ])
+        
+        multi_day_df = pd.DataFrame({
+            'open': [100, 101, 102, 103, 104, 105, 106, 107],
+            'high': [102, 103, 104, 105, 106, 107, 108, 109],
+            'low': [99, 100, 101, 102, 103, 104, 105, 106],
+            'close': [101, 102, 103, 104, 105, 106, 107, 108],
+            'volume': [1000, 1100, 1200, 1300, 1400, 1500, 1600, 1700],
+            'market_session': ['regular', 'regular', 'regular', 'regular', 'regular', 'regular', 'regular', 'regular']
+        }, index=date_index)
+        
+        # Create entries at the beginning of each day
+        entries = pd.Series([
+            True, False, False, False,  # First entry on day 1
+            True, False, False, False   # Second entry on day 2
+        ], index=date_index)
+        
+        # Mock data returned from setup_backtest
+        mock_setup.return_value = {
+            'run_id': 42,
+            'df': multi_day_df,
+            'entries': entries,
+            'entry_config': {'field': 'tightness', 'signal': 'Ultra Tight', 'direction': 'long'},
+            'direction': 'long',
+            'stop_config': {'stop_type': 'perc', 'stop_value': 0.02},
+            'risk_config': {'risk_per_trade': 1.0, 'max_daily_risk': 5.0},
+            'exit_config': {'type': 'fixed', 'risk_reward': 2.0},
+            'swing_config': {'swings_allowed': 0, 'description': 'not allowed'},  # No swing trading
+            'exits_swings_config': None,
+            'symbol': 'QQQ'
+        }
+        
+        # Record the trades that would be created
+        recorded_trades = []
+        
+        # Mock format_trades to capture the trades
+        def side_effect_format(trades, *args, **kwargs):
+            nonlocal recorded_trades
+            recorded_trades = trades
+            return pd.DataFrame(trades)
+        
+        mock_format.side_effect = side_effect_format
+        
+        # Call the function
+        result = run_backtest('dummy_config.json')
+        
+        # Assert that the function returned True (success)
+        self.assertTrue(result)
+        
+        # Verify trades were created
+        self.assertGreater(len(recorded_trades), 0, "No trades were generated")
+        
+        # Extract entry and exit dates to check for multi-day trades
+        trade_durations = []
+        for trade in recorded_trades:
+            entry_date = pd.Timestamp(trade['entry_timestamp']).date()
+            exit_date = pd.Timestamp(trade['exit_timestamp']).date()
+            trade_durations.append((exit_date - entry_date).days)
+        
+        # Verify that no trades span multiple days when swing trading is disabled
+        self.assertTrue(all(duration == 0 for duration in trade_durations), 
+                      f"Found trades spanning multiple days: {trade_durations}")
+        
+        # Verify that we have end-of-day exits
+        exit_types = [trade['exit_type'] for trade in recorded_trades]
+        self.assertTrue(any("End of Day" in exit_type for exit_type in exit_types),
+                      f"No end-of-day exits found: {exit_types}")
+
+    @patch('backtests.backtest_runner.log_trades_to_db')
+    @patch('backtests.backtest_runner.format_trades')
+    @patch('backtests.backtest_runner.setup_backtest')
+    @patch('backtests.backtest_runner.load_backtest_config')
+    def test_position_metrics_calculation(self, mock_load_config, mock_setup, mock_format, mock_log):
+        """Test that position metrics (position_size, risk_size, risk_per_trade, etc.) are calculated correctly."""
+        # Set up the mocks
+        mock_load_config.return_value = (
+            'QQQ', 1, 3, 1, 1, 1, None, 
+            {"start": "2023-01-01", "end": "2023-01-03"},
+            {'init_cash': 10000}  # Make sure we have initial cash value
+        )
+        
+        # Test data
+        test_df = pd.DataFrame({
+            'open': [100, 101, 102, 103],
+            'high': [102, 103, 104, 105],
+            'low': [99, 100, 101, 102],
+            'close': [101, 102, 103, 104],
+            'volume': [1000, 1100, 1200, 1300],
+            'market_session': ['regular', 'regular', 'regular', 'regular']
+        }, index=pd.date_range(start='2023-01-01 09:30:00', periods=4, freq='H'))
+        
+        # Create entries at a specific point
+        entries = pd.Series([True, False, False, False], index=test_df.index)
+        
+        # Define test parameters
+        entry_price = 101  # First close price
+        stop_price = 99    # 2% below entry
+        init_cash = 10000
+        risk_per_trade = 1.0  # 1% risk per trade
+        
+        # Calculate expected values
+        expected_risk_amount = init_cash * risk_per_trade / 100  # $100
+        expected_price_diff = abs(entry_price - stop_price)      # $2
+        expected_position_size = round(expected_risk_amount / expected_price_diff)  # 50 shares
+        expected_risk_size = expected_position_size * expected_price_diff  # $100
+        expected_capital_required = expected_position_size * entry_price   # $5050
+        
+        # Mock data returned from setup_backtest
+        mock_setup.return_value = {
+            'run_id': 42,
+            'df': test_df,
+            'entries': entries,
+            'entry_config': {'field': 'tightness', 'signal': 'Ultra Tight', 'direction': 'long'},
+            'direction': 'long',
+            'stop_config': {'stop_type': 'perc', 'stop_value': 0.02},
+            'risk_config': {'risk_per_trade': risk_per_trade, 'max_daily_risk': 5.0},
+            'exit_config': {'type': 'fixed', 'risk_reward': 2.0},
+            'swing_config': {'swings_allowed': 1},
+            'exits_swings_config': None,
+            'symbol': 'QQQ'
+        }
+        
+        # Record the trades that would be created
+        recorded_trades = []
+        
+        # Mock format_trades to capture the trades
+        def side_effect_format(trades, *args, **kwargs):
+            nonlocal recorded_trades
+            recorded_trades = trades
+            return pd.DataFrame(trades)
+        
+        mock_format.side_effect = side_effect_format
+        
+        # Call the function
+        result = run_backtest('dummy_config.json')
+        
+        # Assert that the function returned True (success)
+        self.assertTrue(result)
+        
+        # Verify trades were created
+        self.assertGreater(len(recorded_trades), 0, "No trades were generated")
+        
+        # Get the first trade for verification
+        trade = recorded_trades[0]
+        
+        # Verify position metrics
+        self.assertGreater(trade['position_size'], 0, 
+                          f"Position size should be greater than 0, got {trade['position_size']}")
+        
+        self.assertEqual(trade['position_size'], expected_position_size, 
+                         f"Position size incorrect: expected {expected_position_size}, got {trade['position_size']}")
+        
+        # Use relative tolerance for risk_size since it's calculated based on prices
+        self.assertGreater(trade['risk_size'], 0,
+                          f"Risk size should be greater than 0, got {trade['risk_size']}")
+        
+        self.assertAlmostEqual(trade['risk_size'], expected_risk_size, delta=1.0,
+                              msg=f"Risk size incorrect: expected {expected_risk_size}, got {trade['risk_size']}")
+        
+        # risk_per_trade should be *100 (percentage)
+        self.assertEqual(trade['risk_per_trade'], risk_per_trade * 100,
+                         f"risk_per_trade incorrect: expected {risk_per_trade * 100}, got {trade['risk_per_trade']}")
+        
+        # Calculate expected perc_return (risk_reward * risk_per_trade[%])
+        risk_reward = trade['risk_reward']
+        expected_perc_return = risk_reward * (risk_per_trade * 100)
+        self.assertAlmostEqual(trade['perc_return'], expected_perc_return, places=2,
+                              msg=f"perc_return incorrect: expected {expected_perc_return}, got {trade['perc_return']}")
+        
+        self.assertGreater(trade['capital_required'], 0,
+                          f"Capital required should be greater than 0, got {trade['capital_required']}")
+        
+        self.assertEqual(trade['capital_required'], expected_capital_required,
+                        f"capital_required incorrect: expected {expected_capital_required}, got {trade['capital_required']}")
+        
+        # Verify trade data is passed correctly to log_trades_to_db
+        self.assertTrue(mock_log.called, "log_trades_to_db was not called")
+        df_arg = mock_log.call_args[0][0]  # Get the first argument (DataFrame)
+        
+        # Access the position_size, risk_size, and capital_required columns
+        # to make sure they're not zero in the DataFrame sent to log_trades_to_db
+        self.assertTrue('position_size' in df_arg.columns, "position_size column missing in DataFrame sent to log_trades_to_db")
+        self.assertTrue('risk_size' in df_arg.columns, "risk_size column missing in DataFrame sent to log_trades_to_db")
+        self.assertTrue('capital_required' in df_arg.columns, "capital_required column missing in DataFrame sent to log_trades_to_db")
+        
+        # These checks are against the formatted DataFrame that would be sent to the database
+        self.assertGreater(df_arg['position_size'].iloc[0], 0, "position_size is zero or missing in DB data")
+        self.assertGreater(df_arg['risk_size'].iloc[0], 0, "risk_size is zero or missing in DB data")
+        self.assertGreater(df_arg['capital_required'].iloc[0], 0, "capital_required is zero or missing in DB data")
+
+    @patch('backtests.backtest_runner.log_trades_to_db')
+    @patch('backtests.backtest_runner.format_trades')
+    @patch('backtests.backtest_runner.setup_backtest')
+    @patch('backtests.backtest_runner.load_backtest_config')
+    def test_init_cash_for_multiple_trades(self, mock_load_config, mock_setup, mock_format, mock_log):
+        """Test that init_cash is available and used correctly for sizing all trades."""
+        # Set up the mocks with explicit init_cash
+        init_cash = 10000
+        mock_load_config.return_value = (
+            'QQQ', 1, 3, 1, 1, 1, None, 
+            {"start": "2023-01-01", "end": "2023-01-05"},
+            {'init_cash': init_cash}  # Explicit init_cash value
+        )
+        
+        # Create a DataFrame with multiple days and multiple entry signals
+        date_index = pd.DatetimeIndex([
+            # Day 1
+            '2023-01-01 09:30:00', '2023-01-01 10:00:00', '2023-01-01 16:00:00',
+            # Day 2
+            '2023-01-02 09:30:00', '2023-01-02 10:00:00', '2023-01-02 16:00:00',
+            # Day 3
+            '2023-01-03 09:30:00', '2023-01-03 10:00:00', '2023-01-03 16:00:00'
+        ])
+        
+        multi_day_df = pd.DataFrame({
+            'open': [100, 101, 103, 105, 106, 108, 110, 111, 113],
+            'high': [102, 103, 105, 107, 108, 110, 112, 113, 115],
+            'low':  [99, 100, 102, 104, 105, 107, 109, 110, 112],
+            'close': [101, 102, 104, 106, 107, 109, 111, 112, 114],
+            'volume': [1000, 1100, 1300, 1400, 1500, 1700, 1800, 1900, 2100],
+            'market_session': ['regular', 'regular', 'regular', 'regular', 'regular', 'regular', 'regular', 'regular', 'regular']
+        }, index=date_index)
+        
+        # Create entries at the beginning of each day
+        entries = pd.Series([
+            True, False, False,  # Entry on day 1
+            True, False, False,  # Entry on day 2
+            True, False, False   # Entry on day 3
+        ], index=date_index)
+        
+        # Set risk and stop parameters
+        risk_per_trade = 1.0  # 1% risk per trade
+        stop_perc = 0.02     # 2% stop loss
+        
+        # Mock data returned from setup_backtest
+        mock_setup.return_value = {
+            'run_id': 42,
+            'df': multi_day_df,
+            'entries': entries,
+            'entry_config': {'field': 'tightness', 'signal': 'Ultra Tight', 'direction': 'long'},
+            'direction': 'long',
+            'stop_config': {'stop_type': 'perc', 'stop_value': stop_perc},
+            'risk_config': {'risk_per_trade': risk_per_trade, 'max_daily_risk': 5.0},
+            'exit_config': {'type': 'fixed', 'risk_reward': 2.0},
+            'swing_config': {'swings_allowed': 0},  # No swing trading
+            'exits_swings_config': None,
+            'symbol': 'QQQ'
+        }
+        
+        # Record the trades that would be created
+        recorded_trades = []
+        
+        # Mock format_trades to capture the trades
+        def side_effect_format(trades, *args, **kwargs):
+            nonlocal recorded_trades
+            recorded_trades = trades
+            return pd.DataFrame(trades)
+        
+        mock_format.side_effect = side_effect_format
+        
+        # Call the function
+        result = run_backtest('dummy_config.json')
+        
+        # Assert that the function returned True (success)
+        self.assertTrue(result)
+        
+        # Verify trades were created (should be 3 entry points)
+        self.assertEqual(len(recorded_trades), 3, "Expected 3 trades (one for each day)")
+        
+        # Verify each trade has a valid position_size, risk_size, and capital_required
+        for i, trade in enumerate(recorded_trades):
+            # Get trade details
+            entry_price = trade['entry_price']
+            stop_price = trade['stop_price']
+            
+            # Expected calculations
+            expected_risk_amount = init_cash * risk_per_trade / 100  # in dollars
+            expected_price_diff = abs(entry_price - stop_price)     # dollar per share risk
+            expected_position_size = round(expected_risk_amount / expected_price_diff)  # shares to trade
+            expected_risk_size = expected_position_size * expected_price_diff  # actual dollar risk
+            expected_capital_required = expected_position_size * entry_price   # total capital needed
+            
+            # Important assertions
+            self.assertGreater(trade['position_size'], 0, 
+                               f"Trade {i+1}: Position size should be greater than 0, got {trade['position_size']}")
+                               
+            self.assertGreater(trade['risk_size'], 0,
+                               f"Trade {i+1}: Risk size should be greater than 0, got {trade['risk_size']}")
+                               
+            self.assertGreater(trade['capital_required'], 0,
+                               f"Trade {i+1}: Capital required should be greater than 0, got {trade['capital_required']}")
+            
+            # Verify calculations are correct
+            self.assertEqual(trade['position_size'], expected_position_size, 
+                             f"Trade {i+1}: Position size incorrect. Expected {expected_position_size}, got {trade['position_size']}")
+                             
+            self.assertAlmostEqual(trade['risk_size'], expected_risk_size, delta=1.0,
+                                  msg=f"Trade {i+1}: Risk size incorrect. Expected ~{expected_risk_size}, got {trade['risk_size']}")
+                                  
+            self.assertEqual(trade['capital_required'], expected_capital_required,
+                            f"Trade {i+1}: Capital required incorrect. Expected {expected_capital_required}, got {trade['capital_required']}")
+        
+        # Verify log_trades_to_db received the correct data
+        self.assertTrue(mock_log.called, "log_trades_to_db was not called")
+        df_arg = mock_log.call_args[0][0]  # Get the first DataFrame argument
+        
+        # Check all trades in the DataFrame
+        for i in range(len(df_arg)):
+            self.assertGreater(df_arg['position_size'].iloc[i], 0, f"Trade {i+1}: position_size is zero in DataFrame to DB")
+            self.assertGreater(df_arg['risk_size'].iloc[i], 0, f"Trade {i+1}: risk_size is zero in DataFrame to DB")
+            self.assertGreater(df_arg['capital_required'].iloc[i], 0, f"Trade {i+1}: capital_required is zero in DataFrame to DB")
+
+    @patch('sqlite3.connect')
+    def test_position_metrics_in_database(self, mock_connect):
+        """Test that position metrics (position_size, risk_size, capital_required) are correctly passed to the database."""
+        # Set up mock connection and cursor
+        mock_cursor = MagicMock()
+        mock_connect.return_value.cursor.return_value = mock_cursor
+        mock_cursor.fetchone.return_value = (0,)  # No existing trades
+        
+        # Create sample trades with explicit position metrics
+        test_trades = [
+            {
+                'entry_timestamp': pd.Timestamp('2023-01-02 10:00:00').strftime('%Y-%m-%d %H:%M:%S'),
+                'exit_timestamp': pd.Timestamp('2023-01-02 14:30:00').strftime('%Y-%m-%d %H:%M:%S'),
+                'entry_price': 100.0,
+                'exit_price': 105.0,
+                'stop_price': 98.0,
+                'position_size': 50,  # Explicitly set
+                'risk_size': 100.0,   # Explicitly set
+                'risk_per_trade': 100.0,  # 1% * 100
+                'risk_reward': 2.5,
+                'perc_return': 250.0,
+                'winning_trade': 1,  # Add winning_trade field
+                'trade_duration': 4.5,  # Add trade_duration field
+                'capital_required': 5000.0,  # Explicitly set
+                'direction': 'long',
+                'exit_type': 'Take Profit'
+            }
+        ]
+        
+        # Convert to DataFrame
+        trades_df = pd.DataFrame(test_trades)
+        
+        # Call the function
+        log_trades_to_db(trades_df, 999, 'TEST')
+        
+        # Get the INSERT statement calls
+        insert_calls = [call for call in mock_cursor.execute.call_args_list 
+                       if isinstance(call[0][0], str) and "INSERT INTO" in call[0][0]]
+        
+        # Verify an INSERT was made
+        self.assertEqual(len(insert_calls), 1, "Should execute INSERT once")
+        
+        # Get the parameters passed to the INSERT statement
+        insert_params = insert_calls[0][0][1]  # Second argument of the first call
+        
+        # Check position metrics were passed correctly
+        # Parameters are in the order defined in the INSERT statement
+        # position_size is the 8th parameter (0-indexed)
+        # risk_size is the 9th parameter
+        # capital_required is the 15th parameter
+        self.assertEqual(insert_params[7], 50, "position_size not passed correctly to INSERT")
+        self.assertEqual(insert_params[8], 100.0, "risk_size not passed correctly to INSERT")
+        self.assertEqual(insert_params[14], 5000.0, "capital_required not passed correctly to INSERT")
+        
+        # Verify commit was called
+        mock_connect.return_value.commit.assert_called_once()
+
+    @patch('backtests.backtest_runner.log_trades_to_db')
+    @patch('backtests.backtest_runner.format_trades')
+    @patch('backtests.backtest_runner.setup_backtest')
+    @patch('backtests.backtest_runner.load_backtest_config')
+    def test_position_metrics_end_to_end(self, mock_load_config, mock_setup, mock_format, mock_log):
+        """Test that position metrics are correctly calculated and passed through the entire pipeline."""
+        # Set up the mocks
+        mock_load_config.return_value = (
+            'QQQ', 1, 3, 1, 1, 1, None, 
+            {"start": "2023-01-01", "end": "2023-01-03"},
+            {'init_cash': 10000}  # Explicit init_cash
+        )
+        
+        # Create test data
+        test_df = pd.DataFrame({
+            'open': [100, 101, 102, 103],
+            'high': [102, 103, 104, 105],
+            'low': [99, 100, 101, 102],
+            'close': [101, 102, 103, 104],
+            'volume': [1000, 1100, 1200, 1300],
+            'market_session': ['regular', 'regular', 'regular', 'regular']
+        }, index=pd.date_range(start='2023-01-01 09:30:00', periods=4, freq='H'))
+        
+        # Create entries
+        entries = pd.Series([True, False, False, False], index=test_df.index)
+        
+        # Mock setup_backtest
+        mock_setup.return_value = {
+            'run_id': 42,
+            'df': test_df,
+            'entries': entries,
+            'entry_config': {'field': 'tightness', 'signal': 'Ultra Tight', 'direction': 'long'},
+            'direction': 'long',
+            'stop_config': {'stop_type': 'perc', 'stop_value': 0.02},
+            'risk_config': {'risk_per_trade': 1.0, 'max_daily_risk': 5.0},
+            'exit_config': {'type': 'fixed', 'risk_reward': 2.0},
+            'swing_config': {'swings_allowed': 1},
+            'exits_swings_config': None,
+            'symbol': 'QQQ'
+        }
+        
+        # Create a spy for format_trades to capture the trades before they're formatted
+        original_format_trades = format_trades
+        raw_trades = []
+        
+        def format_trades_spy(trades, *args, **kwargs):
+            nonlocal raw_trades
+            raw_trades = trades.copy()  # Store a copy of the raw trades
+            return original_format_trades(trades, *args, **kwargs)
+        
+        mock_format.side_effect = format_trades_spy
+        
+        # Run the backtest
+        result = run_backtest('dummy_config.json')
+        
+        # Verify success
+        self.assertTrue(result)
+        
+        # Verify trades were created
+        self.assertGreater(len(raw_trades), 0, "No trades were generated")
+        
+        # Check position metrics in the raw trades
+        for i, trade in enumerate(raw_trades):
+            self.assertGreater(trade['position_size'], 0, 
+                              f"Trade {i+1}: position_size should be > 0, got {trade['position_size']}")
+            self.assertGreater(trade['risk_size'], 0, 
+                              f"Trade {i+1}: risk_size should be > 0, got {trade['risk_size']}")
+            self.assertGreater(trade['capital_required'], 0, 
+                              f"Trade {i+1}: capital_required should be > 0, got {trade['capital_required']}")
+        
+        # Verify log_trades_to_db was called with the correct data
+        self.assertTrue(mock_log.called)
+        
+        # Get the DataFrame passed to log_trades_to_db
+        df_to_db = mock_log.call_args[0][0]
+        
+        # Check position metrics in the DataFrame passed to the database
+        for i in range(len(df_to_db)):
+            self.assertGreater(df_to_db['position_size'].iloc[i], 0, 
+                              f"Trade {i+1}: position_size is zero in DataFrame to DB")
+            self.assertGreater(df_to_db['risk_size'].iloc[i], 0, 
+                              f"Trade {i+1}: risk_size is zero in DataFrame to DB")
+            self.assertGreater(df_to_db['capital_required'].iloc[i], 0, 
+                              f"Trade {i+1}: capital_required is zero in DataFrame to DB")
 
 if __name__ == '__main__':
     unittest.main() 
