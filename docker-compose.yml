@@ -11,3 +11,5 @@ services:
       - PYTHONUNBUFFERED=1
     tty: true  # Keep container running and enable terminal
     stdin_open: true  # Enable interactive mode 
+    ports:
+      - "8888:8888"  # Expose Jupyter port 
