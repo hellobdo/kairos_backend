@@ -1,18 +1,26 @@
-name: Test Config Getters
+name: Test Config and Backtest Modules
 
 on:
   push:
     branches: [main, master]
     paths:
       - 'backtests/helpers/get_*.py'
+      - 'backtests/backtest_loader.py'  
+      - 'backtests/backtest_runner.py'
       - 'tests/test_getters_config.py'
+      - 'tests/test_backtest_loader.py'
+      - 'tests/test_backtest_runner.py'
       - 'data/algos.db'
       - '.github/workflows/test-getters.yml'
   pull_request:
     branches: [main, master]
     paths:
       - 'backtests/helpers/get_*.py'
+      - 'backtests/backtest_loader.py'
+      - 'backtests/backtest_runner.py'
       - 'tests/test_getters_config.py'
+      - 'tests/test_backtest_loader.py'
+      - 'tests/test_backtest_runner.py'
       - 'data/algos.db'
       - '.github/workflows/test-getters.yml'
 
@@ -50,4 +58,12 @@ jobs:
         
     - name: Run getter config tests
       run: |
-        python tests/test_getters_config.py 
+        python tests/test_getters_config.py
+        
+    - name: Run backtest loader tests
+      run: |
+        python -m unittest tests/test_backtest_loader.py
+        
+    - name: Run backtest runner tests
+      run: |
+        python -m unittest tests/test_backtest_runner.py 

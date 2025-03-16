@@ -9,8 +9,7 @@ from datetime import datetime
 
 # Add project root to sys.path to allow imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from backtests.backtest_loader import setup_backtest
-from backtests.helpers.trade_logger import format_trades, log_trades_to_db, print_performance_metrics
+from backtests.backtest_loader import setup_backtest, load_config, load_backtest_config
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -36,17 +35,6 @@ def calculate_risk_reward(entry_price, exit_price, stop_price, is_long):
         # For shorts: (entry_price - exit_price) / (stop_price - entry_price)
         return (entry_price - exit_price) / (stop_price - entry_price)
 
-def load_config(config_file):
-    """Load configuration from a JSON file."""
-    try:
-        with open(config_file, 'r') as f:
-            config = json.load(f)
-        logger.info(f"Loaded configuration from {config_file}")
-        return config
-    except Exception as e:
-        logger.error(f"Error loading configuration: {e}")
-        return None
-
 def format_trades(trade_list, df, stop_config, risk_config, exit_config, swing_config):
     """
     Format trades into a structured DataFrame for logging.
@@ -69,7 +57,7 @@ def format_trades(trade_list, df, stop_config, risk_config, exit_config, swing_c
     trades_df = pd.DataFrame(trade_list)
     
     # Add additional calculations & formatting
-    trades_df['winning_trade'] = (trades_df['pnl'] > 0).astype(int)
+    trades_df['winning_trade'] = (trades_df['risk_reward'] > 0).astype(int)
     trades_df['trade_duration'] = (trades_df['exit_timestamp'] - trades_df['entry_timestamp']).dt.total_seconds() / 3600
     
     # Ensure correct types
@@ -164,20 +152,20 @@ def log_trades_to_db(trades_df, run_id, symbol):
 def run_backtest(config_file):
     """Run a backtest using configurations from a file without VectorBT."""
     try:
-        # Load configuration
-        config = load_config(config_file)
-        if not config:
+        # Load configuration using the backtest loader
+        config_params = load_backtest_config(config_file)
+        if not config_params:
             return False
         
-        # Extract backtest parameters
-        bc = config['backtest']
-        symbol = bc['symbol']
+        # Extract parameters from the configuration tuple
+        symbol, entry_config_id, stoploss_config_id, risk_config_id, exit_config_id, \
+        swing_config_id, exits_swings_config_id, date_range, bc = config_params
         
         # Set up the backtest - this gets all configs from DB
         data = setup_backtest(
-            symbol, bc['entry_config_id'], bc['stoploss_config_id'], 
-            bc['risk_config_id'], bc['exit_config_id'], bc['swing_config_id'], 
-            bc.get('exits_swings_config_id'), bc.get('date_range')
+            symbol, entry_config_id, stoploss_config_id, 
+            risk_config_id, exit_config_id, swing_config_id, 
+            exits_swings_config_id, date_range
         )
         
         if not data:
@@ -260,9 +248,13 @@ def run_backtest(config_file):
         
         # Find last candle of each day for EOD exits
         if 'market_session' in df.columns:
-            last_candles = df[df['market_session'] == 'regular'].groupby(df.index.date).apply(lambda x: x.index[-1])
+            # Convert index to pandas Series first and extract date properly
+            dates = pd.Series(df.index).dt.date
+            last_candles = df[df['market_session'] == 'regular'].groupby(dates).apply(lambda x: x.index[-1])
         else:
-            last_candles = df.groupby(df.index.date).apply(lambda x: x.index[-1])
+            # Convert index to pandas Series first and extract date properly
+            dates = pd.Series(df.index).dt.date
+            last_candles = df.groupby(dates).apply(lambda x: x.index[-1])
         
         # Iterate through each candle
         for i in range(len(df.index)):
@@ -442,9 +434,6 @@ def run_backtest(config_file):
         
         # Format trades into a DataFrame
         trades_df = format_trades(trades, df, stop_config, risk_config, exit_config, swing_config)
-        
-        # Print performance metrics
-        print_performance_metrics(trades_df, exit_config)
         
         # Log trades to database
         log_trades_to_db(trades_df, run_id, symbol)

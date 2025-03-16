@@ -19,6 +19,49 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+def load_config(config_file):
+    """Load configuration from a JSON file."""
+    try:
+        with open(config_file, 'r') as f:
+            config = json.load(f)
+        logger.info(f"Loaded configuration from {config_file}")
+        return config
+    except Exception as e:
+        logger.error(f"Error loading configuration: {e}")
+        return None
+
+def load_backtest_config(config_file):
+    """
+    Load and parse backtest configuration from a JSON file.
+    
+    Args:
+        config_file (str): Path to the configuration file
+        
+    Returns:
+        tuple: (symbol, entry_config_id, stoploss_config_id, risk_config_id, exit_config_id, 
+                swing_config_id, exits_swings_config_id, date_range, backtest_config) or None if loading fails
+    """
+    # Load raw configuration
+    config = load_config(config_file)
+    if not config:
+        return None
+    
+    # Extract backtest parameters
+    bc = config['backtest']
+    symbol = bc['symbol']
+    entry_config_id = bc['entry_config_id']
+    stoploss_config_id = bc['stoploss_config_id']
+    risk_config_id = bc['risk_config_id']
+    exit_config_id = bc['exit_config_id']
+    swing_config_id = bc['swing_config_id']
+    exits_swings_config_id = bc.get('exits_swings_config_id')
+    date_range = bc.get('date_range')
+    
+    logger.info(f"Parsed backtest configuration for symbol: {symbol}")
+    
+    return (symbol, entry_config_id, stoploss_config_id, risk_config_id, 
+            exit_config_id, swing_config_id, exits_swings_config_id, date_range, bc)
+
 def generate_entry_signals(df: pd.DataFrame, entry_config: Dict[str, Any]) -> Tuple[pd.Series, str]:
     """
     Generate entry signals based on the entry configuration.
@@ -123,17 +166,21 @@ def create_backtest_run(entry_config_id, stoploss_config_id, risk_config_id, exi
     logger.info(f"Created backtest run record with ID {run_id}")
     return run_id
 
-def load_data_from_db(symbol, risk_config, date_range=None):
+def load_data_from_db(symbol, risk_config, entry_config=None, date_range=None):
     """
-    Load historical data from SQLite database.
+    Load historical data from SQLite database and generate entry signals if entry_config is provided.
     
     Args:
         symbol (str): The trading symbol to load data for
         risk_config (dict): Risk configuration containing outside_regular_hours_allowed setting
+        entry_config (dict, optional): Entry configuration dictionary for signal generation
         date_range (dict, optional): Dictionary with 'start' and 'end' date strings
         
     Returns:
-        pd.DataFrame: Price data with datetime index
+        tuple: (df, entries, direction) where:
+            - df is the price data DataFrame with datetime index
+            - entries is a Series of boolean values indicating entry points (None if entry_config not provided)
+            - direction is the trading direction string (None if entry_config not provided)
     """
     conn = sqlite3.connect('data/algos.db')
     
@@ -188,7 +235,21 @@ def load_data_from_db(symbol, risk_config, date_range=None):
     
     logger.info(f"Loaded {len(df)} data points for {symbol}")
     
-    return df
+    # Generate entry signals if entry_config is provided
+    entries = None
+    direction = None
+    if entry_config:
+        logger.info(f"Generating entry signals using field '{entry_config['field']}' with signal '{entry_config['signal']}' (direction: {entry_config.get('direction', 'long')})...")
+        entries, direction = generate_entry_signals(df, entry_config)
+        
+        # Log how many entries were found
+        entry_count = entries.sum() if entries is not None else 0
+        logger.info(f"Found {entry_count} entry points out of {len(df)} data points")
+        
+        if entry_count == 0:
+            logger.warning("No entry points found with the current configuration. Backtest will not produce trades.")
+    
+    return df, entries, direction
 
 def get_configs(entry_config_id, stoploss_config_id, risk_config_id, exit_config_id, swing_config_id, exits_swings_config_id=None):
     """
@@ -255,6 +316,12 @@ def setup_backtest(symbol, entry_config_id, stoploss_config_id, risk_config_id, 
     """
     Set up a backtest by loading data and configurations and creating a run record.
     
+    This function follows these steps:
+    1. Get all configurations from the database
+    2. Create a backtest run record
+    3. Load historical data and generate entry signals in one step
+    4. Return all data needed for the backtest
+    
     Args:
         symbol (str): Trading symbol
         entry_config_id (int): ID for entry configuration
@@ -294,22 +361,11 @@ def setup_backtest(symbol, entry_config_id, stoploss_config_id, risk_config_id, 
     
     # Load data
     logger.info("Loading historical data from database...")
-    df = load_data_from_db(symbol, risk_config, date_range)
+    df, entries, direction = load_data_from_db(symbol, risk_config, entry_config, date_range)
     
     if df.empty:
         logger.error("No data found for the given symbol and date range")
         return None
-    
-    # Generate entry signals based on entry configuration
-    logger.info(f"Generating entry signals using field '{entry_config['field']}' with signal '{entry_config['signal']}' (direction: {entry_config['direction']})...")
-    entries, direction = generate_entry_signals(df, entry_config)
-    
-    # Log how many entries were found
-    entry_count = entries.sum()
-    logger.info(f"Found {entry_count} entry points out of {len(df)} data points")
-    
-    if entry_count == 0:
-        logger.warning("No entry points found with the current configuration. Backtest will not produce trades.")
     
     # Return all data needed for the backtest
     return {
