@@ -274,12 +274,12 @@ def run_backtest(config_file):
                         
                     # Calculate risk amount
                     risk_amount = init_cash * risk_config['risk_per_trade'] / 100
-                    
+
                     # Calculate price difference for position sizing
                     price_diff = abs(entry_price - stop_price)
-                    
+
                     # Calculate position size
-                    position_size = int(risk_amount / price_diff)
+                    position_size = round(risk_amount / price_diff)
                     
                     # Calculate take profit price
                     if is_long:
@@ -297,7 +297,7 @@ def run_backtest(config_file):
                         'take_profit_price': take_profit_price,
                         'position_size': position_size,
                         'direction': direction,
-                        'risk_per_trade': risk_config['risk_per_trade'],
+                        'risk_per_trade': risk_config['risk_per_trade'] * 100,
                         'capital_required': position_size * entry_price,
                         'risk_size': position_size * abs(entry_price - stop_price)
                     }
@@ -344,6 +344,11 @@ def run_backtest(config_file):
                     # End of day exit
                     exit_price = close_price  # Exit at close price
                     exit_type = "End of Day"
+                # Add stricter check for end-of-day exit when swing trading is not allowed
+                elif swing_config['swings_allowed'] == 0 and i < len(df.index) - 1 and pd.Timestamp(df.index[i]).date() != pd.Timestamp(df.index[i+1]).date() and not exit_price:
+                    # End of day exit (stricter check to prevent swing trading)
+                    exit_price = close_price  # Exit at close price
+                    exit_type = "End of Day (No Swings)"
                 
                 # Process exit if conditions are met
                 if exit_price:
@@ -355,7 +360,7 @@ def run_backtest(config_file):
                         is_long
                     )
                     
-                    # Calculate percentage return
+                    # Calculate percentage return - risk_per_trade is already in percentage form
                     perc_return = risk_reward * position['risk_per_trade']
                     
                     # Create trade record
@@ -397,7 +402,7 @@ def run_backtest(config_file):
                 is_long
             )
             
-            # Calculate percentage return
+            # Calculate percentage return - risk_per_trade is already in percentage form
             perc_return = risk_reward * position['risk_per_trade']
             
             # Create trade record
