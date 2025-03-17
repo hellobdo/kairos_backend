@@ -12,7 +12,7 @@ from lumibot.backtesting import PandasDataBacktesting
 # Import backtesting flag
 from lumibot.credentials import IS_BACKTESTING
 
-ticker = "TSLA"
+ticker = "QQQ"
 
 # Load the CSV file using the ticker variable
 df = pd.read_csv(f'data/csv/{ticker}.csv')
@@ -57,9 +57,9 @@ class TightnessStrategy(Strategy):
     # Define strategy parameters that can be adjusted by the user
     parameters = {
         "symbols": [ticker],
-        "tight_threshold": 0.0025,           # maximum allowed difference between close and open to consider the candle as tight
+        "tight_threshold": 0.00015,           # maximum allowed difference between close and open to consider the candle as tight
         "stop_loss": 1,                # stop loss in dollars per share
-        "risk_reward": 4                  # risk reward multiplier, meaning the profit target is risk*4
+        "risk_reward": 2                  # risk reward multiplier, meaning the profit target is risk*4
     }
 
     def initialize(self):
@@ -105,59 +105,17 @@ class TightnessStrategy(Strategy):
             high_price = latest_candle['high']
             low_price = latest_candle['low']
 
-            min_wick_length = 0.5  # minimum length for the longer wick
-
             # T-shaped with minimum length
             is_t_shaped = (
-                abs(open_price - close_price) / open_price < tight_threshold and
-                high_price > open_price and
+                (abs(open_price - close_price) / open_price) < tight_threshold and
                 low_price < open_price and
-                abs(high_price - open_price) > abs(low_price - open_price) * 2 and
-                abs(high_price - open_price) > min_wick_length
-            )
-
-            # Inverted T with minimum length
-            is_inverted_t = (
-                abs(open_price - close_price) / open_price < tight_threshold and
-                high_price > open_price and
-                low_price < open_price and
-                abs(low_price - open_price) > abs(high_price - open_price) * 2 and
-                abs(low_price - open_price) > min_wick_length
+                abs(low_price - open_price) / abs(high_price - open_price) > 2.5
             )
 
             if is_t_shaped:
                 # Get the last price to use as entry price
                 entry_price = self.get_last_price(symbol)
                 if entry_price is None:
-                    continue
-
-                # Determine trade quantity based on risk size divided by stop loss per share
-                computed_quantity = int(risk_size // stop_loss_amount)
-                trade_quantity = computed_quantity
-
-                # Calculate stop loss and take profit levels
-                stop_loss_price = entry_price + stop_loss_amount
-                take_profit_price = entry_price - (stop_loss_amount * risk_reward)
-
-                # Create a market order with attached stop loss and take profit levels
-                # Trading on margin by passing custom parameter 'margin': True
-                order = self.create_order(
-                    symbol,
-                    trade_quantity,
-                    Order.OrderSide.BUY,
-                    stop_price=stop_loss_price,          # attached stop loss
-                    take_profit_price=take_profit_price,   # attached take profit target
-                    custom_params={"margin": True}
-                )
-                # Submit the order
-                self.submit_order(order)
-
-
-            if is_inverted_t:
-                # Get the last price to use as entry price
-                entry_price = self.get_last_price(symbol)
-                if entry_price is None:
-                    self.log_message(f"Could not get last price for {symbol}.")
                     continue
 
                 # Determine trade quantity based on risk size divided by stop loss per share
@@ -173,7 +131,7 @@ class TightnessStrategy(Strategy):
                 order = self.create_order(
                     symbol,
                     trade_quantity,
-                    Order.OrderSide.SELL,
+                    Order.OrderSide.BUY,
                     stop_price=stop_loss_price,          # attached stop loss
                     take_profit_price=take_profit_price,   # attached take profit target
                     custom_params={"margin": True}
