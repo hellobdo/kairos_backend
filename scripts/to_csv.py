@@ -28,7 +28,6 @@ def export_symbols_to_csv(symbols, db_path='data/historical_data.db'):
             print(f"\nData extracted successfully for {symbol}")
             print(f"Output file: {output_file}")
             print(f"Total rows: {len(df)}")
-            print(f"Date range: {df['date_and_time'].min()} to {df['date_and_time'].max()}")
             
         except Exception as e:
             print(f"Error processing {symbol}: {str(e)}")
