@@ -40,3 +40,6 @@ myenv/
 
 # Logs
 *.log 
+
+# Data
+*.csv
