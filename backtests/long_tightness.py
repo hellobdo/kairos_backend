@@ -46,15 +46,18 @@ class LongTightness(Strategy):
     parameters = {
         "symbols": [ticker],
         "tight_threshold": 0.00015,           # maximum allowed difference between close and open to consider the candle as tight
-        "stop_loss": 1,                # stop loss in dollars per share
+        "stop_loss": 0.8,                # stop loss in dollars per share
         "risk_reward": 2                  # risk reward multiplier, meaning the profit target is risk*4
     }
 
     def initialize(self):
+        self.sleeptime = "30M"
         # Initialize persistent variables for risk management and trade logging
         if not hasattr(self.vars, 'daily_loss_count'):
             self.vars.daily_loss_count = 0  # track consecutive losses in the day
-
+        # Initialize persistent variable for storing filled trade details
+        if not hasattr(self.vars, 'trade_log'):
+            self.vars.trade_log = []
         self.minutes_before_closing = 5 # close positions 5 minutes before market close, see below def before_market_closes()
             
     def on_trading_iteration(self):
@@ -71,7 +74,7 @@ class LongTightness(Strategy):
         cash = self.get_cash()
         risk_size = cash * 0.005
 
-        # Check how many non-USD positions are currently open
+        # Check current open positions (exclude USD cash position)
         open_positions = [p for p in self.get_positions() if not (p.asset.symbol == "USD" and p.asset.asset_type == Asset.AssetType.FOREX)]
         if len(open_positions) >= 2:
             return
@@ -116,18 +119,38 @@ class LongTightness(Strategy):
                 stop_loss_price = entry_price - stop_loss_amount # stop loss price below entry price
                 take_profit_price = entry_price + (stop_loss_amount * risk_reward) # take profit price above entry price
 
-                # Create a market order with attached stop loss and take profit levels
+                # Create a market order with attached stop loss and take profit orders
                 # Trading on margin by passing custom parameter 'margin': True
-                order = self.create_order(
+                entry_order = self.create_order(
                     symbol,
                     trade_quantity,
-                    Order.OrderSide.BUY,
-                    stop_price=stop_loss_price,          # attached stop loss
-                    take_profit_price=take_profit_price,   # attached take profit target
+                    side="buy",
+                    type="bracket",  # This makes it a bracket order
+                    limit_price=None,  # No limit price for entry
+                    stop_price=None,  # No stop price for entry - will be a market order
+                    stop_loss_price=stop_loss_price,  # Your exit stop loss price
+                    take_profit_price=take_profit_price,  # Your exit take profit price
                     custom_params={"margin": True}
                 )
-                # Submit the order
-                self.submit_order(order)
+                self.submit_order(entry_order)
+
+    def on_filled_order(self, position, order, price, quantity, multiplier):
+        trade_info = {
+            "order_id": order.identifier,
+            "symbol": order.asset if isinstance(order.asset, str) else order.asset.symbol,
+            "filled_price": price,
+            "quantity": quantity,
+            "side": order.side,
+            "timestamp": self.get_datetime(),  # The time this fill was processed
+            "limit_price": getattr(order, 'limit_price', None),
+            "stop_price": getattr(order, 'stop_price', None),
+            "take_profit_price": getattr(order, 'limit_price', None) if order.side == Order.OrderSide.SELL else None,  # Assuming limit_price in SELL can be take profit
+            "custom_params": order.custom_params,
+            "order_type": getattr(order, 'type', None),
+            "date_created": getattr(order, 'date_created', None),
+        }
+
+        self.vars.trade_log.append(trade_info)
 
     def before_market_closes(self): # close positions 5 minutes before market close
         positions = self.get_positions()
