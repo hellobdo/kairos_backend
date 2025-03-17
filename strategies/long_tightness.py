@@ -1,7 +1,6 @@
 import pandas as pd
 from datetime import datetime
 import os
-import pytz
 
 # Import the Strategy base class
 from lumibot.strategies.strategy import Strategy
@@ -11,6 +10,8 @@ from lumibot.entities import Order, Asset, Data
 from lumibot.backtesting import PandasDataBacktesting
 # Import backtesting flag
 from lumibot.credentials import IS_BACKTESTING
+
+# Prepare for data loading
 
 ticker = "QQQ"
 
@@ -27,33 +28,20 @@ pandas_data = {
     asset: Data(asset, df, timestep="minute"),
 }
 
-# Get timezone from the dataframe index (if it has one)
-sample_date = df.index.max()
-timezone = sample_date.tzinfo
+# Convert df.index.max() to naive datetime if it has timezone info
+max_date = df.index.max()
+if max_date.tzinfo is not None:
+    # Convert to naive datetime by replacing tzinfo with None
+    # This removes timezone information without changing the time
+    max_date = max_date.replace(tzinfo=None)
 
-# Define specific date range for backtesting with proper timezone
-# Format: year, month, day, hour, minute
-if timezone:
-    # If data has timezone, use it for start date
-    eastern = pytz.timezone('America/New_York')
-    backtesting_start = eastern.localize(datetime(2025, 1, 1, 9, 30))
-else:
-    # If data has no timezone, use naive datetime
-    backtesting_start = datetime(2025, 1, 1, 9, 30)
+# Use naive datetimes for both start and end
+# Adjusted for your 2-hour ahead data (9:30 exchange time = 11:30 your data)
+backtesting_start = datetime(2025, 1, 1, 11, 30)  # Exchange time 9:30
+backtesting_end = max_date
 
-# Use the max date from the dataframe for end date
-backtesting_end = df.index.max()
 
-# Print date range for confirmation
-print(f"Backtesting from {backtesting_start} to {backtesting_end}")
-print(f"Start date timezone: {backtesting_start.tzinfo}")
-print(f"End date timezone: {backtesting_end.tzinfo}")
-
-# Uncomment to use full data range instead
-# backtesting_start = df.index.min()
-# backtesting_end = df.index.max()
-
-class TightnessStrategy(Strategy):
+class LongTightness(Strategy):
     # Define strategy parameters that can be adjusted by the user
     parameters = {
         "symbols": [ticker],
@@ -66,6 +54,8 @@ class TightnessStrategy(Strategy):
         # Initialize persistent variables for risk management and trade logging
         if not hasattr(self.vars, 'daily_loss_count'):
             self.vars.daily_loss_count = 0  # track consecutive losses in the day
+
+        self.minutes_before_closing = 5 # close positions 5 minutes before market close, see below def before_market_closes()
             
     def on_trading_iteration(self):
         # Check if max daily losses reached (2 consecutive losses) to prevent further trading
@@ -105,14 +95,14 @@ class TightnessStrategy(Strategy):
             high_price = latest_candle['high']
             low_price = latest_candle['low']
 
-            # T-shaped with minimum length
+            # T-shaped - entry indicator
             is_t_shaped = (
                 (abs(open_price - close_price) / open_price) < tight_threshold and
                 low_price < open_price and
                 abs(low_price - open_price) / abs(high_price - open_price) > 2.5
             )
 
-            if is_t_shaped:
+            if is_t_shaped: # then execute the trade
                 # Get the last price to use as entry price
                 entry_price = self.get_last_price(symbol)
                 if entry_price is None:
@@ -123,8 +113,8 @@ class TightnessStrategy(Strategy):
                 trade_quantity = computed_quantity
 
                 # Calculate stop loss and take profit levels
-                stop_loss_price = entry_price - stop_loss_amount
-                take_profit_price = entry_price + (stop_loss_amount * risk_reward)
+                stop_loss_price = entry_price - stop_loss_amount # stop loss price below entry price
+                take_profit_price = entry_price + (stop_loss_amount * risk_reward) # take profit price above entry price
 
                 # Create a market order with attached stop loss and take profit levels
                 # Trading on margin by passing custom parameter 'margin': True
@@ -139,17 +129,31 @@ class TightnessStrategy(Strategy):
                 # Submit the order
                 self.submit_order(order)
 
+    def before_market_closes(self): # close positions 5 minutes before market close
+        positions = self.get_positions()
+        if len(positions) == 0:
+            return
+    
+        for position in positions:
+            symbol = position.asset.symbol
+            quantity = position.quantity
+            side = "sell" if quantity > 0 else "buy"
+            quantity = abs(quantity)
+
+        order = self.create_order(symbol, quantity, side)
+        self.submit_order(order)
+
     def after_market_closes(self):
         # Reset daily loss count for next trading day
         self.vars.daily_loss_count = 0
 
 if __name__ == "__main__":
     # Run backtest
-    result = TightnessStrategy.run_backtest(
+    result = LongTightness.run_backtest(
         datasource_class=PandasDataBacktesting,
         pandas_data=pandas_data,
         backtesting_start=backtesting_start,
         backtesting_end=backtesting_end,
-        parameters=TightnessStrategy.parameters,
+        parameters=LongTightness.parameters,
         quote_asset=Asset("USD", asset_type=Asset.AssetType.FOREX),
     )
