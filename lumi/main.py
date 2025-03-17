@@ -78,9 +78,6 @@ if __name__ == "__main__":
 
     from lumibot.backtesting import YahooDataBacktesting
 
-    # 0.1% fee
-    trading_fee = TradingFee(percent_fee=0.001)
-
     # Create the configs helper
     configs_helper = ConfigsHelper()
 
@@ -95,6 +92,4 @@ if __name__ == "__main__":
         YahooDataBacktesting,
         BACKTESTING_START,
         BACKTESTING_END,
-        buy_trading_fees=[trading_fee],
-        sell_trading_fees=[trading_fee],
     )
