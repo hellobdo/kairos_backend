@@ -28,6 +28,7 @@ class LongTightness(Strategy):
     }
 
     def initialize(self):
+        # watches every minute
         self.sleeptime = "1M"
         # Initialize persistent variables for risk management and trade logging
         if not hasattr(self.vars, 'daily_loss_count'):
@@ -36,7 +37,7 @@ class LongTightness(Strategy):
         if not hasattr(self.vars, 'trade_log'):
             self.vars.trade_log = []
         
-        self.minutes_before_closing = 0.1 # close positions 5 minutes before market close, see below def before_market_closes()
+        self.minutes_before_closing = 0.1 # close positions before market close, see below def before_market_closes()
             
     def on_trading_iteration(self):
         # Check if max daily losses reached (2 consecutive losses) to prevent further trading

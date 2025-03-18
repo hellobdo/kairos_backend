@@ -394,27 +394,7 @@ def calculate_trade_metrics(trades_summary, trades_df, strategy_params=None):
         
         print("Classified trade exits as: stop, take profit, or end of day")
         
-        # Adjust exit prices based on exit type
-        for idx, row in trades_summary_display.iterrows():
-            if row['exit_type'] == 'stop':
-                # For stop exit, set exit price to stop price
-                trades_summary_display.at[idx, 'exit_price'] = row['stop_price']
-            elif row['exit_type'] == 'take profit' and strategy_risk_reward:
-                if side == 'buy':
-                    # For buy trades with take profit exit
-                    # Set exit price to entry + (entry - stop) * risk_reward
-                    stop_loss_amount = row['entry_price'] - row['stop_price']
-                    trades_summary_display.at[idx, 'exit_price'] = row['entry_price'] + (stop_loss_amount * strategy_risk_reward)
-                else:  # sell
-                    # For sell trades with take profit exit
-                    # Set exit price to entry - (stop - entry) * risk_reward
-                    stop_loss_amount = row['stop_price'] - row['entry_price']
-                    trades_summary_display.at[idx, 'exit_price'] = row['entry_price'] - (stop_loss_amount * strategy_risk_reward)
-        
-        # Round adjusted exit prices to 2 decimal places
-        trades_summary_display['exit_price'] = trades_summary_display['exit_price'].round(2)
-        
-        print("Adjusted exit prices based on exit type")
+        # Using original exit prices from the data, no adjustment
         
         # Recalculate actual risk/reward ratio with the adjusted exit prices
         if side == 'buy':
@@ -504,6 +484,10 @@ def calculate_trade_metrics(trades_summary, trades_df, strategy_params=None):
             week_num = week_date.isocalendar()[1]  # ISO week number
             year = week_date.year
             
+            # Use the actual dates in the dataframe to determine the year
+            # This handles edge cases where ISO week might be from previous/next year
+            actual_year = week_df['start_date'].dt.year.iloc[0]
+            
             total_trades = len(week_df)
             winning_trades = week_df['winning_trade'].sum()
             accuracy = (winning_trades / total_trades * 100) if total_trades > 0 else 0
@@ -519,7 +503,7 @@ def calculate_trade_metrics(trades_summary, trades_df, strategy_params=None):
             total_return = week_df['perc_return'].sum()
             
             weekly_metrics.append({
-                'Period': f"Week {week_num}, {year}",
+                'Period': f"Week {week_num}, {actual_year}",
                 'Trades': total_trades,
                 'Accuracy': f"{accuracy:.2f}%",
                 'Risk Per Trade': f"{risk_per_trade*100:.2f}%",
