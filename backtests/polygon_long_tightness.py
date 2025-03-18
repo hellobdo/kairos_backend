@@ -18,8 +18,8 @@ class LongTightness(Strategy):
     parameters = {
         "symbols": ["QQQ"],
         "tight_threshold": 0.00015,           # maximum allowed difference between close and open to consider the candle as tight
-        "stop_loss": 0.8,                # stop loss in dollars per share
-        "risk_reward": 2,                  # risk reward multiplier, meaning the profit target is risk*4
+        "stop_loss": 0.2,                # stop loss in dollars per share
+        "risk_reward": 3,                  # risk reward multiplier, meaning the profit target is risk*4
         "side": "buy",
         "risk_per_trade": 0.005,
         "init_cash": 30000,
