@@ -1,6 +1,8 @@
 import pandas as pd
 from datetime import datetime
 import os
+import subprocess
+import sys
 
 # Import the Strategy base class
 from lumibot.strategies.strategy import Strategy
@@ -47,7 +49,9 @@ class LongTightness(Strategy):
         "symbols": [ticker],
         "tight_threshold": 0.00015,           # maximum allowed difference between close and open to consider the candle as tight
         "stop_loss": 0.8,                # stop loss in dollars per share
-        "risk_reward": 2                  # risk reward multiplier, meaning the profit target is risk*4
+        "risk_reward": 2,                  # risk reward multiplier, meaning the profit target is risk*4
+        "side": "buy",
+        "risk_per_trade": 0.005
     }
 
     def initialize(self):
@@ -58,6 +62,7 @@ class LongTightness(Strategy):
         # Initialize persistent variable for storing filled trade details
         if not hasattr(self.vars, 'trade_log'):
             self.vars.trade_log = []
+        
         self.minutes_before_closing = 5 # close positions 5 minutes before market close, see below def before_market_closes()
             
     def on_trading_iteration(self):
@@ -69,10 +74,11 @@ class LongTightness(Strategy):
         tight_threshold = self.parameters.get("tight_threshold")
         stop_loss_amount = self.parameters.get("stop_loss")
         risk_reward = self.parameters.get("risk_reward")
-
+        side = self.parameters.get("side")
+        risk_per_trade = self.parameters.get("risk_per_trade")
         # Calculate risk size: 0.5% of available cash
         cash = self.get_cash()
-        risk_size = cash * 0.005
+        risk_size = cash * risk_per_trade
 
         # Check current open positions (exclude USD cash position)
         open_positions = [p for p in self.get_positions() if not (p.asset.symbol == "USD" and p.asset.asset_type == Asset.AssetType.FOREX)]
@@ -116,20 +122,24 @@ class LongTightness(Strategy):
                 trade_quantity = computed_quantity
 
                 # Calculate stop loss and take profit levels
-                stop_loss_price = entry_price - stop_loss_amount # stop loss price below entry price
-                take_profit_price = entry_price + (stop_loss_amount * risk_reward) # take profit price above entry price
+                if side == "buy":
+                    stop_loss_price = entry_price - stop_loss_amount # stop loss price below entry price
+                    take_profit_price = entry_price + (stop_loss_amount * risk_reward) # take profit price above entry price
+                else:
+                    stop_loss_price = entry_price + stop_loss_amount # stop loss price above entry price
+                    take_profit_price = entry_price - (stop_loss_amount * risk_reward) # take profit price below entry price
 
                 # Create a market order with attached stop loss and take profit orders
                 # Trading on margin by passing custom parameter 'margin': True
                 entry_order = self.create_order(
                     symbol,
                     trade_quantity,
-                    side="buy",
+                    side=side,
                     type="bracket",  # This makes it a bracket order
                     limit_price=None,  # No limit price for entry
                     stop_price=None,  # No stop price for entry - will be a market order
-                    stop_loss_price=stop_loss_price,  # Your exit stop loss price
-                    take_profit_price=take_profit_price,  # Your exit take profit price
+                    stop_loss_price=stop_loss_price,  # Exit stop loss price
+                    take_profit_price=take_profit_price,  # Exit take profit price
                     custom_params={"margin": True}
                 )
                 self.submit_order(entry_order)
@@ -152,23 +162,68 @@ class LongTightness(Strategy):
 
         self.vars.trade_log.append(trade_info)
 
-    def before_market_closes(self): # close positions 5 minutes before market close
+    def before_market_closes(self): 
+
+        # close positions 5 minutes before market close
+
+        # checks if there are any positions to close
         positions = self.get_positions()
         if len(positions) == 0:
             return
-    
-        for position in positions:
-            symbol = position.asset.symbol
-            quantity = position.quantity
-            side = "sell" if quantity > 0 else "buy"
-            quantity = abs(quantity)
-
-        order = self.create_order(symbol, quantity, side)
-        self.submit_order(order)
+        
+        # close all positions and cancel all open orders
+        self.sell_all()
 
     def after_market_closes(self):
         # Reset daily loss count for next trading day
         self.vars.daily_loss_count = 0
+
+
+def process_trades():
+    """
+    Call the process_trades.py script to analyze and generate reports on trades
+    """
+    try:
+        # Determine the path to the process_trades.py script
+        script_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
+                                 "scripts", "process_trades.py")
+        
+        # Check if the script exists
+        if not os.path.exists(script_path):
+            print(f"ERROR: Could not find process_trades.py at {script_path}")
+            return False
+        
+        print("\nGenerating trade reports...")
+        
+        # Pass stop_loss, side, and risk_reward parameters to the script
+        stop_loss = LongTightness.parameters.get("stop_loss")
+        side = LongTightness.parameters.get("side")
+        risk_reward = LongTightness.parameters.get("risk_reward")
+        risk_per_trade = LongTightness.parameters.get("risk_per_trade", 0.005)  # Default to 0.005 if not found
+        
+        # Execute the script as a subprocess with parameters
+        result = subprocess.run([
+            sys.executable, 
+            script_path, 
+            "--stop_loss", str(stop_loss), 
+            "--side", side,
+            "--risk_reward", str(risk_reward),
+            "--risk_per_trade", str(risk_per_trade)
+        ], capture_output=True, text=True)
+        
+        # Check the result
+        if result.returncode == 0:
+            print(result.stdout)
+            print("Trade reports generated successfully")
+            return True
+        else:
+            print(f"ERROR running process_trades.py: {result.stderr}")
+            return False
+            
+    except Exception as e:
+        print(f"ERROR: Failed to run process_trades.py: {str(e)}")
+        return False
+
 
 if __name__ == "__main__":
     # Run backtest
@@ -180,3 +235,6 @@ if __name__ == "__main__":
         parameters=LongTightness.parameters,
         quote_asset=Asset("USD", asset_type=Asset.AssetType.FOREX),
     )
+    
+    # Process and analyze trades after backtest completes
+    process_trades()

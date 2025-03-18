@@ -1,3 +1,18 @@
+#!/usr/bin/env python3
+"""
+Database to CSV Exporter
+
+This script exports market data from the SQLite database to CSV files for easier analysis.
+It creates a CSV file for each symbol in the data/csv directory, preserving all columns 
+from the database.
+
+Usage:
+    python to_csv.py AAPL MSFT GOOGL   # Export specific symbols
+    
+In code:
+    from to_csv import export_symbols_to_csv
+    export_symbols_to_csv(['AAPL', 'MSFT'], db_path='custom_database.db')
+"""
 import sqlite3
 import pandas as pd
 import os
