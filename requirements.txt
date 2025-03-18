@@ -20,6 +20,7 @@ pytest>=7.4.3
 
 # Trading and backtesting
 lumibot>=2.9.0
+mplfinance>=0.12.9
 
 # Development tools
 black>=23.11.0
