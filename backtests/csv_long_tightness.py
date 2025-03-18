@@ -39,7 +39,7 @@ if max_date.tzinfo is not None:
 
 # Use naive datetimes for both start and end
 # Adjusted for your 2-hour ahead data (9:30 exchange time = 11:30 your data)
-backtesting_start = datetime(2023, 1, 1, 11, 30)  # Exchange time 9:30
+backtesting_start = datetime(2025, 1, 1, 11, 30)  # Exchange time 9:30
 backtesting_end = max_date
 
 
