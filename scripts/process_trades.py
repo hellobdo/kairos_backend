@@ -235,7 +235,8 @@ def identify_trades(df):
             'duration_hours': duration_hours,
             'quantity': quantity,
             'entry_price': entry_price,
-            'exit_price': exit_price
+            'exit_price': exit_price,
+            'exit_type': ''  # Add empty exit_type column
         }
         
         trades_summary.append(trade_summary)
@@ -247,25 +248,31 @@ def identify_trades(df):
     
     return df, trades_summary_df
 
-def generate_html_report(trades_df, trades_summary, output_file='trade_report.html', auto_open=True, original_file=None, strategy_params=None):
+def calculate_trade_metrics(trades_summary, trades_df, strategy_params=None):
     """
-    Generate an HTML report from the trade execution data and summary
+    Calculate all trade metrics and prepare data for HTML report generation.
     
     Args:
-        trades_df: DataFrame with detailed trade executions
-        trades_summary: DataFrame with trade summaries
-        output_file: Path to save the HTML report
-        auto_open: Whether to automatically open the report in a browser
-        original_file: Path to the original trades CSV file
-        strategy_params: Dictionary of strategy parameters
+        trades_summary (pd.DataFrame): DataFrame containing trade summary data
+        trades_df (pd.DataFrame): DataFrame containing detailed trade data
+        strategy_params (dict): Dictionary containing strategy parameters
         
     Returns:
-        str: Path to the generated HTML file
+        dict: Dictionary containing all calculated metrics and formatted data
     """
-    # Create output directory if needed
-    output_dir = os.path.dirname(output_file)
-    if output_dir and not os.path.exists(output_dir):
-        os.makedirs(output_dir)
+    # Initialize results dictionary
+    results = {
+        'trades_summary_display': None,
+        'trades_df_display': None,
+        'weekly_metrics_df': pd.DataFrame(),
+        'monthly_metrics_df': pd.DataFrame(),
+        'strategy_metrics': {
+            'side': None,
+            'stop_loss': None,
+            'risk_reward': None,
+            'risk_per_trade': None
+        }
+    }
     
     # Format trades_summary for better display
     trades_summary_display = trades_summary.copy()
@@ -284,15 +291,19 @@ def generate_html_report(trades_df, trades_summary, output_file='trade_report.ht
         # Save for display in header
         strategy_side = side
         strategy_stop_loss = stop_loss
+        results['strategy_metrics']['side'] = side
+        results['strategy_metrics']['stop_loss'] = stop_loss
         
         # Get risk_reward if available
         if 'risk_reward' in strategy_params:
             strategy_risk_reward = strategy_params['risk_reward']
+            results['strategy_metrics']['risk_reward'] = strategy_risk_reward
             
         # Get risk_per_trade if available
         if 'risk_per_trade' in strategy_params:
             strategy_risk_per_trade = strategy_params['risk_per_trade']
             risk_per_trade = strategy_params['risk_per_trade']
+            results['strategy_metrics']['risk_per_trade'] = risk_per_trade
         else:
             # perc_return calculation requires risk_per_trade
             print("Warning: risk_per_trade not provided - percentage return calculation will be skipped")
@@ -307,12 +318,81 @@ def generate_html_report(trades_df, trades_summary, output_file='trade_report.ht
         # Round stop price to 2 decimal places
         trades_summary_display['stop_price'] = trades_summary_display['stop_price'].round(2)
         
+        # Calculate take profit price if risk_reward is available
+        if strategy_risk_reward:
+            risk_reward = strategy_params['risk_reward']
+            if side == 'buy':
+                # For buy trades: entry_price + (entry_price - stop_price) * risk_reward
+                trades_summary_display['take_profit_price'] = trades_summary_display['entry_price'] + \
+                    (trades_summary_display['entry_price'] - trades_summary_display['stop_price']) * risk_reward
+            else:  # sell
+                # For sell trades: entry_price - (stop_price - entry_price) * risk_reward
+                trades_summary_display['take_profit_price'] = trades_summary_display['entry_price'] - \
+                    (trades_summary_display['stop_price'] - trades_summary_display['entry_price']) * risk_reward
+            
+            # Round take profit price to 2 decimal places
+            trades_summary_display['take_profit_price'] = trades_summary_display['take_profit_price'].round(2)
+            
+            print(f"Added take profit price calculation (risk_reward: {risk_reward})")
+            
         # Calculate capital required and place it after stop_price
         # We'll do this by creating a new DataFrame with the columns in the desired order
         trades_summary_display['capital_required'] = (trades_summary_display['entry_price'] * trades_summary_display['quantity']).round(2)
         
-        # Calculate actual risk/reward ratio for each trade
-        # To avoid division by zero, use a try/except block
+        # Determine exit type for each trade
+        # Use a small tolerance for price comparisons (1% of entry price)
+        price_tolerance = 0.01
+        
+        # Initialize all exit types to "end of day" by default
+        trades_summary_display['exit_type'] = "end of day"
+        
+        # Check for stop losses
+        if side == 'buy':
+            # For buy trades: exit_price <= stop_price + tolerance = stop loss
+            stop_mask = trades_summary_display['exit_price'] <= (trades_summary_display['stop_price'] + price_tolerance)
+            trades_summary_display.loc[stop_mask, 'exit_type'] = "stop"
+            
+            # For buy trades: If risk_reward exists, check for take profits
+            if strategy_risk_reward:
+                # exit_price >= take_profit_price - tolerance = take profit
+                tp_mask = trades_summary_display['exit_price'] >= (trades_summary_display['take_profit_price'] - price_tolerance)
+                trades_summary_display.loc[tp_mask, 'exit_type'] = "take profit"
+        else:  # sell
+            # For sell trades: exit_price >= stop_price - tolerance = stop loss
+            stop_mask = trades_summary_display['exit_price'] >= (trades_summary_display['stop_price'] - price_tolerance)
+            trades_summary_display.loc[stop_mask, 'exit_type'] = "stop"
+            
+            # For sell trades: If risk_reward exists, check for take profits
+            if strategy_risk_reward:
+                # exit_price <= take_profit_price + tolerance = take profit
+                tp_mask = trades_summary_display['exit_price'] <= (trades_summary_display['take_profit_price'] + price_tolerance)
+                trades_summary_display.loc[tp_mask, 'exit_type'] = "take profit"
+        
+        print("Classified trade exits as: stop, take profit, or end of day")
+            
+        # Adjust exit prices based on exit type
+        for idx, row in trades_summary_display.iterrows():
+            if row['exit_type'] == 'stop':
+                # For stop exit, set exit price to stop price
+                trades_summary_display.at[idx, 'exit_price'] = row['stop_price']
+            elif row['exit_type'] == 'take profit' and strategy_risk_reward:
+                if side == 'buy':
+                    # For buy trades with take profit exit
+                    # Set exit price to entry + (entry - stop) * risk_reward
+                    stop_loss_amount = row['entry_price'] - row['stop_price']
+                    trades_summary_display.at[idx, 'exit_price'] = row['entry_price'] + (stop_loss_amount * strategy_risk_reward)
+                else:  # sell
+                    # For sell trades with take profit exit
+                    # Set exit price to entry - (stop - entry) * risk_reward
+                    stop_loss_amount = row['stop_price'] - row['entry_price']
+                    trades_summary_display.at[idx, 'exit_price'] = row['entry_price'] - (stop_loss_amount * strategy_risk_reward)
+        
+        # Round adjusted exit prices to 2 decimal places
+        trades_summary_display['exit_price'] = trades_summary_display['exit_price'].round(2)
+        
+        print("Adjusted exit prices based on exit type")
+        
+        # Recalculate actual risk/reward ratio with the adjusted exit prices
         if side == 'buy':
             # For buy trades: (exit_price - entry_price) / (entry_price - stop_price)
             trades_summary_display['actual_risk_reward'] = (
@@ -332,7 +412,9 @@ def generate_html_report(trades_df, trades_summary, output_file='trade_report.ht
         # Round actual_risk_reward to 2 decimal places
         trades_summary_display['actual_risk_reward'] = trades_summary_display['actual_risk_reward'].round(2)
         
-        # Add winning trade column based on entry vs exit price comparison
+        print("Recalculated risk/reward ratios with adjusted exit prices")
+        
+        # Add winning trade column based on adjusted exit price comparison
         # For floating point comparison, use a small tolerance
         tolerance = 0.01  # 1 cent tolerance for price comparison
         
@@ -412,7 +494,7 @@ def generate_html_report(trades_df, trades_summary, output_file='trade_report.ht
                     'Risk Per Trade': f"{risk_per_trade*100:.2f}%",
                     'Avg Win': f"{avg_win:.2f}",
                     'Avg Loss': f"{avg_loss:.2f}",
-                    'Avg R/R': f"{avg_risk_reward:.2f}",
+                    'Avg Return': f"{week_df['perc_return'].mean():.2f}%",
                     'Total Return': f"{total_return:+.2f}%"
                 })
             
@@ -446,7 +528,7 @@ def generate_html_report(trades_df, trades_summary, output_file='trade_report.ht
                     'Risk Per Trade': f"{risk_per_trade*100:.2f}%",
                     'Avg Win': f"{avg_win:.2f}",
                     'Avg Loss': f"{avg_loss:.2f}",
-                    'Avg R/R': f"{avg_risk_reward:.2f}",
+                    'Avg Return': f"{month_df['perc_return'].mean():.2f}%",
                     'Total Return': f"{total_return:+.2f}%"
                 })
             
@@ -478,7 +560,7 @@ def generate_html_report(trades_df, trades_summary, output_file='trade_report.ht
                     'Risk Per Trade': f"{risk_per_trade*100:.2f}%",
                     'Avg Win': f"{avg_win:.2f}",
                     'Avg Loss': f"{avg_loss:.2f}",
-                    'Avg R/R': f"{avg_risk_reward:.2f}",
+                    'Avg Return': f"{trades_summary_calc['perc_return'].mean():.2f}%",
                     'Total Return': f"{total_return:+.2f}%"
                 }])
                 
@@ -495,12 +577,15 @@ def generate_html_report(trades_df, trades_summary, output_file='trade_report.ht
                     'Risk Per Trade': f"{risk_per_trade*100:.2f}%",
                     'Avg Win': f"{avg_win:.2f}",
                     'Avg Loss': f"{avg_loss:.2f}",
-                    'Avg R/R': f"{avg_risk_reward:.2f}",
+                    'Avg Return': f"{trades_summary_calc['perc_return'].mean():.2f}%",
                     'Total Return': f"{total_return:+.2f}%"
                 }])
                 
                 # Append the total row to the monthly metrics
                 monthly_metrics_df = pd.concat([monthly_metrics_df, total_row], ignore_index=True)
+            
+            results['weekly_metrics_df'] = weekly_metrics_df
+            results['monthly_metrics_df'] = monthly_metrics_df
             
             print(f"Added stop price calculation (side: {side}, stop_loss: {stop_loss})")
             print(f"Added winning trade column based on entry vs exit price comparison")
@@ -508,8 +593,8 @@ def generate_html_report(trades_df, trades_summary, output_file='trade_report.ht
             print(f"Added percentage return column (risk_per_trade × actual_risk_reward)")
             print(f"Added weekly and monthly performance metrics")
         else:
-            weekly_metrics_df = pd.DataFrame()
-            monthly_metrics_df = pd.DataFrame()
+            results['weekly_metrics_df'] = pd.DataFrame()
+            results['monthly_metrics_df'] = pd.DataFrame()
             print(f"Added stop price calculation (side: {side}, stop_loss: {stop_loss})")
             print(f"Added winning trade column based on entry vs exit price comparison")
             print(f"Added capital required and actual risk/reward columns")
@@ -518,8 +603,9 @@ def generate_html_report(trades_df, trades_summary, output_file='trade_report.ht
     else:
         # If no strategy parameters, still calculate capital required
         trades_summary_display['capital_required'] = (trades_summary_display['entry_price'] * trades_summary_display['quantity']).round(2)
-        weekly_metrics_df = pd.DataFrame()
-        monthly_metrics_df = pd.DataFrame()
+        
+        results['weekly_metrics_df'] = pd.DataFrame()
+        results['monthly_metrics_df'] = pd.DataFrame()
     
     # Format numeric columns
     if 'duration_hours' in trades_summary_display.columns:
@@ -575,6 +661,48 @@ def generate_html_report(trades_df, trades_summary, output_file='trade_report.ht
     # Create a copy of trades_df for display and convert trade_id to int
     trades_df_display = trades_df.copy()
     trades_df_display['trade_id'] = trades_df_display['trade_id'].astype(int)
+    
+    # Store formatted DataFrames in results
+    results['trades_summary_display'] = trades_summary_display
+    results['trades_df_display'] = trades_df_display
+    
+    return results
+
+def generate_html_report(trades_df, trades_summary, output_file='trade_report.html', auto_open=True, original_file=None, strategy_params=None):
+    """
+    Generate an HTML report from the trade execution data and summary
+    
+    Args:
+        trades_df: DataFrame with detailed trade executions
+        trades_summary: DataFrame with trade summaries
+        output_file: Path to save the HTML report
+        auto_open: Whether to automatically open the report in a browser
+        original_file: Path to the original trades CSV file
+        strategy_params: Dictionary of strategy parameters
+        
+    Returns:
+        str: Path to the generated HTML file
+    """
+    # Create output directory if needed
+    output_dir = os.path.dirname(output_file)
+    if output_dir and not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+    
+    # Calculate all metrics using the new function
+    metrics = calculate_trade_metrics(trades_summary, trades_df, strategy_params)
+    
+    # Extract data from metrics dictionary
+    trades_summary_display = metrics['trades_summary_display']
+    trades_df_display = metrics['trades_df_display']
+    weekly_metrics_df = metrics['weekly_metrics_df']
+    monthly_metrics_df = metrics['monthly_metrics_df']
+    strategy_metrics = metrics['strategy_metrics']
+    
+    # Strategy parameters display
+    strategy_side = strategy_metrics['side']
+    strategy_stop_loss = strategy_metrics['stop_loss']
+    strategy_risk_reward = strategy_metrics['risk_reward']
+    strategy_risk_per_trade = strategy_metrics['risk_per_trade']
     
     # Load original CSV data if provided
     original_data_html = ""
