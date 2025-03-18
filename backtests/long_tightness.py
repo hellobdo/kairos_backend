@@ -64,7 +64,7 @@ class LongTightness(Strategy):
         if not hasattr(self.vars, 'trade_log'):
             self.vars.trade_log = []
         
-        self.minutes_before_closing = 5 # close positions 5 minutes before market close, see below def before_market_closes()
+        self.minutes_before_closing = 0.1 # close positions 5 minutes before market close, see below def before_market_closes()
             
     def on_trading_iteration(self):
         # Check if max daily losses reached (2 consecutive losses) to prevent further trading
