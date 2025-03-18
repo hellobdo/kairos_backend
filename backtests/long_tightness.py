@@ -39,7 +39,7 @@ if max_date.tzinfo is not None:
 
 # Use naive datetimes for both start and end
 # Adjusted for your 2-hour ahead data (9:30 exchange time = 11:30 your data)
-backtesting_start = datetime(2025, 1, 1, 11, 30)  # Exchange time 9:30
+backtesting_start = datetime(2023, 1, 1, 11, 30)  # Exchange time 9:30
 backtesting_end = max_date
 
 
@@ -109,7 +109,7 @@ class LongTightness(Strategy):
             is_t_shaped = (
                 (abs(open_price - close_price) / open_price) < tight_threshold and
                 low_price < open_price and
-                abs(low_price - open_price) / abs(high_price - open_price) > 2.5
+                abs(low_price - open_price) / (abs(high_price - open_price) if abs(high_price - open_price) != 0 else 1) > 2.5
             )
 
             if is_t_shaped: # then execute the trade
@@ -155,7 +155,7 @@ class LongTightness(Strategy):
             "timestamp": self.get_datetime(),  # The time this fill was processed
             "limit_price": getattr(order, 'limit_price', None),
             "stop_price": getattr(order, 'stop_price', None),
-            "take_profit_price": getattr(order, 'limit_price', None) if order.side == Order.OrderSide.SELL else None,  # Assuming limit_price in SELL can be take profit
+            "take_profit_price": getattr(order, 'take_profit_price', None) if order.side == Order.OrderSide.SELL else None,  # Assuming limit_price in SELL can be take profit
             "custom_params": order.custom_params,
             "order_type": getattr(order, 'type', None),
             "date_created": getattr(order, 'date_created', None),

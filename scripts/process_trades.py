@@ -37,7 +37,7 @@ import os
 import glob
 import pandas as pd
 import numpy as np
-from datetime import datetime
+from datetime import datetime, time
 from pathlib import Path
 import sys
 import webbrowser
@@ -343,10 +343,31 @@ def calculate_trade_metrics(trades_summary, trades_df, strategy_params=None):
         # Use a small tolerance for price comparisons (1% of entry price)
         price_tolerance = 0.01
         
-        # Initialize all exit types to "end of day" by default
-        trades_summary_display['exit_type'] = "end of day"
+        # First, ensure end_time is a proper time object for all trades
+        try:
+            # Check if at least the first non-null value is a time object
+            is_time_already = isinstance(trades_summary_display['end_time'].dropna().iloc[0], time)
+        except (IndexError, AttributeError):
+            is_time_already = False
+            
+        if not is_time_already:
+            # Convert end_time to time objects if they aren't already
+            trades_summary_display['end_time'] = pd.to_datetime(trades_summary_display['end_time'], format='%H:%M:%S', errors='coerce').dt.time
         
-        # Check for stop losses
+        # Define market close window time range
+        market_close_start = time(15, 50, 0)  # 15:50:00
+        market_close_end = time(16, 0, 0)  # 16:00:00
+        
+        # Create mask for trades that ended during market close window
+        end_of_day_mask = trades_summary_display['end_time'].apply(
+            lambda x: market_close_start <= x <= market_close_end if pd.notna(x) else False
+        )
+        
+        # Initialize all exit types based on end of day check
+        trades_summary_display['exit_type'] = "end of day"
+        trades_summary_display.loc[~end_of_day_mask, 'exit_type'] = "unclassified"
+        
+        # Check for stop losses for all trades
         if side == 'buy':
             # For buy trades: exit_price <= stop_price + tolerance = stop loss
             stop_mask = trades_summary_display['exit_price'] <= (trades_summary_display['stop_price'] + price_tolerance)
@@ -368,8 +389,11 @@ def calculate_trade_metrics(trades_summary, trades_df, strategy_params=None):
                 tp_mask = trades_summary_display['exit_price'] <= (trades_summary_display['take_profit_price'] + price_tolerance)
                 trades_summary_display.loc[tp_mask, 'exit_type'] = "take profit"
         
+        # Convert any remaining unclassified trades to end of day
+        trades_summary_display.loc[trades_summary_display['exit_type'] == "unclassified", 'exit_type'] = "end of day"
+        
         print("Classified trade exits as: stop, take profit, or end of day")
-            
+        
         # Adjust exit prices based on exit type
         for idx, row in trades_summary_display.iterrows():
             if row['exit_type'] == 'stop':
@@ -433,16 +457,10 @@ def calculate_trade_metrics(trades_summary, trades_df, strategy_params=None):
                 trades_summary_display['exit_price'] < (trades_summary_display['entry_price'] - tolerance)
             ).astype(int)
             
-        # Calculate percentage return only if risk_per_trade is available
+            # Calculate percentage return only if risk_per_trade is available
         if risk_per_trade is not None:
-            # Calculate percentage return (based on winning_trade, actual_risk_reward, and risk_per_trade)
-            # For winning trades, return is positive: risk_per_trade * actual_risk_reward
-            # For losing trades, return is negative: -risk_per_trade
-            trades_summary_display['perc_return'] = np.where(
-                trades_summary_display['winning_trade'] == 1,
-                risk_per_trade * trades_summary_display['actual_risk_reward'],  # Winning trade: risk_per_trade * actual_risk_reward
-                -risk_per_trade  # Losing trade: lost the risk_per_trade amount
-            )
+            # Calculate percentage return using risk_per_trade * actual_risk_reward for ALL trades
+            trades_summary_display['perc_return'] = risk_per_trade * trades_summary_display['actual_risk_reward']
             
             # Convert to percentage format and round
             trades_summary_display['perc_return'] = (trades_summary_display['perc_return'] * 100).round(2)
@@ -459,147 +477,152 @@ def calculate_trade_metrics(trades_summary, trades_df, strategy_params=None):
             # Extract week and month
             trades_summary_calc['week'] = trades_summary_calc['start_date'].dt.to_period('W').astype(str)
             trades_summary_calc['month'] = trades_summary_calc['start_date'].dt.to_period('M').astype(str)
+        
+        # Add week and month columns for time-based grouping
+        # Make sure start_date is a datetime (it might be a string after display formatting)
+        # First, make a working copy that we'll use for calculations
+        trades_summary_calc = trades_summary_display.copy()
+        
+        # Convert start_date to datetime if it's not already
+        if not pd.api.types.is_datetime64_any_dtype(trades_summary_calc['start_date']):
+            trades_summary_calc['start_date'] = pd.to_datetime(trades_summary_calc['start_date'])
+        
+        # Extract week and month
+        trades_summary_calc['week'] = trades_summary_calc['start_date'].dt.to_period('W').astype(str)
+        trades_summary_calc['month'] = trades_summary_calc['start_date'].dt.to_period('M').astype(str)
+        
+        # Add the time period columns to the display DataFrame
+        trades_summary_display['week'] = trades_summary_calc['week']
+        trades_summary_display['month'] = trades_summary_calc['month']
+        
+        # Create weekly metrics
+        weekly_metrics = []
+        for week, week_df in trades_summary_calc.groupby('week'):
+            # Extract week number and year from the period string
+            # Period format example: '2023-01-02/2023-01-08'
+            week_date = pd.to_datetime(week.split('/')[0])
+            week_num = week_date.isocalendar()[1]  # ISO week number
+            year = week_date.year
             
-            # Add the time period columns to the display DataFrame
-            trades_summary_display['week'] = trades_summary_calc['week']
-            trades_summary_display['month'] = trades_summary_calc['month']
+            total_trades = len(week_df)
+            winning_trades = week_df['winning_trade'].sum()
+            accuracy = (winning_trades / total_trades * 100) if total_trades > 0 else 0
             
-            # Create weekly metrics
-            weekly_metrics = []
-            for week, week_df in trades_summary_calc.groupby('week'):
-                # Extract week number and year from the period string
-                # Period format example: '2023-01-02/2023-01-08'
-                week_date = pd.to_datetime(week.split('/')[0])
-                week_num = week_date.isocalendar()[1]  # ISO week number
-                year = week_date.year
-                
-                total_trades = len(week_df)
-                winning_trades = week_df['winning_trade'].sum()
-                accuracy = (winning_trades / total_trades * 100) if total_trades > 0 else 0
-                
-                # Get average risk reward for winning and losing trades
-                winning_mask = week_df['winning_trade'] == 1
-                losing_mask = week_df['winning_trade'] == 0
-                avg_win = week_df.loc[winning_mask, 'actual_risk_reward'].mean() if winning_mask.any() else 0
-                avg_loss = week_df.loc[losing_mask, 'actual_risk_reward'].mean() if losing_mask.any() else 0
-                avg_risk_reward = week_df['actual_risk_reward'].mean()
-                
-                # Calculate total return
-                total_return = week_df['perc_return'].sum()
-                
-                weekly_metrics.append({
-                    'Period': f"Week {week_num}, {year}",
-                    'Trades': total_trades,
-                    'Accuracy': f"{accuracy:.2f}%",
-                    'Risk Per Trade': f"{risk_per_trade*100:.2f}%",
-                    'Avg Win': f"{avg_win:.2f}",
-                    'Avg Loss': f"{avg_loss:.2f}",
-                    'Avg Return': f"{week_df['perc_return'].mean():.2f}%",
-                    'Total Return': f"{total_return:+.2f}%"
-                })
+            # Get average risk reward for winning and losing trades
+            winning_mask = week_df['winning_trade'] == 1
+            losing_mask = week_df['winning_trade'] == 0
+            avg_win = week_df.loc[winning_mask, 'actual_risk_reward'].mean() if winning_mask.any() else 0
+            avg_loss = week_df.loc[losing_mask, 'actual_risk_reward'].mean() if losing_mask.any() else 0
+            avg_risk_reward = week_df['actual_risk_reward'].mean()
             
-            # Create monthly metrics
-            monthly_metrics = []
-            for month, month_df in trades_summary_calc.groupby('month'):
-                # Extract month name and year from period string
-                # Period format example: '2023-01'
-                month_date = pd.to_datetime(month)
-                month_name = month_date.strftime('%B')  # Full month name
-                year = month_date.year
-                
-                total_trades = len(month_df)
-                winning_trades = month_df['winning_trade'].sum()
-                accuracy = (winning_trades / total_trades * 100) if total_trades > 0 else 0
-                
-                # Get average risk reward for winning and losing trades
-                winning_mask = month_df['winning_trade'] == 1
-                losing_mask = month_df['winning_trade'] == 0
-                avg_win = month_df.loc[winning_mask, 'actual_risk_reward'].mean() if winning_mask.any() else 0
-                avg_loss = month_df.loc[losing_mask, 'actual_risk_reward'].mean() if losing_mask.any() else 0
-                avg_risk_reward = month_df['actual_risk_reward'].mean()
-                
-                # Calculate total return
-                total_return = month_df['perc_return'].sum()
-                
-                monthly_metrics.append({
-                    'Period': f"{month_name} {year}",
-                    'Trades': total_trades,
-                    'Accuracy': f"{accuracy:.2f}%",
-                    'Risk Per Trade': f"{risk_per_trade*100:.2f}%",
-                    'Avg Win': f"{avg_win:.2f}",
-                    'Avg Loss': f"{avg_loss:.2f}",
-                    'Avg Return': f"{month_df['perc_return'].mean():.2f}%",
-                    'Total Return': f"{total_return:+.2f}%"
-                })
+            # Calculate total return
+            total_return = week_df['perc_return'].sum()
             
-            # Convert to DataFrames
-            weekly_metrics_df = pd.DataFrame(weekly_metrics)
-            monthly_metrics_df = pd.DataFrame(monthly_metrics)
+            weekly_metrics.append({
+                'Period': f"Week {week_num}, {year}",
+                'Trades': total_trades,
+                'Accuracy': f"{accuracy:.2f}%",
+                'Risk Per Trade': f"{risk_per_trade*100:.2f}%",
+                'Avg Win': f"{avg_win:.2f}",
+                'Avg Loss': f"{avg_loss:.2f}",
+                'Avg Return': f"{week_df['perc_return'].mean():.2f}%",
+                'Total Return': f"{total_return:+.2f}%"
+            })
+        
+        # Create monthly metrics
+        monthly_metrics = []
+        for month, month_df in trades_summary_calc.groupby('month'):
+            # Extract month name and year from period string
+            # Period format example: '2023-01'
+            month_date = pd.to_datetime(month)
+            month_name = month_date.strftime('%B')  # Full month name
+            year = month_date.year
             
-            # Add totals row to weekly metrics
-            if not weekly_metrics_df.empty:
-                total_trades = len(trades_summary_calc)
-                winning_trades = trades_summary_calc['winning_trade'].sum()
-                accuracy = (winning_trades / total_trades * 100) if total_trades > 0 else 0
-                
-                # Get average risk reward for winning and losing trades for all weeks
-                winning_mask = trades_summary_calc['winning_trade'] == 1
-                losing_mask = trades_summary_calc['winning_trade'] == 0
-                avg_win = trades_summary_calc.loc[winning_mask, 'actual_risk_reward'].mean() if winning_mask.any() else 0
-                avg_loss = trades_summary_calc.loc[losing_mask, 'actual_risk_reward'].mean() if losing_mask.any() else 0
-                avg_risk_reward = trades_summary_calc['actual_risk_reward'].mean()
-                
-                # Calculate total return for all weeks
-                total_return = trades_summary_calc['perc_return'].sum()
-                
-                # Create a total row
-                total_row = pd.DataFrame([{
-                    'Period': 'TOTAL',
-                    'Trades': total_trades,
-                    'Accuracy': f"{accuracy:.2f}%",
-                    'Risk Per Trade': f"{risk_per_trade*100:.2f}%",
-                    'Avg Win': f"{avg_win:.2f}",
-                    'Avg Loss': f"{avg_loss:.2f}",
-                    'Avg Return': f"{trades_summary_calc['perc_return'].mean():.2f}%",
-                    'Total Return': f"{total_return:+.2f}%"
-                }])
-                
-                # Append the total row to the weekly metrics
-                weekly_metrics_df = pd.concat([weekly_metrics_df, total_row], ignore_index=True)
+            total_trades = len(month_df)
+            winning_trades = month_df['winning_trade'].sum()
+            accuracy = (winning_trades / total_trades * 100) if total_trades > 0 else 0
             
-            # Add totals row to monthly metrics
-            if not monthly_metrics_df.empty:
-                # Reuse the same total values calculated above
-                total_row = pd.DataFrame([{
-                    'Period': 'TOTAL',
-                    'Trades': total_trades,
-                    'Accuracy': f"{accuracy:.2f}%",
-                    'Risk Per Trade': f"{risk_per_trade*100:.2f}%",
-                    'Avg Win': f"{avg_win:.2f}",
-                    'Avg Loss': f"{avg_loss:.2f}",
-                    'Avg Return': f"{trades_summary_calc['perc_return'].mean():.2f}%",
-                    'Total Return': f"{total_return:+.2f}%"
-                }])
-                
-                # Append the total row to the monthly metrics
-                monthly_metrics_df = pd.concat([monthly_metrics_df, total_row], ignore_index=True)
+            # Get average risk reward for winning and losing trades
+            winning_mask = month_df['winning_trade'] == 1
+            losing_mask = month_df['winning_trade'] == 0
+            avg_win = month_df.loc[winning_mask, 'actual_risk_reward'].mean() if winning_mask.any() else 0
+            avg_loss = month_df.loc[losing_mask, 'actual_risk_reward'].mean() if losing_mask.any() else 0
+            avg_risk_reward = month_df['actual_risk_reward'].mean()
             
-            results['weekly_metrics_df'] = weekly_metrics_df
-            results['monthly_metrics_df'] = monthly_metrics_df
+            # Calculate total return
+            total_return = month_df['perc_return'].sum()
             
-            print(f"Added stop price calculation (side: {side}, stop_loss: {stop_loss})")
-            print(f"Added winning trade column based on entry vs exit price comparison")
-            print(f"Added capital required and actual risk/reward columns")
-            print(f"Added percentage return column (risk_per_trade × actual_risk_reward)")
-            print(f"Added weekly and monthly performance metrics")
-        else:
-            results['weekly_metrics_df'] = pd.DataFrame()
-            results['monthly_metrics_df'] = pd.DataFrame()
-            print(f"Added stop price calculation (side: {side}, stop_loss: {stop_loss})")
-            print(f"Added winning trade column based on entry vs exit price comparison")
-            print(f"Added capital required and actual risk/reward columns")
-            print(f"Skipped percentage return column (risk_per_trade not provided)")
-            print(f"Skipped weekly and monthly metrics (risk_per_trade not provided)")
+            monthly_metrics.append({
+                'Period': f"{month_name} {year}",
+                'Trades': total_trades,
+                'Accuracy': f"{accuracy:.2f}%",
+                'Risk Per Trade': f"{risk_per_trade*100:.2f}%",
+                'Avg Win': f"{avg_win:.2f}",
+                'Avg Loss': f"{avg_loss:.2f}",
+                'Avg Return': f"{month_df['perc_return'].mean():.2f}%",
+                'Total Return': f"{total_return:+.2f}%"
+            })
+        
+        # Convert to DataFrames
+        weekly_metrics_df = pd.DataFrame(weekly_metrics)
+        monthly_metrics_df = pd.DataFrame(monthly_metrics)
+        
+        # Add totals row to weekly metrics
+        if not weekly_metrics_df.empty:
+            total_trades = len(trades_summary_calc)
+            winning_trades = trades_summary_calc['winning_trade'].sum()
+            accuracy = (winning_trades / total_trades * 100) if total_trades > 0 else 0
+            
+            # Get average risk reward for winning and losing trades for all weeks
+            winning_mask = trades_summary_calc['winning_trade'] == 1
+            losing_mask = trades_summary_calc['winning_trade'] == 0
+            avg_win = trades_summary_calc.loc[winning_mask, 'actual_risk_reward'].mean() if winning_mask.any() else 0
+            avg_loss = trades_summary_calc.loc[losing_mask, 'actual_risk_reward'].mean() if losing_mask.any() else 0
+            avg_risk_reward = trades_summary_calc['actual_risk_reward'].mean()
+            
+            # Calculate total return for all weeks
+            total_return = trades_summary_calc['perc_return'].sum()
+            
+            # Create a total row
+            total_row = pd.DataFrame([{
+                'Period': 'TOTAL',
+                'Trades': total_trades,
+                'Accuracy': f"{accuracy:.2f}%",
+                'Risk Per Trade': f"{risk_per_trade*100:.2f}%",
+                'Avg Win': f"{avg_win:.2f}",
+                'Avg Loss': f"{avg_loss:.2f}",
+                'Avg Return': f"{trades_summary_calc['perc_return'].mean():.2f}%",
+                'Total Return': f"{total_return:+.2f}%"
+            }])
+            
+            # Append the total row to the weekly metrics
+            weekly_metrics_df = pd.concat([weekly_metrics_df, total_row], ignore_index=True)
+        
+        # Add totals row to monthly metrics
+        if not monthly_metrics_df.empty:
+            # Reuse the same total values calculated above
+            total_row = pd.DataFrame([{
+                'Period': 'TOTAL',
+                'Trades': total_trades,
+                'Accuracy': f"{accuracy:.2f}%",
+                'Risk Per Trade': f"{risk_per_trade*100:.2f}%",
+                'Avg Win': f"{avg_win:.2f}",
+                'Avg Loss': f"{avg_loss:.2f}",
+                'Avg Return': f"{trades_summary_calc['perc_return'].mean():.2f}%",
+                'Total Return': f"{total_return:+.2f}%"
+            }])
+            
+            # Append the total row to the monthly metrics
+            monthly_metrics_df = pd.concat([monthly_metrics_df, total_row], ignore_index=True)
+        
+        results['weekly_metrics_df'] = weekly_metrics_df
+        results['monthly_metrics_df'] = monthly_metrics_df
+        
+        print(f"Added stop price calculation (side: {side}, stop_loss: {stop_loss})")
+        print(f"Added winning trade column based on entry vs exit price comparison")
+        print(f"Added capital required and actual risk/reward columns")
+        print(f"Added percentage return column (risk_per_trade × actual_risk_reward)")
+        print(f"Added weekly and monthly performance metrics")
     else:
         # If no strategy parameters, still calculate capital required
         trades_summary_display['capital_required'] = (trades_summary_display['entry_price'] * trades_summary_display['quantity']).round(2)
