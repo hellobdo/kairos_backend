@@ -51,7 +51,8 @@ class LongTightness(Strategy):
         "stop_loss": 0.8,                # stop loss in dollars per share
         "risk_reward": 2,                  # risk reward multiplier, meaning the profit target is risk*4
         "side": "buy",
-        "risk_per_trade": 0.005
+        "risk_per_trade": 0.005,
+        "init_cash": 30000
     }
 
     def initialize(self):
@@ -77,7 +78,7 @@ class LongTightness(Strategy):
         side = self.parameters.get("side")
         risk_per_trade = self.parameters.get("risk_per_trade")
         # Calculate risk size: 0.5% of available cash
-        cash = self.get_cash()
+        cash = self.parameters.get("init_cash")
         risk_size = cash * risk_per_trade
 
         # Check current open positions (exclude USD cash position)
