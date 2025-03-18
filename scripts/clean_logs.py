@@ -1,4 +1,18 @@
 #!/usr/bin/env python3
+"""
+Clean Logs Utility
+
+This script deletes all files in the logs directory to free up disk space.
+It calculates the total size of log files before deletion and requires 
+confirmation unless explicitly bypassed.
+
+Usage:
+    python clean_logs.py              # Interactive mode with confirmation
+    
+In code:
+    from clean_logs import clean_logs
+    clean_logs(logs_dir="logs", confirm=False)  # No confirmation needed
+"""
 import os
 import glob
 import sys
