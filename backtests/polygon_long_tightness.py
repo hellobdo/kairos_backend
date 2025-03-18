@@ -7,24 +7,24 @@ import sys
 # Import the Strategy base class
 from lumibot.strategies.strategy import Strategy
 # Import Order, Asset, TradingFee from entities for creating orders and assets
-from lumibot.entities import Order, Asset, Data
+from lumibot.entities import Order, Asset
 # Import YahooDataBacktesting for backtesting (since we are using daily stock data)
 from lumibot.backtesting import PolygonDataBacktesting, BacktestingBroker
 # Import backtesting flag
 from lumibot.credentials import IS_BACKTESTING
 
-ticker = "QQQ"
-
 class LongTightness(Strategy):
     # Define strategy parameters that can be adjusted by the user
     parameters = {
-        "symbols": [ticker],
+        "symbols": ["QQQ"],
         "tight_threshold": 0.00015,           # maximum allowed difference between close and open to consider the candle as tight
         "stop_loss": 0.8,                # stop loss in dollars per share
         "risk_reward": 2,                  # risk reward multiplier, meaning the profit target is risk*4
         "side": "buy",
         "risk_per_trade": 0.005,
-        "init_cash": 30000
+        "init_cash": 30000,
+        "max_loss_positions": 2,
+        "bar_signals_length": "30minute",
     }
 
     def initialize(self):
@@ -40,9 +40,6 @@ class LongTightness(Strategy):
         self.minutes_before_closing = 0.1 # close positions before market close, see below def before_market_closes()
             
     def on_trading_iteration(self):
-        # Check if max daily losses reached (2 consecutive losses) to prevent further trading
-        if self.vars.daily_loss_count >= 2:
-            return
 
         symbols = self.parameters.get("symbols", [])
         tight_threshold = self.parameters.get("tight_threshold")
@@ -50,14 +47,24 @@ class LongTightness(Strategy):
         risk_reward = self.parameters.get("risk_reward")
         side = self.parameters.get("side")
         risk_per_trade = self.parameters.get("risk_per_trade")
-        # Calculate risk size: 0.5% of available cash
         cash = self.parameters.get("init_cash")
-        risk_size = cash * risk_per_trade
+        max_loss_positions = self.parameters.get("max_loss_positions")
+        bar_signals_length = self.parameters.get("bar_signals_length")
+        # Check if max daily losses reached (2 consecutive losses) to prevent further trading
+        if self.vars.daily_loss_count >= max_loss_positions:
+            return
+
+        current_time = self.get_datetime()
+        if not (current_time.minute == 0 or current_time.minute == 30):
+            return
 
         # Check current open positions (exclude USD cash position)
         open_positions = [p for p in self.get_positions() if not (p.asset.symbol == "USD" and p.asset.asset_type == Asset.AssetType.FOREX)]
-        if len(open_positions) >= 2:
+        if len(open_positions) >= max_loss_positions:
             return
+        
+        # Calculate risk size: 0.5% of available cash
+        risk_size = cash * risk_per_trade
 
         # Loop through each symbol to check if the entry conditions are met
         for symbol in symbols:
@@ -66,13 +73,13 @@ class LongTightness(Strategy):
                 continue
 
             # Obtain 30-minute historical prices instead of daily
-            thirty_minute_bars = self.get_historical_prices(symbol, length=1, timestep="30minute")
-            if thirty_minute_bars is None or thirty_minute_bars.df.empty:
+            bars = self.get_historical_prices(symbol, length=1, timestep=bar_signals_length)
+            if bars is None or bars.df.empty:
                 continue
 
             # Extract the latest candle from the DataFrame
-            df_30min = thirty_minute_bars.df
-            latest_candle = df_30min.iloc[-1]
+            df = bars.df
+            latest_candle = df.iloc[-1]
             open_price = latest_candle['open']
             close_price = latest_candle['close']
             high_price = latest_candle['high']
@@ -86,8 +93,6 @@ class LongTightness(Strategy):
             )
 
             if is_t_shaped: # then execute the trade
-                # Get the last price to use as entry price
-                minute_bars = self.get_historical_prices(symbol, length=1, timestep="minute")
                 entry_price = self.get_last_price(symbol)
                 if entry_price is None:
                     continue
@@ -138,8 +143,6 @@ class LongTightness(Strategy):
         self.vars.trade_log.append(trade_info)
 
     def before_market_closes(self): 
-
-        # close positions 5 minutes before market close
 
         # checks if there are any positions to close
         positions = self.get_positions()
