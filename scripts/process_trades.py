@@ -42,6 +42,7 @@ from pathlib import Path
 import sys
 import webbrowser
 import argparse
+import calendar
 
 def get_latest_trades_file():
     """
@@ -531,8 +532,8 @@ def calculate_trade_metrics(trades_summary, trades_df, strategy_params=None):
                 trades_summary_calc['start_date'] = pd.to_datetime(trades_summary_calc['start_date'])
             
             # Extract week, month, and year
-            trades_summary_calc['week'] = trades_summary_calc['start_date'].dt.to_period('W').astype(str)
-            trades_summary_calc['month'] = trades_summary_calc['start_date'].dt.to_period('M').astype(str)
+            trades_summary_calc['week'] = trades_summary_calc['start_date'].dt.isocalendar().week.astype(str)  # Week number (1-52)
+            trades_summary_calc['month'] = trades_summary_calc['start_date'].dt.month.astype(str)  # Month number (1-12)
             trades_summary_calc['year'] = trades_summary_calc['start_date'].dt.year
             
             # Add the time period columns to the display DataFrame
@@ -542,16 +543,8 @@ def calculate_trade_metrics(trades_summary, trades_df, strategy_params=None):
             
             # Create weekly metrics
             weekly_metrics = []
-            for week, week_df in trades_summary_calc.groupby('week'):
-                # Extract week number and year from the period string
-                # Period format example: '2023-01-02/2023-01-08'
-                week_date = pd.to_datetime(week.split('/')[0])
-                week_num = week_date.isocalendar()[1]  # ISO week number
-                year = week_date.year
-                
-                # Use the actual dates in the dataframe to determine the year
-                # This handles edge cases where ISO week might be from previous/next year
-                actual_year = week_df['start_date'].dt.year.iloc[0]
+            for week, week_df in trades_summary_calc.groupby(['year', 'week']):
+                year, week_num = week  # Now unpacking (year, week) tuple
                 
                 total_trades = len(week_df)
                 winning_trades = week_df['winning_trade'].sum()
@@ -568,7 +561,7 @@ def calculate_trade_metrics(trades_summary, trades_df, strategy_params=None):
                 total_return = week_df['perc_return'].sum()
                 
                 weekly_metrics.append({
-                    'Period': f"Week {week_num}, {actual_year}",
+                    'Period': f"Week {week_num}, {year}",
                     'Trades': total_trades,
                     'Accuracy': f"{accuracy:.2f}%",
                     'Risk Per Trade': f"{risk_per_trade*100:.2f}%",
@@ -580,12 +573,8 @@ def calculate_trade_metrics(trades_summary, trades_df, strategy_params=None):
             
             # Create monthly metrics
             monthly_metrics = []
-            for month, month_df in trades_summary_calc.groupby('month'):
-                # Extract month name and year from period string
-                # Period format example: '2023-01'
-                month_date = pd.to_datetime(month)
-                month_name = month_date.strftime('%B')  # Full month name
-                year = month_date.year
+            for month_group, month_df in trades_summary_calc.groupby(['year', 'month']):
+                year, month_num = month_group  # Now unpacking (year, month) tuple
                 
                 total_trades = len(month_df)
                 winning_trades = month_df['winning_trade'].sum()
@@ -600,6 +589,9 @@ def calculate_trade_metrics(trades_summary, trades_df, strategy_params=None):
                 
                 # Calculate total return
                 total_return = month_df['perc_return'].sum()
+                
+                # Convert month number to month name
+                month_name = calendar.month_name[int(month_num)]
                 
                 monthly_metrics.append({
                     'Period': f"{month_name} {year}",
