@@ -17,13 +17,13 @@ Key features:
 - Stop price calculation based on strategy parameters
 
 Usage:
-    python process_trades.py                                                            # Process the latest trades file
-    python process_trades.py --stop_loss 0.8 --side buy --risk_reward 2 --risk_per_trade 0.005   # Process with strategy parameters
+    # Imported and used as module
+    from backtests.helpers.process_trades import process_trades_from_strategy, get_latest_trades_file, clean_trades_file, identify_trades, generate_html_report
     
-In code:
-    from process_trades import get_latest_trades_file, clean_trades_file, identify_trades, generate_html_report
+    # Process directly from a strategy class
+    process_trades_from_strategy(StrategyClass)
     
-    # Process specific file
+    # Or process specific file
     file_path = get_latest_trades_file()
     cleaned_data, rejected_trades = clean_trades_file(file_path)
     trades_df, trades_summary = identify_trades(cleaned_data)
@@ -43,6 +43,109 @@ import sys
 import webbrowser
 import argparse
 import calendar
+
+def process_trades_from_strategy(strategy_class):
+    """
+    Process trades from a backtest strategy directly.
+    
+    Args:
+        strategy_class: The strategy class containing the parameters to use
+        
+    Returns:
+        bool: True if processing was successful, False otherwise
+    """
+    try:
+        print("\nGenerating trade reports...")
+        
+        # Try to find the most recently created trades file in logs directory
+        logs_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "logs")
+        trade_files = [os.path.join(logs_dir, f) for f in os.listdir(logs_dir) 
+                      if f.endswith('.csv') and 'trades' in f]
+        
+        file_path = None
+        if trade_files:
+            # Get the latest file based on creation time
+            file_path = max(trade_files, key=os.path.getctime)
+            print(f"Found trades file: {file_path}")
+        else:
+            print("No trade files found in logs directory")
+            return False
+            
+        # Extract parameters from the strategy class
+        strategy_params = {}
+        
+        # Add all parameters from the strategy class parameters dictionary
+        for key, value in strategy_class.parameters.items():
+            # Skip non-scalar parameters that can't be passed as command line args
+            if key == "symbols":
+                continue  # Skip symbols list
+                
+            # Add to parameters
+            strategy_params[key] = value
+            
+        print(f"Using strategy parameters: {strategy_params}")
+            
+        # Process the trades file
+        try:
+            # Clean the trades data
+            cleaned_data, rejected_qty_trades = clean_trades_file(file_path)
+            print(f"Processed {len(cleaned_data)} trade records")
+            
+            # Identify complete trades
+            if 'side' in strategy_params:
+                strategy_side = strategy_params['side']
+            else:
+                strategy_side = 'buy'
+                print("No strategy side provided, defaulting to 'buy' for position tracking.")
+                
+            trades_df, trades_summary, rejected_strategy_trades = identify_trades(cleaned_data, strategy_side)
+            
+            # Display preview of the trades
+            print("\nPreview of identified trades:")
+            print(trades_df[['execution_timestamp', 'date', 'time_of_day', 'identifier', 'symbol', 'side', 'filled_quantity', 'price', 'trade_id', 'open_volume']].head(10))
+            
+            print("\nTrade summary:")
+            print(trades_summary.head())
+            
+            # Combine rejected trades from both steps
+            all_rejected_trades = pd.concat([rejected_qty_trades, rejected_strategy_trades]) if not rejected_qty_trades.empty or not rejected_strategy_trades.empty else pd.DataFrame()
+            
+            # Display rejected trades summary if any
+            if not all_rejected_trades.empty:
+                print(f"\nRejected {len(all_rejected_trades)} incompatible trades")
+                print(all_rejected_trades.groupby('rejection_reason').size())
+            
+            # Generate HTML report and open it in browser
+            # Get timestamp from the trades file name if possible, otherwise use current time
+            timestamp = ""
+            if file_path:
+                # Try to extract timestamp from file name (format like "strategy_YYYY-MM-DD_HH-MM_ID_trades.csv")
+                filename = os.path.basename(file_path)
+                parts = filename.split('_')
+                if len(parts) >= 3 and parts[-1] == "trades.csv":
+                    # Use the timestamp from the filename
+                    timestamp = f"_{parts[1]}_{parts[2]}"
+                else:
+                    # Use current timestamp
+                    timestamp = f"_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            
+            # Save to logs directory instead of reports
+            report_file = os.path.join('logs', f"trade_report{timestamp}.html")
+            generate_html_report(trades_df, trades_summary, report_file, auto_open=True, 
+                                original_file=file_path, strategy_params=strategy_params, 
+                                rejected_trades=all_rejected_trades)
+            
+            print("Trade reports generated successfully")
+            return True
+            
+        except ValueError as e:
+            print(f"\nERROR: {str(e)}")
+            print("HTML report was not generated due to errors in trade identification.")
+            return False
+            
+    except Exception as e:
+        print(f"ERROR: Failed to process trades: {str(e)}")
+        return False
 
 def get_latest_trades_file():
     """
@@ -905,26 +1008,34 @@ def generate_html_report(trades_df, trades_summary, output_file='trade_report.ht
     strategy_params_html = ""
     source_file_html = f"""<p><span class="highlight">Source File:</span> {os.path.basename(original_file) if original_file else "Unknown"}</p>"""
     
-    if strategy_side is not None:
-        direction_html = f"""<p><span class="highlight">Direction:</span> {strategy_side.upper()}</p>"""
-        strategy_params_html += direction_html
-        
-        if strategy_stop_loss is not None:
-            stop_loss_html = f"""<p><span class="highlight">Stop Loss:</span> ${strategy_stop_loss:.2f}</p>"""
-            strategy_params_html += stop_loss_html
+    if strategy_params:
+        # Display all strategy parameters in the header
+        for key, value in strategy_params.items():
+            # Format the key for display (convert snake_case to title case)
+            display_key = ' '.join(word.capitalize() for word in key.split('_'))
             
-        if strategy_risk_reward is not None:
-            risk_reward_html = f"""<p><span class="highlight">Risk Reward:</span> {strategy_risk_reward:.1f}</p>"""
-            strategy_params_html += risk_reward_html
+            # Format the value appropriately based on type
+            if isinstance(value, float):
+                if key == 'risk_per_trade':
+                    # Format risk_per_trade as percentage
+                    formatted_value = f"{value * 100:.2f}%"
+                elif key == 'tight_threshold' or value < 0.01:
+                    # Use scientific notation for very small numbers
+                    formatted_value = f"{value:.6f}"
+                else:
+                    # Format other floats with 2 decimal places
+                    formatted_value = f"{value:.2f}"
+            elif isinstance(value, bool):
+                formatted_value = str(value)
+            else:
+                formatted_value = str(value)
+                
+            # Add parameter to HTML
+            param_html = f"""<p><span class="highlight">{display_key}:</span> {formatted_value}</p>"""
+            strategy_params_html += param_html
             
-        if strategy_risk_per_trade is not None:
-            # Format risk_per_trade as a percentage (multiply by 100)
-            risk_per_trade_pct = strategy_risk_per_trade * 100
-            risk_per_trade_html = f"""<p><span class="highlight">Risk Per Trade:</span> {risk_per_trade_pct:.2f}%</p>"""
-            strategy_params_html += risk_per_trade_html
-            
-            # Add source file after strategy parameters
-            strategy_params_html += source_file_html
+        # Add source file after all strategy parameters
+        strategy_params_html += source_file_html
     else:
         # If no strategy parameters, just show source file
         strategy_params_html = source_file_html
@@ -1007,29 +1118,58 @@ def generate_html_report(trades_df, trades_summary, output_file='trade_report.ht
 
 def parse_args():
     """Parse command line arguments"""
-    parser = argparse.ArgumentParser(description="Process trades from CSV files")
-    parser.add_argument("--stop_loss", type=float, help="Stop loss parameter from the strategy")
-    parser.add_argument("--side", type=str, help="Trade side (buy/sell) from the strategy")
-    parser.add_argument("--risk_reward", type=float, help="Risk reward ratio from the strategy")
-    parser.add_argument("--risk_per_trade", type=float, help="Risk per trade as a percentage of capital")
+    parser = argparse.ArgumentParser(description="Process trades from CSV files", allow_abbrev=False)
+    
+    # Basic required parameters
     parser.add_argument("--file_path", type=str, help="Path to the trades CSV file to process")
     
-    return parser.parse_args()
+    # Handle any additional arguments without explicitly defining them
+    args, unknown = parser.parse_known_args()
+    
+    # Process the unknown arguments (which are parameters from the strategy)
+    strategy_params = {}
+    i = 0
+    while i < len(unknown):
+        if unknown[i].startswith('--'):
+            param_name = unknown[i][2:]  # Remove the leading '--'
+            if i + 1 < len(unknown) and not unknown[i+1].startswith('--'):
+                # Try to convert to appropriate type (float, int, etc.)
+                value = unknown[i+1]
+                try:
+                    # Try as integer
+                    if value.isdigit():
+                        strategy_params[param_name] = int(value)
+                    # Try as float
+                    else:
+                        strategy_params[param_name] = float(value)
+                except ValueError:
+                    # Keep as string if not a number
+                    strategy_params[param_name] = value
+                i += 2
+            else:
+                # Flag parameter without value
+                strategy_params[param_name] = True
+                i += 1
+        else:
+            i += 1
+    
+    # Add the parsed parameters to args namespace
+    for param_name, value in strategy_params.items():
+        setattr(args, param_name, value)
+    
+    return args
 
 if __name__ == "__main__":
     # Parse command line arguments
     args = parse_args()
     
-    # Create strategy parameters dictionary if args are provided
+    # Create strategy parameters dictionary from all args
     strategy_params = {}
-    if args.stop_loss is not None:
-        strategy_params['stop_loss'] = args.stop_loss
-    if args.side:
-        strategy_params['side'] = args.side
-    if args.risk_reward is not None:
-        strategy_params['risk_reward'] = args.risk_reward
-    if args.risk_per_trade is not None:
-        strategy_params['risk_per_trade'] = args.risk_per_trade
+    
+    # Add all args as strategy parameters
+    for arg_name, arg_value in vars(args).items():
+        if arg_value is not None and arg_name != 'file_path':
+            strategy_params[arg_name] = arg_value
         
     if strategy_params:
         print(f"Received strategy parameters: {strategy_params}")

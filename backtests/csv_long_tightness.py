@@ -13,6 +13,9 @@ from lumibot.backtesting import PandasDataBacktesting
 # Import backtesting flag
 from lumibot.credentials import IS_BACKTESTING
 
+# Import trade processing helper
+from helpers import process_trades_from_strategy
+
 # Prepare for data loading
 
 ticker = "QQQ"
@@ -55,10 +58,15 @@ class LongTightness(Strategy):
         "init_cash": 30000,
         "max_loss_positions": 2,
         "bar_signals_length": "30minute",
+        "backtesting_start": backtesting_start.strftime( "%Y-%m-%d"),
+        "backtesting_end": backtesting_end.strftime( "%Y-%m-%d"),
+        "strategy_name": "LongTightness",
+        "sleeptime": "30M"
     }
 
     def initialize(self):
-        self.sleeptime = "30M"
+        
+        self.sleeptime = self.parameters.get("sleeptime")
         # Initialize persistent variables for risk management and trade logging
         if not hasattr(self.vars, 'daily_loss_count'):
             self.vars.daily_loss_count = 0  # track consecutive losses in the day
@@ -184,67 +192,6 @@ class LongTightness(Strategy):
         self.vars.daily_loss_count = 0
 
 
-def process_trades():
-    """
-    Call the process_trades.py script to analyze and generate reports on trades
-    """
-    try:
-        # Determine the path to the process_trades.py script
-        script_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
-                                 "scripts", "process_trades.py")
-        
-        # Check if the script exists
-        if not os.path.exists(script_path):
-            print(f"ERROR: Could not find process_trades.py at {script_path}")
-            return False
-        
-        print("\nGenerating trade reports...")
-        
-        # Pass stop_loss, side, and risk_reward parameters to the script
-        stop_loss = LongTightness.parameters.get("stop_loss")
-        side = LongTightness.parameters.get("side")
-        risk_reward = LongTightness.parameters.get("risk_reward")
-        risk_per_trade = LongTightness.parameters.get("risk_per_trade", 0.005)  # Default to 0.005 if not found
-        
-        # Try to find the most recently created trades file in logs directory
-        # This is likely the one created by this backtest
-        logs_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "logs")
-        trade_files = [os.path.join(logs_dir, f) for f in os.listdir(logs_dir) 
-                      if f.endswith('.csv') and 'trades' in f]
-        
-        file_path_args = []
-        if trade_files:
-            # Get the latest file based on creation time
-            latest_file = max(trade_files, key=os.path.getctime)
-            file_path_args = ["--file_path", latest_file]
-            print(f"Found trades file: {latest_file}")
-        
-        # Execute the script as a subprocess with parameters
-        command = [
-            sys.executable, 
-            script_path, 
-            "--stop_loss", str(stop_loss), 
-            "--side", side,
-            "--risk_reward", str(risk_reward),
-            "--risk_per_trade", str(risk_per_trade)
-        ] + file_path_args
-        
-        result = subprocess.run(command, capture_output=True, text=True)
-        
-        # Check the result
-        if result.returncode == 0:
-            print(result.stdout)
-            print("Trade reports generated successfully")
-            return True
-        else:
-            print(f"ERROR running process_trades.py: {result.stderr}")
-            return False
-            
-    except Exception as e:
-        print(f"ERROR: Failed to run process_trades.py: {str(e)}")
-        return False
-
-
 if __name__ == "__main__":
     # Run backtest
     result = LongTightness.run_backtest(
@@ -259,4 +206,4 @@ if __name__ == "__main__":
     )
     
     # Process and analyze trades after backtest completes
-    process_trades()
+    process_trades_from_strategy(LongTightness)
