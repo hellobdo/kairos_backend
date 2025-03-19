@@ -3,14 +3,9 @@ from datetime import datetime
 import os
 import subprocess
 import sys
-
-# Import the Strategy base class
 from lumibot.strategies.strategy import Strategy
-# Import Order, Asset, TradingFee from entities for creating orders and assets
 from lumibot.entities import Order, Asset, Data
-# Import YahooDataBacktesting for backtesting (since we are using daily stock data)
-from lumibot.backtesting import PandasDataBacktesting
-# Import backtesting flag
+from lumibot.backtesting import PandasDataBacktesting, PolygonDataBacktesting
 from lumibot.credentials import IS_BACKTESTING
 
 # Import trade processing helper
@@ -33,18 +28,8 @@ pandas_data = {
     asset: Data(asset, df, timestep="minute"),
 }
 
-# Convert df.index.max() to naive datetime if it has timezone info
-max_date = df.index.max()
-if max_date.tzinfo is not None:
-    # Convert to naive datetime by replacing tzinfo with None
-    # This removes timezone information without changing the time
-    max_date = max_date.replace(tzinfo=None)
-
-# Use naive datetimes for both start and end
-# Adjusted for your 2-hour ahead data (9:30 exchange time = 11:30 your data)
-backtesting_start = datetime(2025, 1, 1, 11, 30)  # Exchange time 9:30
-backtesting_end = max_date
-
+backtesting_start = datetime.strptime(os.getenv("BACKTESTING_START"), "%Y-%m-%d")
+backtesting_end = datetime.strptime(os.getenv("BACKTESTING_END"), "%Y-%m-%d")
 
 class LongTightness(Strategy):
     # Define strategy parameters that can be adjusted by the user

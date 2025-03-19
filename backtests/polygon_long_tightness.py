@@ -5,7 +5,7 @@ import subprocess
 import sys
 from lumibot.strategies.strategy import Strategy
 from lumibot.entities import Order, Asset
-from lumibot.backtesting import PolygonDataBacktesting
+from lumibot.backtesting import PandasDataBacktesting, PolygonDataBacktesting
 
 # Import trade processing helper
 from helpers import process_trades_from_strategy
