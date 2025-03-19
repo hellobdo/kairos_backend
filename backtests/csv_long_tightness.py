@@ -39,7 +39,7 @@ if max_date.tzinfo is not None:
 
 # Use naive datetimes for both start and end
 # Adjusted for your 2-hour ahead data (9:30 exchange time = 11:30 your data)
-backtesting_start = datetime(2023, 1, 1, 11, 30)  # Exchange time 9:30
+backtesting_start = datetime(2025, 1, 1, 11, 30)  # Exchange time 9:30
 backtesting_end = max_date
 
 
@@ -50,9 +50,11 @@ class LongTightness(Strategy):
         "tight_threshold": 0.00015,           # maximum allowed difference between close and open to consider the candle as tight
         "stop_loss": 0.8,                # stop loss in dollars per share
         "risk_reward": 2,                  # risk reward multiplier, meaning the profit target is risk*4
-        "side": "buy",
+        "side": "sell",
         "risk_per_trade": 0.005,
-        "init_cash": 30000
+        "init_cash": 30000,
+        "max_loss_positions": 2,
+        "bar_signals_length": "30minute",
     }
 
     def initialize(self):
@@ -67,9 +69,6 @@ class LongTightness(Strategy):
         self.minutes_before_closing = 0.1 # close positions 5 minutes before market close, see below def before_market_closes()
             
     def on_trading_iteration(self):
-        # Check if max daily losses reached (2 consecutive losses) to prevent further trading
-        if self.vars.daily_loss_count >= 2:
-            return
 
         symbols = self.parameters.get("symbols", [])
         tight_threshold = self.parameters.get("tight_threshold")
@@ -77,14 +76,21 @@ class LongTightness(Strategy):
         risk_reward = self.parameters.get("risk_reward")
         side = self.parameters.get("side")
         risk_per_trade = self.parameters.get("risk_per_trade")
-        # Calculate risk size: 0.5% of available cash
         cash = self.parameters.get("init_cash")
-        risk_size = cash * risk_per_trade
+        max_loss_positions = self.parameters.get("max_loss_positions")
+        bar_signals_length = self.parameters.get("bar_signals_length")
+
+        # Check if max daily losses reached (2 consecutive losses) to prevent further trading
+        if self.vars.daily_loss_count >= max_loss_positions:
+            return
 
         # Check current open positions (exclude USD cash position)
         open_positions = [p for p in self.get_positions() if not (p.asset.symbol == "USD" and p.asset.asset_type == Asset.AssetType.FOREX)]
         if len(open_positions) >= 2:
             return
+        
+        # Calculate risk size: 0.5% of available cash
+        risk_size = cash * risk_per_trade
 
         # Loop through each symbol to check if the entry conditions are met
         for symbol in symbols:
@@ -137,11 +143,10 @@ class LongTightness(Strategy):
                     trade_quantity,
                     side=side,
                     type="bracket",  # This makes it a bracket order
-                    limit_price=None,  # No limit price for entry
-                    stop_price=None,  # No stop price for entry - will be a market order
                     stop_loss_price=stop_loss_price,  # Exit stop loss price
                     take_profit_price=take_profit_price,  # Exit take profit price
-                    custom_params={"margin": True}
+                    custom_params={"margin": True},
+                    time_in_force="day"
                 )
                 self.submit_order(entry_order)
 
@@ -155,7 +160,7 @@ class LongTightness(Strategy):
             "timestamp": self.get_datetime(),  # The time this fill was processed
             "limit_price": getattr(order, 'limit_price', None),
             "stop_price": getattr(order, 'stop_price', None),
-            "take_profit_price": getattr(order, 'take_profit_price', None) if order.side == Order.OrderSide.SELL else None,  # Assuming limit_price in SELL can be take profit
+            "take_profit_price": getattr(order, 'take_profit_price'),
             "custom_params": order.custom_params,
             "order_type": getattr(order, 'type', None),
             "date_created": getattr(order, 'date_created', None),
@@ -165,15 +170,14 @@ class LongTightness(Strategy):
 
     def before_market_closes(self): 
 
-        # close positions 5 minutes before market close
-
+        self.cancel_open_orders()
+        # close positions before market close
         # checks if there are any positions to close
         positions = self.get_positions()
         if len(positions) == 0:
             return
-        
-        # close all positions and cancel all open orders
-        self.sell_all()
+        else:
+            self.sell_all()
 
     def after_market_closes(self):
         # Reset daily loss count for next trading day
@@ -202,15 +206,30 @@ def process_trades():
         risk_reward = LongTightness.parameters.get("risk_reward")
         risk_per_trade = LongTightness.parameters.get("risk_per_trade", 0.005)  # Default to 0.005 if not found
         
+        # Try to find the most recently created trades file in logs directory
+        # This is likely the one created by this backtest
+        logs_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "logs")
+        trade_files = [os.path.join(logs_dir, f) for f in os.listdir(logs_dir) 
+                      if f.endswith('.csv') and 'trades' in f]
+        
+        file_path_args = []
+        if trade_files:
+            # Get the latest file based on creation time
+            latest_file = max(trade_files, key=os.path.getctime)
+            file_path_args = ["--file_path", latest_file]
+            print(f"Found trades file: {latest_file}")
+        
         # Execute the script as a subprocess with parameters
-        result = subprocess.run([
+        command = [
             sys.executable, 
             script_path, 
             "--stop_loss", str(stop_loss), 
             "--side", side,
             "--risk_reward", str(risk_reward),
             "--risk_per_trade", str(risk_per_trade)
-        ], capture_output=True, text=True)
+        ] + file_path_args
+        
+        result = subprocess.run(command, capture_output=True, text=True)
         
         # Check the result
         if result.returncode == 0:
@@ -235,6 +254,8 @@ if __name__ == "__main__":
         backtesting_end=backtesting_end,
         parameters=LongTightness.parameters,
         quote_asset=Asset("USD", asset_type=Asset.AssetType.FOREX),
+        show_plot=False,
+        show_tearsheet=False
     )
     
     # Process and analyze trades after backtest completes

@@ -3,15 +3,9 @@ from datetime import datetime
 import os
 import subprocess
 import sys
-
-# Import the Strategy base class
 from lumibot.strategies.strategy import Strategy
-# Import Order, Asset, TradingFee from entities for creating orders and assets
 from lumibot.entities import Order, Asset
-# Import YahooDataBacktesting for backtesting (since we are using daily stock data)
-from lumibot.backtesting import PolygonDataBacktesting, BacktestingBroker
-# Import backtesting flag
-from lumibot.credentials import IS_BACKTESTING
+from lumibot.backtesting import PolygonDataBacktesting
 
 class LongTightness(Strategy):
     # Define strategy parameters that can be adjusted by the user
@@ -20,7 +14,7 @@ class LongTightness(Strategy):
         "tight_threshold": 0.00015,           # maximum allowed difference between close and open to consider the candle as tight
         "stop_loss": 0.2,                # stop loss in dollars per share
         "risk_reward": 3,                  # risk reward multiplier, meaning the profit target is risk*4
-        "side": "buy",
+        "side": "sell",
         "risk_per_trade": 0.005,
         "init_cash": 30000,
         "max_loss_positions": 2,
@@ -116,11 +110,10 @@ class LongTightness(Strategy):
                     trade_quantity,
                     side=side,
                     type="bracket",  # This makes it a bracket order
-                    limit_price=None,  # No limit price for entry
-                    stop_price=None,  # No stop price for entry - will be a market order
                     stop_loss_price=stop_loss_price,  # Exit stop loss price
                     take_profit_price=take_profit_price,  # Exit take profit price
-                    custom_params={"margin": True}
+                    custom_params={"margin": True},
+                    time_in_force="day"
                 )
                 self.submit_order(entry_order)
 
@@ -134,7 +127,7 @@ class LongTightness(Strategy):
             "timestamp": self.get_datetime(),  # The time this fill was processed
             "limit_price": getattr(order, 'limit_price', None),
             "stop_price": getattr(order, 'stop_price', None),
-            "take_profit_price": getattr(order, 'take_profit_price', None) if order.side == Order.OrderSide.SELL else None,  # Assuming limit_price in SELL can be take profit
+            "take_profit_price": getattr(order, 'take_profit_price', None),
             "custom_params": order.custom_params,
             "order_type": getattr(order, 'type', None),
             "date_created": getattr(order, 'date_created', None),
@@ -144,13 +137,14 @@ class LongTightness(Strategy):
 
     def before_market_closes(self): 
 
+        self.cancel_open_orders()
+
+        # close positions before market close
         # checks if there are any positions to close
         positions = self.get_positions()
-        if len(positions) == 0:
-            return
-        
-        # close all positions and cancel all open orders
-        self.sell_all()
+        if len(positions) > 0:
+            self.sell_all()
+
 
     def after_market_closes(self):
         # Reset daily loss count for next trading day
@@ -179,15 +173,30 @@ def process_trades():
         risk_reward = LongTightness.parameters.get("risk_reward")
         risk_per_trade = LongTightness.parameters.get("risk_per_trade", 0.005)  # Default to 0.005 if not found
         
+        # Try to find the most recently created trades file in logs directory
+        # This is likely the one created by this backtest
+        logs_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "logs")
+        trade_files = [os.path.join(logs_dir, f) for f in os.listdir(logs_dir) 
+                      if f.endswith('.csv') and 'trades' in f]
+        
+        file_path_args = []
+        if trade_files:
+            # Get the latest file based on creation time
+            latest_file = max(trade_files, key=os.path.getctime)
+            file_path_args = ["--file_path", latest_file]
+            print(f"Found trades file: {latest_file}")
+        
         # Execute the script as a subprocess with parameters
-        result = subprocess.run([
+        command = [
             sys.executable, 
             script_path, 
             "--stop_loss", str(stop_loss), 
             "--side", side,
             "--risk_reward", str(risk_reward),
             "--risk_per_trade", str(risk_per_trade)
-        ], capture_output=True, text=True)
+        ] + file_path_args
+        
+        result = subprocess.run(command, capture_output=True, text=True)
         
         # Check the result
         if result.returncode == 0:
@@ -217,6 +226,8 @@ if __name__ == "__main__":
         parameters=LongTightness.parameters,
         quote_asset=Asset("USD", asset_type=Asset.AssetType.FOREX),
         polygon_api_key=polygon_api_key,
+        show_plot=False,
+        show_tearsheet=False
     )
     
     # Process and analyze trades after backtest completes
