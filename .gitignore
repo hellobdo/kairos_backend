@@ -41,6 +41,7 @@ myenv/
 # Logs
 *.log 
 logs/
+indicators/examples/
 
 # Data
 *.csv

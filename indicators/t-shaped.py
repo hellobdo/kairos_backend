@@ -60,24 +60,16 @@ print(f"Found {t_shaped_count} T-shaped candles out of {len(df)} total candles")
 t_shaped_df = df[df['is_t_shaped']]
 print(t_shaped_df)
 
-'''
-# Visualize the results
-# Option 1: Plot all candles and highlight T-shaped ones
-plt.figure(figsize=(15, 7))
-
-# Convert to list dates for mplfinance
-# Use the addplot to mark T-shaped candles instead of vlines
-apdict = mpf.make_addplot(df['is_t_shaped'].astype(int), scatter=True, 
-                         markersize=50, marker='^', color='red', panel=0)
-
-mpf.plot(df, type='candle', style='yahoo', 
-         title=f"{symbol} with T-shaped Candles Highlighted",
-         addplot=apdict)
-'''
-
-# Option 2: Plot only the T-shaped candles with surrounding context
-# For each T-shaped candle, show a window of 10 days around it
-for idx in t_shaped_df.index:
+def save_t_shaped_candle(df, idx, output_dir='indicators/examples'):
+    """
+    Save a single T-shaped candle plot as PNG.
+    Shows a window of 10 days around the T-shaped candle.
+    
+    Args:
+        df: Full DataFrame with all candles
+        idx: Index of the T-shaped candle
+        output_dir: Directory to save the PNG files
+    """
     try:
         # Get 5 days before and 5 days after
         start_idx = df.index.get_loc(idx) - 5
@@ -90,25 +82,59 @@ for idx in t_shaped_df.index:
             
         window_df = df.iloc[start_idx:end_idx+1]
         
-        # Highlight the T-shaped candle
-        highlight = [idx]
+        # Format date for filename
+        date_str = idx.strftime('%Y-%m-%d')
+        filename = f"{output_dir}/t_shaped_{date_str}.png"
         
-        plt.figure(figsize=(10, 5))
-        mpf.plot(window_df, type='candle', style='yahoo',
-                title=f"T-shaped Candle on {idx.date()}",
-                vlines=dict(vlines=highlight, colors=['r'], linewidths=2))
+        # Calculate price range for annotation placement
+        price_range = window_df['High'].max() - window_df['Low'].min()
+        annotation_y = window_df.loc[idx, 'High'] + price_range * 0.02  # Place slightly above the candle
+        
+        # Create the plot
+        fig, axlist = mpf.plot(window_df, type='candle', style='yahoo',
+                title=f"T-shaped Candle on {date_str}",
+                volume=True,
+                returnfig=True)  # Return figure to add annotation
+        
+        # Add annotation
+        ax = axlist[0]  # Main price axis
+        t_shaped_idx = window_df.index.get_loc(idx)
+        
+        # Add red background for the T-shaped candle
+        ax.axvspan(t_shaped_idx - 0.4, t_shaped_idx + 0.4, color='red', alpha=0.1)
+        
+        # Add 'T' annotation with arrow
+        ax.annotate('T', xy=(t_shaped_idx, annotation_y),
+                   xytext=(t_shaped_idx, annotation_y + price_range * 0.05),
+                   color='red',
+                   fontsize=12,
+                   fontweight='bold',
+                   ha='center',
+                   va='bottom',
+                   arrowprops=dict(arrowstyle='->',
+                                 connectionstyle='arc3',
+                                 color='red'))
+        
+        # Save the figure
+        fig.savefig(filename, bbox_inches='tight')
+        
+        # Close all figures to prevent memory issues
+        plt.close('all')
+        
+        print(f"Saved {filename}")
+        
     except Exception as e:
         print(f"Error plotting candle at {idx}: {e}")
 
+# Save individual PNGs for each T-shaped candle (limit to 20)
+print(f"\nSaving individual candle plots to indicators/examples/...")
+max_examples = 20
 
-'''
-Option 3: Create a custom marker for T-shaped candles and plot all data
-apdict = mpf.make_addplot(df['is_t_shaped'].astype(int), scatter=True, markersize=100, 
-                          marker='^', color='red', panel=0)
+# Get the most recent 20 T-shaped candles
+t_shaped_df_limited = t_shaped_df.tail(max_examples)
+print(f"Saving {len(t_shaped_df_limited)} most recent examples (max {max_examples})")
 
-plt.figure(figsize=(15, 7))
-mpf.plot(df, type='candle', style='yahoo', addplot=apdict,
-         title=f"{symbol} Price Chart with T-shaped Candles Marked")
+for idx in t_shaped_df_limited.index:
+    save_t_shaped_candle(df, idx)
 
-plt.show()
-'''
+print("\nDone saving plots!")
