@@ -50,7 +50,7 @@ class LongTightness(Strategy):
         "tight_threshold": 0.00015,           # maximum allowed difference between close and open to consider the candle as tight
         "stop_loss": 0.8,                # stop loss in dollars per share
         "risk_reward": 2,                  # risk reward multiplier, meaning the profit target is risk*4
-        "side": "sell",
+        "side": "buy",
         "risk_per_trade": 0.005,
         "init_cash": 30000,
         "max_loss_positions": 2,
