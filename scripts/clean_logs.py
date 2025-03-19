@@ -3,15 +3,15 @@
 Clean Logs Utility
 
 This script deletes all files in the logs directory to free up disk space.
-It calculates the total size of log files before deletion and requires 
-confirmation unless explicitly bypassed.
+It calculates the total size of log files before deletion.
 
 Usage:
-    python clean_logs.py              # Interactive mode with confirmation
+    python clean_logs.py              # Automatically cleans logs without confirmation
     
 In code:
     from clean_logs import clean_logs
-    clean_logs(logs_dir="logs", confirm=False)  # No confirmation needed
+    clean_logs(logs_dir="logs", confirm=True)  # With confirmation
+    clean_logs(logs_dir="logs", confirm=False)  # Without confirmation
 """
 import os
 import glob
@@ -76,5 +76,5 @@ def clean_logs(logs_dir="logs", confirm=True):
     return True
 
 if __name__ == "__main__":
-    # Simple version - just clean the logs folder
-    clean_logs() 
+    # Run clean_logs without confirmation when run directly
+    clean_logs(confirm=False) 
