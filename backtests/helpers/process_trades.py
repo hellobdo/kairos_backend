@@ -43,7 +43,6 @@ import sys
 import webbrowser
 import argparse
 import calendar
-from .stop_loss_module import get_stop_loss_by_price
 
 def process_trades_from_strategy(strategy_class):
     """
@@ -477,8 +476,29 @@ def calculate_trade_metrics(trades_summary, trades_df, strategy_params=None):
         # Calculate stop loss based on entry price using stop_loss_module
         # Use the first trade's entry price to determine stop loss amount
         entry_price = trades_summary_display['entry_price'].iloc[0]
-        stop_loss = get_stop_loss_by_price(entry_price)
-        results['strategy_metrics']['stop_loss'] = stop_loss
+        
+        # Get stop loss amount based on entry price and stop_loss_rules parameter
+        stop_loss = None
+        if 'stop_loss_rules' in strategy_params:
+            stop_loss_rules = strategy_params['stop_loss_rules']
+            # Determine stop loss amount based on price and rules
+            for rule in stop_loss_rules:
+                if "price_below" in rule and entry_price < rule["price_below"]:
+                    stop_loss = rule["amount"]
+                    break
+                elif "price_above" in rule and entry_price >= rule["price_above"]:
+                    stop_loss = rule["amount"]
+                    break
+            
+            # Fallback if no matching rule was found
+            if stop_loss is None:
+                stop_loss = 0.30 if entry_price < 150 else 1.00
+        else:
+            # Fallback to hardcoded rules if stop_loss_rules not provided
+            stop_loss = 0.30 if entry_price < 150 else 1.00
+        
+        # Convert stop_loss to string for display
+        results['strategy_metrics']['stop_loss'] = str(stop_loss)
         
         # Get risk_reward if available
         if 'risk_reward' in strategy_params:
@@ -1095,8 +1115,8 @@ def generate_html_report(trades_df, trades_summary, output_file='trade_report.ht
         
         <div class="section">
             <h2>Processed Executions</h2>
-            {trades_df_display[['execution_timestamp', 'date', 'time_of_day', 'identifier', 'symbol', 'side', 'filled_quantity', 'price', 'trade_id', 'open_volume']].head(20).to_html(index=False)}
-            <p><em>Note: Showing first 20 rows only. Total rows: {len(trades_df)}</em></p>
+            {trades_df_display[['execution_timestamp', 'date', 'time_of_day', 'identifier', 'symbol', 'side', 'filled_quantity', 'price', 'trade_id', 'open_volume']].to_html(index=False)}
+            <p><em>Total rows: {len(trades_df)}</em></p>
         </div>
         
         {rejected_trades_html}
