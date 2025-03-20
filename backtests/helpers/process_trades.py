@@ -43,6 +43,7 @@ import sys
 import webbrowser
 import argparse
 import calendar
+from .stop_loss_module import get_stop_loss_by_price
 
 def process_trades_from_strategy(strategy_class):
     """
@@ -466,14 +467,17 @@ def calculate_trade_metrics(trades_summary, trades_df, strategy_params=None):
     strategy_risk_per_trade = None
     
     # Add stop price calculation if stop_loss parameter is available
-    if strategy_params and 'stop_loss' in strategy_params and 'side' in strategy_params:
-        stop_loss = strategy_params['stop_loss']
+    if strategy_params and 'side' in strategy_params:
         side = strategy_params['side']
         
         # Save for display in header
         strategy_side = side
-        strategy_stop_loss = stop_loss
         results['strategy_metrics']['side'] = side
+        
+        # Calculate stop loss based on entry price using stop_loss_module
+        # Use the first trade's entry price to determine stop loss amount
+        entry_price = trades_summary_display['entry_price'].iloc[0]
+        stop_loss = get_stop_loss_by_price(entry_price)
         results['strategy_metrics']['stop_loss'] = stop_loss
         
         # Get risk_reward if available
@@ -576,7 +580,14 @@ def calculate_trade_metrics(trades_summary, trades_df, strategy_params=None):
         
         print("Classified trade exits as: stop, take profit, or end of day")
         
-        # Using original exit prices from the data, no adjustment
+        # Adjust exit prices for stop losses to match the exact stop price
+        stop_exits_mask = (trades_summary_display['exit_type'] == "stop") & (trades_summary_display['exit_price'] != trades_summary_display['stop_price'])
+        trades_summary_display.loc[stop_exits_mask, 'exit_price'] = trades_summary_display.loc[stop_exits_mask, 'stop_price']
+        
+        # Adjust exit prices for take profit exits to match the exact take profit price
+        if 'take_profit_price' in trades_summary_display.columns:
+            tp_exits_mask = (trades_summary_display['exit_type'] == "take profit") & (trades_summary_display['exit_price'] != trades_summary_display['take_profit_price'])
+            trades_summary_display.loc[tp_exits_mask, 'exit_price'] = trades_summary_display.loc[tp_exits_mask, 'take_profit_price']
         
         # Recalculate actual risk/reward ratio with the adjusted exit prices
         if side == 'buy':

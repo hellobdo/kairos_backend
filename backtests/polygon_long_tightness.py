@@ -5,10 +5,11 @@ import subprocess
 import sys
 from lumibot.strategies.strategy import Strategy
 from lumibot.entities import Order, Asset
-from lumibot.backtesting import PandasDataBacktesting, PolygonDataBacktesting
+from lumibot.backtesting import PolygonDataBacktesting
 
-# Import trade processing helper
+# Import helpers
 from helpers import process_trades_from_strategy
+from helpers.stop_loss_module import get_stop_loss_by_price
 
 # Import t-shaped indicator by loading the module directly
 import importlib.util
@@ -18,16 +19,16 @@ t_shaped = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(t_shaped)
 calculate_indicator = t_shaped.calculate_indicator
 
+
 # Define backtest dates
 backtesting_start = datetime.strptime(os.getenv("BACKTESTING_START"), "%Y-%m-%d")
 backtesting_end = datetime.strptime(os.getenv("BACKTESTING_END"), "%Y-%m-%d")
 polygon_api_key = os.getenv("POLYGON_API_KEY")
 
-class LongTightness(Strategy):
+class Strategy(Strategy):
     # Define strategy parameters that can be adjusted by the user
     parameters = {
         "symbols": ["NVDA"],
-        "stop_loss": 0.4,                # stop loss in dollars per share
         "risk_reward": 3,                  # risk reward multiplier, meaning the profit target is risk*4
         "side": "buy",
         "risk_per_trade": 0.005,
@@ -52,8 +53,8 @@ class LongTightness(Strategy):
         self.minutes_before_closing = 0.1 # close positions before market close, see below def before_market_closes()
             
     def on_trading_iteration(self):
+        
         symbols = self.parameters.get("symbols", [])
-        stop_loss_amount = self.parameters.get("stop_loss")
         risk_reward = self.parameters.get("risk_reward")
         side = self.parameters.get("side")
         risk_per_trade = self.parameters.get("risk_per_trade")
@@ -97,6 +98,9 @@ class LongTightness(Strategy):
                 entry_price = self.get_last_price(symbol)
                 if entry_price is None:
                     continue
+
+                # Get stop loss amount based on current price
+                stop_loss_amount = get_stop_loss_by_price(latest_candle['close'])
 
                 # Determine trade quantity based on risk size divided by stop loss per share
                 computed_quantity = int(risk_size // stop_loss_amount)
@@ -158,11 +162,11 @@ class LongTightness(Strategy):
 
 if __name__ == "__main__":
     # Run backtest
-    result = LongTightness.run_backtest(
+    result = Strategy.run_backtest(
         PolygonDataBacktesting,
         backtesting_start,
         backtesting_end,
-        parameters=LongTightness.parameters,
+        parameters=Strategy.parameters,
         quote_asset=Asset("USD", asset_type=Asset.AssetType.FOREX),
         polygon_api_key=polygon_api_key,
         show_plot=False,
@@ -170,4 +174,4 @@ if __name__ == "__main__":
     )
     
     # Process and analyze trades after backtest completes
-    process_trades_from_strategy(LongTightness) 
+    process_trades_from_strategy(Strategy) 
