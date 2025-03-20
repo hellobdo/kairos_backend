@@ -295,13 +295,13 @@ def save_trades_to_db(trade_summary_data, run_id):
         trade_id, num_executions, symbol, start_date, start_time, 
         end_date, end_time, duration_hours, quantity, entry_price, 
         stop_price, exit_price, capital_required, exit_type, 
-        take_profit_price, risk_reward, winning_trade, perc_return, 
+        take_profit_price, risk_reward, risk_per_trade, winning_trade, perc_return, 
         week, month, year, run_id
     ) VALUES (
         :trade_id, :num_executions, :symbol, :start_date, :start_time, 
         :end_date, :end_time, :duration_hours, :quantity, :entry_price, 
         :stop_price, :exit_price, :capital_required, :exit_type, 
-        :take_profit_price, :actual_risk_reward, :winning_trade, :perc_return, 
+        :take_profit_price, :risk_reward, :risk_per_trade, :winning_trade, :perc_return, 
         :week, :month, :year, :run_id
     )
     """
@@ -311,6 +311,16 @@ def save_trades_to_db(trade_summary_data, run_id):
         for trade_data in trade_summary_data:
             # Add run_id to each trade data
             trade_data['run_id'] = run_id
+            
+            # Convert risk_per_trade from percentage string to decimal
+            if 'risk_per_trade' in trade_data and isinstance(trade_data['risk_per_trade'], str):
+                try:
+                    # Remove % sign and convert to decimal
+                    risk_per_trade = float(trade_data['risk_per_trade'].rstrip('%')) / 100
+                    trade_data['risk_per_trade'] = risk_per_trade
+                except (ValueError, AttributeError):
+                    trade_data['risk_per_trade'] = None
+            
             cursor.execute(insert_sql, trade_data)
         conn.commit()
     
@@ -373,6 +383,9 @@ def extract_executions(html_file_path):
                     execution_data[header] = None
             elif header == 'trade_id':
                 execution_data[header] = int(value)
+            elif header in ['is_entry', 'is_exit']:
+                # Store boolean values as strings 'True' or 'False'
+                execution_data[header] = value
             else:
                 execution_data[header] = value
                 
@@ -392,10 +405,12 @@ def save_executions_to_db(executions_data, run_id):
     insert_sql = """
     INSERT INTO backtest_executions (
         execution_timestamp, date, time_of_day, identifier, symbol,
-        side, filled_quantity, price, trade_id, open_volume, run_id
+        side, filled_quantity, price, trade_id, open_volume, run_id,
+        is_entry, is_exit
     ) VALUES (
         :execution_timestamp, :date, :time_of_day, :identifier, :symbol,
-        :side, :filled_quantity, :price, :trade_id, :open_volume, :run_id
+        :side, :filled_quantity, :price, :trade_id, :open_volume, :run_id,
+        :is_entry, :is_exit
     )
     """
     
@@ -404,6 +419,9 @@ def save_executions_to_db(executions_data, run_id):
         for execution_data in executions_data:
             # Add run_id to each execution data
             execution_data['run_id'] = run_id
+            # Convert is_entry and is_exit to boolean integers (0/1)
+            execution_data['is_entry'] = 1 if execution_data.get('is_entry') == 'True' else 0
+            execution_data['is_exit'] = 1 if execution_data.get('is_exit') == 'True' else 0
             cursor.execute(insert_sql, execution_data)
         conn.commit()
     

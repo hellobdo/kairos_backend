@@ -609,25 +609,28 @@ def calculate_trade_metrics(trades_summary, trades_df, strategy_params=None):
             tp_exits_mask = (trades_summary_display['exit_type'] == "take profit") & (trades_summary_display['exit_price'] != trades_summary_display['take_profit_price'])
             trades_summary_display.loc[tp_exits_mask, 'exit_price'] = trades_summary_display.loc[tp_exits_mask, 'take_profit_price']
         
-        # Recalculate actual risk/reward ratio with the adjusted exit prices
+        # Add risk_per_trade to trades_summary_display
+        if risk_per_trade is not None:
+            trades_summary_display['risk_per_trade'] = risk_per_trade * 100
+            trades_summary_display['risk_per_trade'] = trades_summary_display['risk_per_trade'].apply(lambda x: f"{x:.2f}%")
+
+        # Recalculate risk/reward ratio with the adjusted exit prices
         if side == 'buy':
             # For buy trades: (exit_price - entry_price) / (entry_price - stop_price)
-            trades_summary_display['actual_risk_reward'] = (
+            trades_summary_display['risk_reward'] = (
                 (trades_summary_display['exit_price'] - trades_summary_display['entry_price']) / 
                 (trades_summary_display['entry_price'] - trades_summary_display['stop_price'])
             )
         else:  # sell
             # For sell trades: (entry_price - exit_price) / (stop_price - entry_price)
-            trades_summary_display['actual_risk_reward'] = (
+            trades_summary_display['risk_reward'] = (
                 (trades_summary_display['entry_price'] - trades_summary_display['exit_price']) / 
                 (trades_summary_display['stop_price'] - trades_summary_display['entry_price'])
             )
         
         # Handle possible infinity or NaN values in risk_reward
-        trades_summary_display['actual_risk_reward'] = trades_summary_display['actual_risk_reward'].replace([np.inf, -np.inf], np.nan)
-        
-        # Round actual_risk_reward to 2 decimal places
-        trades_summary_display['actual_risk_reward'] = trades_summary_display['actual_risk_reward'].round(2)
+        trades_summary_display['risk_reward'] = trades_summary_display['risk_reward'].replace([np.inf, -np.inf], np.nan)
+    
         
         print("Recalculated risk/reward ratios with adjusted exit prices")
         
@@ -653,7 +656,7 @@ def calculate_trade_metrics(trades_summary, trades_df, strategy_params=None):
             # Calculate percentage return only if risk_per_trade is available
         if risk_per_trade is not None:
             # Calculate percentage return using risk_per_trade * actual_risk_reward for ALL trades
-            trades_summary_display['perc_return'] = risk_per_trade * trades_summary_display['actual_risk_reward']
+            trades_summary_display['perc_return'] = risk_per_trade * trades_summary_display['risk_reward']
             
             # Convert to percentage format and round
             trades_summary_display['perc_return'] = (trades_summary_display['perc_return'] * 100).round(2)
@@ -687,9 +690,9 @@ def calculate_trade_metrics(trades_summary, trades_df, strategy_params=None):
                 # Get average risk reward for winning and losing trades
                 winning_mask = week_df['winning_trade'] == 1
                 losing_mask = week_df['winning_trade'] == 0
-                avg_win = week_df.loc[winning_mask, 'actual_risk_reward'].mean() if winning_mask.any() else 0
-                avg_loss = week_df.loc[losing_mask, 'actual_risk_reward'].mean() if losing_mask.any() else 0
-                avg_risk_reward = week_df['actual_risk_reward'].mean()
+                avg_win = week_df.loc[winning_mask, 'risk_reward'].mean() if winning_mask.any() else 0
+                avg_loss = week_df.loc[losing_mask, 'risk_reward'].mean() if losing_mask.any() else 0
+                avg_risk_reward = week_df['risk_reward'].mean()
                 
                 # Calculate total return
                 total_return = week_df['perc_return'].sum()
@@ -717,9 +720,9 @@ def calculate_trade_metrics(trades_summary, trades_df, strategy_params=None):
                 # Get average risk reward for winning and losing trades
                 winning_mask = month_df['winning_trade'] == 1
                 losing_mask = month_df['winning_trade'] == 0
-                avg_win = month_df.loc[winning_mask, 'actual_risk_reward'].mean() if winning_mask.any() else 0
-                avg_loss = month_df.loc[losing_mask, 'actual_risk_reward'].mean() if losing_mask.any() else 0
-                avg_risk_reward = month_df['actual_risk_reward'].mean()
+                avg_win = month_df.loc[winning_mask, 'risk_reward'].mean() if winning_mask.any() else 0
+                avg_loss = month_df.loc[losing_mask, 'risk_reward'].mean() if losing_mask.any() else 0
+                avg_risk_reward = month_df['risk_reward'].mean()
                 
                 # Calculate total return
                 total_return = month_df['perc_return'].sum()
@@ -748,9 +751,9 @@ def calculate_trade_metrics(trades_summary, trades_df, strategy_params=None):
                 # Get average risk reward for winning and losing trades
                 winning_mask = year_df['winning_trade'] == 1
                 losing_mask = year_df['winning_trade'] == 0
-                avg_win = year_df.loc[winning_mask, 'actual_risk_reward'].mean() if winning_mask.any() else 0
-                avg_loss = year_df.loc[losing_mask, 'actual_risk_reward'].mean() if losing_mask.any() else 0
-                avg_risk_reward = year_df['actual_risk_reward'].mean()
+                avg_win = year_df.loc[winning_mask, 'risk_reward'].mean() if winning_mask.any() else 0
+                avg_loss = year_df.loc[losing_mask, 'risk_reward'].mean() if losing_mask.any() else 0
+                avg_risk_reward = year_df['risk_reward'].mean()
                 
                 # Calculate total return
                 total_return = year_df['perc_return'].sum()
@@ -780,9 +783,9 @@ def calculate_trade_metrics(trades_summary, trades_df, strategy_params=None):
                 # Get average risk reward for winning and losing trades for all weeks
                 winning_mask = trades_summary_calc['winning_trade'] == 1
                 losing_mask = trades_summary_calc['winning_trade'] == 0
-                avg_win = trades_summary_calc.loc[winning_mask, 'actual_risk_reward'].mean() if winning_mask.any() else 0
-                avg_loss = trades_summary_calc.loc[losing_mask, 'actual_risk_reward'].mean() if losing_mask.any() else 0
-                avg_risk_reward = trades_summary_calc['actual_risk_reward'].mean()
+                avg_win = trades_summary_calc.loc[winning_mask, 'risk_reward'].mean() if winning_mask.any() else 0
+                avg_loss = trades_summary_calc.loc[losing_mask, 'risk_reward'].mean() if losing_mask.any() else 0
+                avg_risk_reward = trades_summary_calc['risk_reward'].mean()
                 
                 # Calculate total return for all weeks
                 total_return = trades_summary_calc['perc_return'].sum()
@@ -1115,7 +1118,7 @@ def generate_html_report(trades_df, trades_summary, output_file='trade_report.ht
         
         <div class="section">
             <h2>Processed Executions</h2>
-            {trades_df_display[['execution_timestamp', 'date', 'time_of_day', 'identifier', 'symbol', 'side', 'filled_quantity', 'price', 'trade_id', 'open_volume']].to_html(index=False)}
+            {trades_df_display[['execution_timestamp', 'date', 'time_of_day', 'identifier', 'symbol', 'side', 'filled_quantity', 'price', 'trade_id', 'open_volume', 'is_entry', 'is_exit']].to_html(index=False)}
             <p><em>Total rows: {len(trades_df)}</em></p>
         </div>
         
