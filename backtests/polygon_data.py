@@ -3,6 +3,10 @@ from datetime import datetime
 import os
 import subprocess
 import sys
+
+# Add the project root directory to Python's path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from lumibot.strategies.strategy import Strategy
 from lumibot.entities import Order, Asset
 from lumibot.backtesting import PolygonDataBacktesting
@@ -10,14 +14,9 @@ from lumibot.backtesting import PolygonDataBacktesting
 # Import helpers
 from helpers import process_trades_from_strategy
 
-# Import t-shaped indicator by loading the module directly
-import importlib.util
-indicator_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'indicators', 't-shaped.py')
-spec = importlib.util.spec_from_file_location("t_shaped", indicator_path)
-t_shaped = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(t_shaped)
-calculate_indicator = t_shaped.calculate_indicator
-
+# Import indicators
+from indicators import load_indicators
+t_shaped = load_indicators('t-shaped.py')
 
 # Define backtest dates
 backtesting_start = datetime.strptime(os.getenv("BACKTESTING_START"), "%Y-%m-%d")
@@ -57,7 +56,7 @@ class Strategy(Strategy):
         self.minutes_before_closing = 0.1 # close positions before market close, see below def before_market_closes()
             
     def on_trading_iteration(self):
-        
+        calculate_t = t_shaped.calculate_indicator
         symbols = self.parameters.get("symbols", [])
         risk_reward = self.parameters.get("risk_reward")
         side = self.parameters.get("side")
@@ -95,7 +94,7 @@ class Strategy(Strategy):
 
             # Calculate T-shaped indicator
             df = bars.df.copy()
-            df = calculate_indicator(df)
+            df = calculate_t(df)
             
             # Check if the latest candle is t-shaped
             latest_candle = df.iloc[-1]

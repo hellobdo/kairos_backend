@@ -8,16 +8,15 @@ from lumibot.entities import Order, Asset, Data
 from lumibot.backtesting import PandasDataBacktesting, PolygonDataBacktesting
 from lumibot.credentials import IS_BACKTESTING
 
+# Add the project root directory to Python's path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 # Import trade processing helper
 from helpers import process_trades_from_strategy
 
-# Import t-shaped indicator by loading the module directly
-import importlib.util
-indicator_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'indicators', 't-shaped.py')
-spec = importlib.util.spec_from_file_location("t_shaped", indicator_path)
-t_shaped = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(t_shaped)
-calculate_indicator = t_shaped.calculate_indicator
+# Import indicators
+from indicators import load_indicators
+t_shaped = load_indicators('t-shaped.py')
 
 # Prepare for data loading
 ticker = "QQQ"
@@ -77,6 +76,7 @@ class LongTightness(Strategy):
         max_loss_positions = self.parameters.get("max_loss_positions")
         bar_signals_length = self.parameters.get("bar_signals_length")
         stop_loss_rules = self.parameters.get("stop_loss_rules", [])
+        calculate_t = t_shaped.calculate_indicator
 
         # Check if max daily losses reached (2 consecutive losses) to prevent further trading
         if self.vars.daily_loss_count >= max_loss_positions:
@@ -103,7 +103,7 @@ class LongTightness(Strategy):
 
             # Calculate T-shaped indicator
             df = bars.df.copy()
-            df = calculate_indicator(df)
+            df = calculate_t(df)
             
             # Check if the latest candle is t-shaped
             latest_candle = df.iloc[-1]
