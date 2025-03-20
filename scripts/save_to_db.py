@@ -20,7 +20,7 @@ import pandas as pd
 from bs4 import BeautifulSoup
 
 # Database configuration
-DB_PATH = Path("data/trades.db")
+DB_PATH = Path("data/kairos.db")
 
 @contextmanager
 def get_db_connection():
