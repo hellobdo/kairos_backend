@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """
-Clean Logs Utility
+Clean Examples Utility
 
-This script provides functions to clean log files in the logs directory.
+This script provides functions to clean example files in the indicators/examples directory.
 
 Usage:
-    python clean_logs.py              # Automatically cleans logs without confirmation
+    python clean_examples.py         # Automatically cleans examples without confirmation
     
 In code:
-    from clean_logs import clean_logs
-    clean_logs(confirm=True)  # With confirmation
+    from clean_examples import clean_examples
+    clean_examples(confirm=True)  # With confirmation
 """
 import os
 import glob
@@ -72,19 +72,19 @@ def clean_directory(directory, confirm=True, dir_description="directory"):
     
     return True
 
-def clean_logs(logs_dir="logs", confirm=True):
+def clean_examples(examples_dir="indicators/examples", confirm=True):
     """
-    Delete all files in the logs directory
+    Delete all files in the indicators/examples directory
     
     Args:
-        logs_dir: Path to the logs directory
+        examples_dir: Path to the examples directory
         confirm: Whether to ask for confirmation
         
     Returns:
         bool: Success status
     """
-    return clean_directory(logs_dir, confirm, "Logs directory")
+    return clean_directory(examples_dir, confirm, "Examples directory")
 
 if __name__ == "__main__":
-    # Run clean_logs without confirmation when run directly
-    clean_logs(confirm=False) 
+    # Run clean_examples without confirmation when run directly
+    clean_examples(confirm=False) 

@@ -10,6 +10,14 @@ from lumibot.backtesting import PandasDataBacktesting, PolygonDataBacktesting
 # Import trade processing helper
 from helpers import process_trades_from_strategy
 
+# Import t-shaped indicator by loading the module directly
+import importlib.util
+indicator_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'indicators', 't-shaped.py')
+spec = importlib.util.spec_from_file_location("t_shaped", indicator_path)
+t_shaped = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(t_shaped)
+calculate_indicator = t_shaped.calculate_indicator
+
 # Define backtest dates
 backtesting_start = datetime.strptime(os.getenv("BACKTESTING_START"), "%Y-%m-%d")
 backtesting_end = datetime.strptime(os.getenv("BACKTESTING_END"), "%Y-%m-%d")
@@ -18,18 +26,16 @@ polygon_api_key = os.getenv("POLYGON_API_KEY")
 class LongTightness(Strategy):
     # Define strategy parameters that can be adjusted by the user
     parameters = {
-        "symbols": ["QQQ"],
-        "tight_threshold": 0.00015,           # maximum allowed difference between close and open to consider the candle as tight
-        "stop_loss": 0.2,                # stop loss in dollars per share
+        "symbols": ["NVDA"],
+        "stop_loss": 0.4,                # stop loss in dollars per share
         "risk_reward": 3,                  # risk reward multiplier, meaning the profit target is risk*4
-        "side": "sell",
+        "side": "buy",
         "risk_per_trade": 0.005,
-        "init_cash": 30000,
         "max_loss_positions": 2,
         "bar_signals_length": "30minute",
         "backtesting_start": backtesting_start.strftime("%Y-%m-%d"),
         "backtesting_end": backtesting_end.strftime("%Y-%m-%d"),
-        "strategy_name": "LongTightness",
+        "strategy_name": __qualname__, #gets the name of the class
         "sleeptime": "1M"
     }
 
@@ -46,16 +52,14 @@ class LongTightness(Strategy):
         self.minutes_before_closing = 0.1 # close positions before market close, see below def before_market_closes()
             
     def on_trading_iteration(self):
-
         symbols = self.parameters.get("symbols", [])
-        tight_threshold = self.parameters.get("tight_threshold")
         stop_loss_amount = self.parameters.get("stop_loss")
         risk_reward = self.parameters.get("risk_reward")
         side = self.parameters.get("side")
         risk_per_trade = self.parameters.get("risk_per_trade")
-        cash = self.parameters.get("init_cash")
         max_loss_positions = self.parameters.get("max_loss_positions")
         bar_signals_length = self.parameters.get("bar_signals_length")
+
         # Check if max daily losses reached (2 consecutive losses) to prevent further trading
         if self.vars.daily_loss_count >= max_loss_positions:
             return
@@ -70,7 +74,7 @@ class LongTightness(Strategy):
             return
         
         # Calculate risk size: 0.5% of available cash
-        risk_size = cash * risk_per_trade
+        risk_size = 30000 * risk_per_trade
 
         # Loop through each symbol to check if the entry conditions are met
         for symbol in symbols:
@@ -78,27 +82,18 @@ class LongTightness(Strategy):
             if self.get_position(symbol) is not None:
                 continue
 
-            # Obtain 30-minute historical prices instead of daily
+            # Obtain 30-minute historical prices
             bars = self.get_historical_prices(symbol, length=1, timestep=bar_signals_length)
             if bars is None or bars.df.empty:
                 continue
 
-            # Extract the latest candle from the DataFrame
-            df = bars.df
+            # Calculate T-shaped indicator
+            df = bars.df.copy()
+            df = calculate_indicator(df)
+            
+            # Check if the latest candle is t-shaped
             latest_candle = df.iloc[-1]
-            open_price = latest_candle['open']
-            close_price = latest_candle['close']
-            high_price = latest_candle['high']
-            low_price = latest_candle['low']
-
-            # T-shaped - entry indicator
-            is_t_shaped = (
-                (abs(open_price - close_price) / open_price) < tight_threshold and
-                low_price < open_price and
-                abs(low_price - open_price) / (abs(high_price - open_price) if abs(high_price - open_price) != 0 else 1) > 2.5
-            )
-
-            if is_t_shaped: # then execute the trade
+            if latest_candle['is_t_shaped']:
                 entry_price = self.get_last_price(symbol)
                 if entry_price is None:
                     continue
@@ -148,7 +143,6 @@ class LongTightness(Strategy):
         self.vars.trade_log.append(trade_info)
 
     def before_market_closes(self): 
-
         self.cancel_open_orders()
 
         # close positions before market close
@@ -157,14 +151,12 @@ class LongTightness(Strategy):
         if len(positions) > 0:
             self.sell_all()
 
-
     def after_market_closes(self):
         # Reset daily loss count for next trading day
         self.vars.daily_loss_count = 0
 
 
 if __name__ == "__main__":
-    
     # Run backtest
     result = LongTightness.run_backtest(
         PolygonDataBacktesting,
@@ -178,4 +170,4 @@ if __name__ == "__main__":
     )
     
     # Process and analyze trades after backtest completes
-    process_trades_from_strategy(LongTightness)
+    process_trades_from_strategy(LongTightness) 
