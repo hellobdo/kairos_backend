@@ -78,10 +78,10 @@ def map_html_to_backtest_runs(header_data, html_file_name):
     # Define mapping of HTML fields to database fields
     field_mapping = {
         'Report Generated': 'timestamp',
-        'Strategy Name': 'strategy_name',
+        'Indicators': 'indicators',
         'Symbols Traded': 'symbols_traded',
         'Side': 'direction',
-        'Stop Loss': 'stop_loss',
+        'Stop Loss Rules': 'stop_loss',
         'Risk Reward': 'risk_reward',
         'Risk Per Trade': 'risk_per_trade',
         'Backtesting Start': 'backtest_start_date',
@@ -106,12 +106,15 @@ def map_html_to_backtest_runs(header_data, html_file_name):
             elif db_field == 'risk_per_trade' and header_data[html_field].endswith('%'):
                 # Convert percentage string to decimal
                 db_data[db_field] = float(header_data[html_field].strip('%')) / 100
-            elif db_field in ['stop_loss', 'risk_reward']:
-                # Convert strings to floats
+            elif db_field == 'risk_reward':
+                # Convert only risk_reward to float
                 try:
                     db_data[db_field] = float(header_data[html_field])
                 except ValueError:
                     db_data[db_field] = None
+            elif db_field == 'stop_loss':
+                # Keep stop_loss as a string
+                db_data[db_field] = header_data[html_field]
             else:
                 db_data[db_field] = header_data[html_field]
     
@@ -172,11 +175,11 @@ def save_to_backtest_runs(data):
     select_sql = "SELECT run_id FROM backtest_runs WHERE source_file = :source_file"
     insert_sql = """
     INSERT INTO backtest_runs (
-        timestamp, strategy_name, symbols_traded, direction,
+        timestamp, indicators, symbols_traded, direction,
         stop_loss, risk_reward, risk_per_trade,
         backtest_start_date, backtest_end_date, source_file
     ) VALUES (
-        :timestamp, :strategy_name, :symbols_traded, :direction,
+        :timestamp, :indicators, :symbols_traded, :direction,
         :stop_loss, :risk_reward, :risk_per_trade,
         :backtest_start_date, :backtest_end_date, :source_file
     )

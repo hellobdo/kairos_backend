@@ -7,7 +7,7 @@ import sqlite3
 from pathlib import Path
 
 # Database configuration
-DB_PATH = Path("data/trades.db")
+DB_PATH = Path("data/kairos.db")
 
 def clear_tables():
     """Clear all tables in the database."""
