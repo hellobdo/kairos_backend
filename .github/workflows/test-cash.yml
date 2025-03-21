@@ -39,21 +39,25 @@ jobs:
         
     - name: Run cash module tests
       run: |
+        # Add current directory to Python path to find the tests package
         python -m tests.test_cash
       env:
-        # Use dummy tokens for CI testing
-        # The tests should be mocking external calls anyway
-        IBKR_FLEX_TOKEN: "12345678901234567890"
-        IBKR_FLEX_QUERY_ID: "12345"
+        # Set environment variables that match test expectations
+        IBKR_TOKEN_PAPER: "dummy_token_paper"
+        IBKR_QUERY_ID_CASH_PAPER: "dummy_query_paper" 
+        IBKR_TOKEN_LIVE: "dummy_token_live"
+        IBKR_QUERY_ID_CASH_LIVE: "dummy_query_live"
+        PYTHONPATH: ${{ github.workspace }}
         
     - name: Run IBKR API tests
       run: |
+        # Add current directory to Python path to find the tests package
         python -m tests.test_ibkr_api
       env:
         # Use dummy tokens for CI testing
-        # The tests should be mocking external calls anyway
-        IBKR_FLEX_TOKEN: "12345678901234567890"
-        IBKR_FLEX_QUERY_ID: "12345"
+        IBKR_TOKEN_PAPER: "dummy_token_paper"
+        IBKR_QUERY_ID_CASH_PAPER: "dummy_query_paper"
+        PYTHONPATH: ${{ github.workspace }}
         
     - name: Notify on failure
       if: failure()
