@@ -11,7 +11,7 @@ from io import StringIO
 from tests import BaseTestCase, print_summary, MockDatabaseConnection
 
 # Import the module to test
-from analytics.ibkr_api import get_ibkr_flex_data
+from analytics.ibkr_api import get_ibkr_flex_data, get_ibkr_report
 
 # Module specific test fixtures
 def create_module_fixtures():
@@ -73,9 +73,10 @@ class TestIBKRApiImports(BaseTestCase):
         """Test that imports are working correctly"""
         try:
             self.assertTrue(callable(get_ibkr_flex_data))
-            self.log_case_result("IBKR API function is callable", True)
+            self.assertTrue(callable(get_ibkr_report))
+            self.log_case_result("IBKR API functions are callable", True)
         except AssertionError:
-            self.log_case_result("IBKR API function is callable", False)
+            self.log_case_result("IBKR API functions are callable", False)
             raise
 
 class TestGetIBKRFlexData(BaseTestCase):
@@ -85,7 +86,7 @@ class TestGetIBKRFlexData(BaseTestCase):
         """Set up test fixtures"""
         super().setUp()
         self.fixtures = create_module_fixtures()
-        
+    
     @patch('analytics.ibkr_api.requests.get')
     @patch('analytics.ibkr_api.time.sleep')
     def test_successful_report_retrieval(self, mock_sleep, mock_get):
@@ -337,6 +338,123 @@ class TestGetIBKRFlexData(BaseTestCase):
         self.assertFalse(result)
         
         self.log_case_result("Properly handles exceptions", True)
+
+class TestGetIBKRReport(BaseTestCase):
+    """Test cases for get_ibkr_report function"""
+    
+    def setUp(self):
+        """Set up test fixtures"""
+        super().setUp()
+        self.fixtures = create_module_fixtures()
+    
+    @patch('analytics.ibkr_api.get_ibkr_flex_data')
+    def test_successful_report(self, mock_get_ibkr_flex_data):
+        """Test successful retrieval of a report"""
+        # Create a mock DataFrame
+        mock_df = pd.DataFrame({
+            'Symbol': ['AAPL', 'MSFT'],
+            'Price': [150.0, 250.0]
+        })
+        mock_get_ibkr_flex_data.return_value = mock_df
+        
+        # Capture stdout
+        original_stdout = self.capture_stdout()
+        
+        # Call function under test
+        result = get_ibkr_report(self.fixtures['token'], self.fixtures['query_id'], 'cash')
+        
+        # Restore stdout
+        self.restore_stdout(original_stdout)
+        
+        # Assertions
+        self.assertIs(result, mock_df)
+        mock_get_ibkr_flex_data.assert_called_once_with(self.fixtures['token'], self.fixtures['query_id'])
+        
+        # Check output messages
+        output = self.captured_output.get_value()
+        self.assertIn("Fetching cash report from IBKR", output)
+        self.assertIn("Successfully retrieved cash report with 2 rows", output)
+        
+        self.log_case_result("Successfully retrieves report with proper logging", True)
+    
+    @patch('analytics.ibkr_api.get_ibkr_flex_data')
+    def test_failed_report(self, mock_get_ibkr_flex_data):
+        """Test handling when the report retrieval fails"""
+        # Setup mock to return False
+        mock_get_ibkr_flex_data.return_value = False
+        
+        # Capture stdout
+        original_stdout = self.capture_stdout()
+        
+        # Call function under test
+        result = get_ibkr_report(self.fixtures['token'], self.fixtures['query_id'], 'cash')
+        
+        # Restore stdout
+        self.restore_stdout(original_stdout)
+        
+        # Assertions
+        self.assertFalse(result)
+        mock_get_ibkr_flex_data.assert_called_once_with(self.fixtures['token'], self.fixtures['query_id'])
+        
+        # Check output messages
+        output = self.captured_output.get_value()
+        self.assertIn("Fetching cash report from IBKR", output)
+        # Should not contain success message
+        self.assertNotIn("Successfully retrieved", output)
+        
+        self.log_case_result("Properly handles failed report retrieval", True)
+    
+    @patch('analytics.ibkr_api.get_ibkr_flex_data')
+    def test_exception_handling(self, mock_get_ibkr_flex_data):
+        """Test exception handling in the get_ibkr_report function"""
+        # Setup mock to raise an exception
+        mock_get_ibkr_flex_data.side_effect = Exception("Test exception")
+        
+        # Capture stdout
+        original_stdout = self.capture_stdout()
+        
+        # Call function under test
+        result = get_ibkr_report(self.fixtures['token'], self.fixtures['query_id'], 'cash')
+        
+        # Restore stdout
+        self.restore_stdout(original_stdout)
+        
+        # Assertions
+        self.assertFalse(result)
+        mock_get_ibkr_flex_data.assert_called_once_with(self.fixtures['token'], self.fixtures['query_id'])
+        
+        # Check output messages
+        output = self.captured_output.get_value()
+        self.assertIn("Error fetching cash data: Test exception", output)
+        
+        self.log_case_result("Properly handles exceptions", True)
+    
+    @patch('analytics.ibkr_api.get_ibkr_flex_data')
+    def test_report_type_logging(self, mock_get_ibkr_flex_data):
+        """Test that report_type is used correctly in logging"""
+        # Create a mock DataFrame
+        mock_df = pd.DataFrame({'A': [1, 2, 3]})
+        mock_get_ibkr_flex_data.return_value = mock_df
+        
+        # Test with different report types
+        report_types = ['cash', 'trade_confirmations', 'positions', 'custom_type']
+        
+        for report_type in report_types:
+            # Capture stdout
+            original_stdout = self.capture_stdout()
+            
+            # Call function under test
+            get_ibkr_report(self.fixtures['token'], self.fixtures['query_id'], report_type)
+            
+            # Restore stdout
+            self.restore_stdout(original_stdout)
+            
+            # Check output messages
+            output = self.captured_output.get_value()
+            self.assertIn(f"Fetching {report_type} report from IBKR", output)
+            self.assertIn(f"Successfully retrieved {report_type} report", output)
+        
+        self.log_case_result("Properly includes report type in logging", True)
 
 if __name__ == '__main__':
     print("\n🔍 Running tests for IBKR API module...")

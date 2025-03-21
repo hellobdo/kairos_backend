@@ -6,15 +6,23 @@ on:
     paths:
       - 'analytics/cash.py'
       - 'analytics/ibkr_api.py'
+      - 'analytics/executions.py'
+      - 'data/db_utils.py'
       - 'tests/test_cash.py'
       - 'tests/test_ibkr_api.py'
+      - 'tests/test_db_utils.py'
+      - 'tests/test_executions.py'
   pull_request:
     branches: [ main, master ]
     paths:
       - 'analytics/cash.py'
       - 'analytics/ibkr_api.py'
+      - 'analytics/executions.py'
+      - 'data/db_utils.py'
       - 'tests/test_cash.py'
       - 'tests/test_ibkr_api.py'
+      - 'tests/test_db_utils.py'
+      - 'tests/test_executions.py'
   workflow_dispatch:  # Allow manual triggering
 
 jobs:
@@ -37,6 +45,13 @@ jobs:
         # Install any development dependencies
         if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
         
+    - name: Run db_utils tests
+      run: |
+        # Add current directory to Python path to find the tests package
+        python -m tests.test_db_utils
+      env:
+        PYTHONPATH: ${{ github.workspace }}
+        
     - name: Run cash module tests
       run: |
         # Add current directory to Python path to find the tests package
@@ -58,6 +73,18 @@ jobs:
         IBKR_TOKEN_PAPER: "dummy_token_paper"
         IBKR_QUERY_ID_CASH_PAPER: "dummy_query_paper"
         PYTHONPATH: ${{ github.workspace }}
+
+    - name: Run executions module tests
+      run: |
+        # Add current directory to Python path to find the tests package
+        python -m tests.test_executions
+      env:
+        # Use dummy tokens for CI testing
+        IBKR_TOKEN_PAPER: "dummy_token_paper"
+        IBKR_QUERY_ID_TRADE_CONFIRMATION_PAPER: "dummy_query_paper"
+        IBKR_TOKEN_LIVE: "dummy_token_live"
+        IBKR_QUERY_ID_TRADE_CONFIRMATION_LIVE: "dummy_query_live"
+        PYTHONPATH: ${{ github.workspace }}
         
     - name: Notify on failure
       if: failure()
@@ -72,6 +99,6 @@ jobs:
           github.rest.issues.create({
             owner,
             repo,
-            title: 'Cash and IBKR API modules tests failing in CI',
-            body: `Tests for the cash and IBKR API modules are failing in the CI pipeline. [View the workflow run](${run_url}) for details.`
+            title: 'Analytics modules tests failing in CI',
+            body: `Tests for the analytics modules are failing in the CI pipeline. [View the workflow run](${run_url}) for details.`
           }); 
