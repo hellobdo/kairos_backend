@@ -2,7 +2,7 @@ import os
 import pandas as pd
 from dotenv import load_dotenv
 import sqlite3
-from ibkr_connection import get_ibkr_flex_data
+from analytics.ibkr_api import get_ibkr_flex_data
 
 def get_trade_confirms(token, query_id):
     """
