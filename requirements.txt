@@ -1,3 +1,4 @@
+# This project requires Python 3.10 or higher
 # This requirements.txt matches the dependencies in the Dockerfile
 # See Dockerfile for reference
 
