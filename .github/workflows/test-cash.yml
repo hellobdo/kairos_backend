@@ -1,16 +1,20 @@
-name: Test Cash Module
+name: Tests
 
 on:
   push:
     branches: [ main, master ]
     paths:
       - 'analytics/cash.py'
+      - 'analytics/ibkr_api.py'
       - 'tests/test_cash.py'
+      - 'tests/test_ibkr_api.py'
   pull_request:
     branches: [ main, master ]
     paths:
       - 'analytics/cash.py'
+      - 'analytics/ibkr_api.py'
       - 'tests/test_cash.py'
+      - 'tests/test_ibkr_api.py'
   workflow_dispatch:  # Allow manual triggering
 
 jobs:
@@ -33,9 +37,18 @@ jobs:
         # Install any development dependencies
         if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
         
-    - name: Run tests
+    - name: Run cash module tests
       run: |
         python -m tests.test_cash
+      env:
+        # Use dummy tokens for CI testing
+        # The tests should be mocking external calls anyway
+        IBKR_FLEX_TOKEN: "12345678901234567890"
+        IBKR_FLEX_QUERY_ID: "12345"
+        
+    - name: Run IBKR API tests
+      run: |
+        python -m tests.test_ibkr_api
       env:
         # Use dummy tokens for CI testing
         # The tests should be mocking external calls anyway
@@ -55,6 +68,6 @@ jobs:
           github.rest.issues.create({
             owner,
             repo,
-            title: 'Cash module tests failing in CI',
-            body: `Tests for the cash module are failing in the CI pipeline. [View the workflow run](${run_url}) for details.`
+            title: 'Cash and IBKR API modules tests failing in CI',
+            body: `Tests for the cash and IBKR API modules are failing in the CI pipeline. [View the workflow run](${run_url}) for details.`
           }); 
