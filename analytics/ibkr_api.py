@@ -106,3 +106,30 @@ def get_ibkr_flex_data(token, query_id, flex_version=3):
     except Exception as e:
         print(f"Error processing report: {e}")
         return False 
+
+def get_ibkr_report(token, query_id, report_type='generic'):
+    """
+    Generic function to fetch any IBKR Flex report.
+    
+    Args:
+        token (str): IBKR Flex Web Service token
+        query_id (str): IBKR Flex query ID
+        report_type (str): Type of report being requested (for logging)
+        
+    Returns:
+        pandas.DataFrame: DataFrame containing the report data or False if failed
+    """
+    try:
+        # Get CSV data as DataFrame directly from IBKR
+        print(f"Fetching {report_type} report from IBKR...")
+        df = get_ibkr_flex_data(token, query_id)
+        
+        if df is not False:
+            print(f"Successfully retrieved {report_type} report with {len(df)} rows")
+        # No need for else block since get_ibkr_flex_data already prints error messages
+        
+        return df
+        
+    except Exception as e:
+        print(f"Error fetching {report_type} data: {e}")
+        return False 

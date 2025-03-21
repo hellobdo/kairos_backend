@@ -1,17 +1,21 @@
 import os
 from dotenv import load_dotenv
 import pandas as pd
-import sqlite3
 from datetime import datetime
 import re
 
 # Handle import differently when run as script vs module
 try:
     # When imported as part of a package
-    from .ibkr_api import get_ibkr_flex_data
+    from .ibkr_api import get_ibkr_report
+    from data.db_utils import DatabaseManager
 except ImportError:
     # When run directly as a script
-    from analytics.ibkr_api import get_ibkr_flex_data
+    from analytics.ibkr_api import get_ibkr_report
+    from data.db_utils import DatabaseManager
+
+# Initialize database manager
+db = DatabaseManager()
 
 def update_accounts_balances(df):
     """
@@ -21,19 +25,21 @@ def update_accounts_balances(df):
     Args:
         df (pandas.DataFrame): Cash report data from IBKR
         
+    Returns:
+        int: Number of records inserted
+        
     Raises:
         ValueError: If date is not in YYYY-MM-DD format
     """
     # Skip if DataFrame is empty or missing required columns
     if df.empty or not all(col in df.columns for col in ['ClientAccountID', 'EndingCash', 'ToDate']):
-        return
+        return 0
     
-    conn = sqlite3.connect('data/kairos.db')
     inserted_count = 0
     
     try:
         # Get the mapping from account_external_ID to ID
-        account_map_df = pd.read_sql("SELECT ID, account_external_ID FROM accounts", conn)
+        account_map_df = db.get_account_map()
         
         # Current timestamp for record_date
         current_timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -60,11 +66,7 @@ def update_accounts_balances(df):
                 raise ValueError(f"Date must be in YYYY-MM-DD format. Got: {row['ToDate']}, extracted: {date_value}")
             
             # Check if record already exists
-            existing = pd.read_sql(
-                "SELECT 1 FROM accounts_balances WHERE account_ID = ? AND date = ?",
-                conn, params=[db_account_id, date_value]
-            )
-            if not existing.empty:
+            if db.check_balance_exists(db_account_id, date_value):
                 print(f"Account ID {db_account_id} with date {date_value} already exists in database - skipping")
                 continue
             
@@ -73,61 +75,34 @@ def update_accounts_balances(df):
         
         # Batch insert all records
         if cash_data:
-            cursor = conn.cursor()
-            cursor.executemany("""
-                INSERT INTO accounts_balances 
-                (account_ID, date, cash_balance, record_date) 
-                VALUES (?, ?, ?, ?)
-            """, cash_data)
-            conn.commit()
-            inserted_count = len(cash_data)
+            inserted_count = db.insert_account_balances(cash_data)
             
     except Exception as e:
-        conn.rollback()
         raise
-    finally:
-        conn.close()
         
     return inserted_count
-
-def process_ibkr_account(token, query_id):
-    """
-    Get IBKR cash data for a specific account.
-    
-    Args:
-        token (str): IBKR Flex Web Service token
-        query_id (str): IBKR Flex query ID
-        
-    Returns:
-        pandas.DataFrame or False: DataFrame with cash data if successful, False otherwise
-    """
-    # Get CSV data as DataFrame
-    df = get_ibkr_flex_data(token, query_id)
-    
-    if df is False or df.empty:
-        print("No data retrieved from IBKR" if df is False else "Empty DataFrame returned from IBKR")
-        return False
-        
-    print(f"Cash report retrieved from IBKR with {len(df)} rows")
-    print(df.head())
-    return df
 
 def process_account_data(token, query_id, account_type="paper"):
     """Process account data for a specific account type"""
     print(f"\nProcessing {account_type} trading account:")
     
-    # Step 1: Get the cash data from IBKR
-    df = process_ibkr_account(token, query_id)
-    
-    # Step 2: Update the database with the cash data
-    if isinstance(df, pd.DataFrame):
+    try:
+        # Get CSV data as DataFrame directly from IBKR using the centralized function
+        df = get_ibkr_report(token, query_id, "cash")
+        
+        if df is False:
+            print(f"Failed to retrieve cash data for {account_type} account")
+            return
+        
+        # Update the database with the cash data
         inserted = update_accounts_balances(df)
         if inserted:
             print(f"Updated database with {inserted} new cash entries for {account_type} account")
         else:
             print(f"No new cash entries inserted for {account_type} account")
-    else:
-        print(f"Failed to retrieve cash data for {account_type} account")
+            
+    except Exception as e:
+        print(f"Error processing {account_type} account: {e}")
 
 if __name__ == "__main__":
     # Load environment variables from .env file
@@ -136,11 +111,13 @@ if __name__ == "__main__":
     # Process paper trading account
     process_account_data(
         os.getenv("IBKR_TOKEN_PAPER"),
-        os.getenv("IBKR_QUERY_ID_CASH_PAPER")
+        os.getenv("IBKR_QUERY_ID_CASH_PAPER"),
+        "paper"
     )
     
     # Uncomment to process live account
     # process_account_data(
     #     os.getenv("IBKR_TOKEN_LIVE"),
-    #     os.getenv("IBKR_QUERY_ID_CASH_LIVE")
+    #     os.getenv("IBKR_QUERY_ID_CASH_LIVE"),
+    #     "live"
     # ) 

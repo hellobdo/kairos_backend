@@ -15,11 +15,11 @@ from tests import BaseTestCase, print_summary, MockDatabaseConnection
 sys.modules['ibkr_connection'] = MagicMock()
 
 # Set up a mock for the actual function used by cash.py
-from ibkr_connection import get_ibkr_flex_data
-sys.modules['ibkr_connection'].get_ibkr_flex_data = MagicMock()
+from ibkr_connection import get_ibkr_report
+sys.modules['ibkr_connection'].get_ibkr_report = MagicMock()
 
 # Import the functions we want to test
-from analytics.cash import process_ibkr_account, update_accounts_balances, process_account_data
+from analytics.cash import update_accounts_balances, process_account_data
 
 # Cash module specific test fixtures
 def create_cash_fixtures():
@@ -67,7 +67,6 @@ class TestCashImports(BaseTestCase):
         """Test that imports are working correctly"""
         # Case 1: Check that functions are callable
         try:
-            self.assertTrue(callable(process_ibkr_account))
             self.assertTrue(callable(update_accounts_balances))
             self.assertTrue(callable(process_account_data))
             self.log_case_result("Functions are callable", True)
@@ -122,83 +121,6 @@ class TestCashImports(BaseTestCase):
             self.log_case_result(f"Live trading credentials: {str(e)}", False)
             raise
 
-class TestProcessIBKRAccount(BaseTestCase):
-    """Test cases for process_ibkr_account function"""
-    
-    @patch('analytics.cash.get_ibkr_flex_data')
-    def test_successful_data_retrieval(self, mock_get_ibkr_flex_data):
-        """Test successful retrieval of data from IBKR"""
-        # Setup mock to return a DataFrame with sample data
-        mock_df = pd.DataFrame({
-            'ClientAccountID': ['U1234567'],
-            'ToDate': ['2023-03-15'],
-            'EndingCash': ['10000.00']
-        })
-        mock_get_ibkr_flex_data.return_value = mock_df
-        
-        # Capture stdout
-        original_stdout = self.capture_stdout()
-        
-        # Call the function
-        result = process_ibkr_account('dummy_token', 'dummy_query_id')
-        
-        # Restore stdout
-        self.restore_stdout(original_stdout)
-        
-        # Verify results
-        mock_get_ibkr_flex_data.assert_called_once_with('dummy_token', 'dummy_query_id')
-        self.assertIs(result, mock_df)
-        output = self.captured_output.get_value()
-        self.assertIn("Cash report retrieved from IBKR with 1 rows", output)
-        
-        self.log_case_result("Successful data retrieval", True)
-    
-    @patch('analytics.cash.get_ibkr_flex_data')
-    def test_api_failure(self, mock_get_ibkr_flex_data):
-        """Test handling of API failure"""
-        # Setup mock to return False
-        mock_get_ibkr_flex_data.return_value = False
-        
-        # Capture stdout
-        original_stdout = self.capture_stdout()
-        
-        # Call the function
-        result = process_ibkr_account('dummy_token', 'dummy_query_id')
-        
-        # Restore stdout
-        self.restore_stdout(original_stdout)
-        
-        # Verify results
-        mock_get_ibkr_flex_data.assert_called_once_with('dummy_token', 'dummy_query_id')
-        self.assertFalse(result)
-        output = self.captured_output.get_value()
-        self.assertIn("No data retrieved from IBKR", output)
-        
-        self.log_case_result("API failure handling", True)
-    
-    @patch('analytics.cash.get_ibkr_flex_data')
-    def test_empty_dataframe(self, mock_get_ibkr_flex_data):
-        """Test handling of empty DataFrame"""
-        # Setup mock to return empty DataFrame
-        mock_get_ibkr_flex_data.return_value = pd.DataFrame()
-        
-        # Capture stdout
-        original_stdout = self.capture_stdout()
-        
-        # Call the function
-        result = process_ibkr_account('dummy_token', 'dummy_query_id')
-        
-        # Restore stdout
-        self.restore_stdout(original_stdout)
-        
-        # Verify results
-        mock_get_ibkr_flex_data.assert_called_once_with('dummy_token', 'dummy_query_id')
-        self.assertFalse(result)
-        output = self.captured_output.get_value()
-        self.assertIn("Empty DataFrame returned from IBKR", output)
-        
-        self.log_case_result("Empty DataFrame handling", True)
-
 class TestUpdateAccountsBalances(BaseTestCase):
     """Test cases for update_accounts_balances function"""
     
@@ -207,201 +129,252 @@ class TestUpdateAccountsBalances(BaseTestCase):
         super().setUp()
         self.fixtures = create_cash_fixtures()
     
-    @patch('analytics.cash.sqlite3.connect')
-    def test_successful_insert(self, mock_connect):
+    @patch('analytics.cash.db')
+    def test_successful_insert(self, mock_db):
         """Test successful insertion of valid data"""
-        # Mock connection and cursor
-        mock_conn, mock_cursor = MockDatabaseConnection.create_mock_db()
-        mock_connect.return_value = mock_conn
+        # Mock db.get_account_map
+        mock_db.get_account_map.return_value = self.fixtures['account_map_df']
         
-        # Setup read_sql patch
-        with patch('pandas.read_sql') as mock_read_sql:
-            # Define a side_effect function to handle different query patterns
-            def read_sql_side_effect(query, conn, params=None):
-                if "SELECT ID, account_external_ID" in query:
-                    return self.fixtures['account_map_df']
-                elif "SELECT 1 FROM accounts_balances" in query:
-                    return pd.DataFrame()  # No existing records
-                return pd.DataFrame()
-            
-            mock_read_sql.side_effect = read_sql_side_effect
-            
-            # Call function
-            update_accounts_balances(self.fixtures['valid_cash_df'])
-            
-            # Verify that read_sql was called at least twice
-            self.assertGreaterEqual(mock_read_sql.call_count, 2)
-            
-            # Verify cursor executemany was called once (batch insert)
-            mock_cursor.executemany.assert_called_once()
-            
-            # Extract parameters from execute calls to verify correct data was inserted
-            call_args = mock_cursor.executemany.call_args[0]
-            
-            # Verify SQL statement
-            self.assertIn("INSERT INTO accounts_balances", call_args[0])
-            
-            # Verify data params (should be a list of tuples)
-            data_params = call_args[1]
-            self.assertEqual(len(data_params), 2)  # Two records
-            
-            # Verify account IDs
-            account_ids = set(param[0] for param in data_params)  # First item is account_ID
-            self.assertEqual(account_ids, {1, 2})
-            
-            # Verify commit was called
-            mock_conn.commit.assert_called_once()
+        # Mock db.check_balance_exists to return False (record doesn't exist)
+        mock_db.check_balance_exists.return_value = False
+        
+        # Mock db.insert_account_balances to return the count of inserted records
+        mock_db.insert_account_balances.return_value = 2
+        
+        # Call function
+        result = update_accounts_balances(self.fixtures['valid_cash_df'])
+        
+        # Verify
+        self.assertEqual(result, 2)
+        mock_db.get_account_map.assert_called_once()
+        self.assertEqual(mock_db.check_balance_exists.call_count, 2)  # Called for each row
+        mock_db.insert_account_balances.assert_called_once()
         
         self.log_case_result("Successful insert of valid data", True)
     
-    @patch('analytics.cash.sqlite3.connect')
-    def test_empty_dataframe(self, mock_connect):
+    @patch('analytics.cash.db')
+    def test_empty_dataframe(self, mock_db):
         """Test handling of empty DataFrame"""
-        # Call function directly - it should return early without database operations
-        update_accounts_balances(self.fixtures['empty_df'])
+        # Call function
+        result = update_accounts_balances(self.fixtures['empty_df'])
         
-        # Verify connect was not called
-        mock_connect.assert_not_called()
+        # Verify
+        self.assertEqual(result, 0)
+        mock_db.get_account_map.assert_not_called()
         
         self.log_case_result("Properly handles empty DataFrame", True)
     
-    @patch('analytics.cash.sqlite3.connect')
-    def test_missing_columns(self, mock_connect):
+    @patch('analytics.cash.db')
+    def test_missing_columns(self, mock_db):
         """Test handling of DataFrames with missing required columns"""
         # Test with missing ClientAccountID
-        update_accounts_balances(self.fixtures['missing_account_df'])
-        mock_connect.assert_not_called()
+        result = update_accounts_balances(self.fixtures['missing_account_df'])
+        self.assertEqual(result, 0)
+        mock_db.get_account_map.assert_not_called()
         
         # Reset mock
-        mock_connect.reset_mock()
+        mock_db.reset_mock()
         
         # Test with missing EndingCash
-        update_accounts_balances(self.fixtures['missing_cash_df'])
-        mock_connect.assert_not_called()
+        result = update_accounts_balances(self.fixtures['missing_cash_df'])
+        self.assertEqual(result, 0)
+        mock_db.get_account_map.assert_not_called()
         
         # Reset mock
-        mock_connect.reset_mock()
+        mock_db.reset_mock()
         
         # Test with missing ToDate
-        update_accounts_balances(self.fixtures['missing_date_df'])
-        mock_connect.assert_not_called()
+        result = update_accounts_balances(self.fixtures['missing_date_df'])
+        self.assertEqual(result, 0)
+        mock_db.get_account_map.assert_not_called()
         
         self.log_case_result("Handles DataFrames with missing columns", True)
     
-    @patch('analytics.cash.sqlite3.connect')
-    def test_duplicate_records(self, mock_connect):
+    @patch('analytics.cash.db')
+    def test_duplicate_records(self, mock_db):
         """Test handling of duplicate records"""
-        # Mock connection and cursor
-        mock_conn, mock_cursor = MockDatabaseConnection.create_mock_db()
-        mock_connect.return_value = mock_conn
+        # Mock db.get_account_map
+        mock_db.get_account_map.return_value = self.fixtures['account_map_df']
         
-        # Setup mock for pd.read_sql
-        with patch('pandas.read_sql') as mock_read_sql:
-            # Prepare existing record
-            existing_record = pd.DataFrame({
-                '1': [1]  # Just need a non-empty DataFrame
-            })
-            
-            # Define side effect to return account mapping and then existing record
-            mock_read_sql.side_effect = [
-                self.fixtures['account_map_df'],  # Account mapping
-                existing_record                  # Existing record found
-            ]
-            
-            # Create test data with one row
-            test_data = pd.DataFrame({
-                'ClientAccountID': ['U1234567'],
-                'EndingCash': ['10000.50'],
-                'ToDate': ['2023-05-15']
-            })
-            
-            # Call function
-            update_accounts_balances(test_data)
-            
-            # Verify the SQL query for checking existing records contains expected parameters
-            query_call = mock_read_sql.call_args_list[1]
-            self.assertEqual(query_call[1]['params'], [1, '2023-05-15'])
-            
-            # Verify cursor executemany is not called (no inserts)
-            self.assertFalse(hasattr(mock_cursor, 'executemany') and mock_cursor.executemany.called)
-            
-            # Verify commit not called
-            self.assertFalse(mock_conn.commit.called)
+        # Mock db.check_balance_exists to return True (record exists)
+        mock_db.check_balance_exists.return_value = True
         
-        self.log_case_result("Properly skips duplicate records", True)
+        # Capture stdout
+        original_stdout = self.capture_stdout()
+        
+        # Create test data with one row
+        test_data = pd.DataFrame({
+            'ClientAccountID': ['U1234567'],
+            'EndingCash': ['10000.50'],
+            'ToDate': ['2023-05-15']
+        })
+        
+        # Call function
+        result = update_accounts_balances(test_data)
+        
+        # Restore stdout
+        self.restore_stdout(original_stdout)
+        
+        # Verify
+        self.assertEqual(result, 0)
+        mock_db.get_account_map.assert_called_once()
+        mock_db.check_balance_exists.assert_called_once()
+        mock_db.insert_account_balances.assert_not_called()
+        
+        # Verify the skipped message was printed
+        output = self.captured_output.get_value()
+        self.assertIn("already exists in database - skipping", output)
+        
+        self.log_case_result("Properly skips duplicate records and prints message", True)
     
-    @patch('analytics.cash.sqlite3.connect')
-    def test_sql_error_handling(self, mock_connect):
+    @patch('analytics.cash.db')
+    def test_sql_error_handling(self, mock_db):
         """Test handling of SQL errors"""
-        # Mock connection and cursor
-        mock_conn, mock_cursor = MockDatabaseConnection.create_mock_db()
-        mock_connect.return_value = mock_conn
+        # Mock db.get_account_map
+        mock_db.get_account_map.return_value = self.fixtures['account_map_df']
         
-        # Setup mock for pd.read_sql
-        with patch('pandas.read_sql') as mock_read_sql:
-            mock_read_sql.side_effect = [
-                self.fixtures['account_map_df'],  # Account mapping
-                pd.DataFrame()                   # No existing records
-            ]
-            
-            # Make cursor.executemany raise an exception
-            mock_cursor.executemany.side_effect = sqlite3.Error("Simulated SQL error")
-            
-            # Create test data
-            test_data = pd.DataFrame({
-                'ClientAccountID': ['U1234567'],
-                'EndingCash': ['10000.50'],
-                'ToDate': ['2023-05-15']
-            })
-            
-            # Call function - we expect the exception to be caught inside the function
-            with self.assertRaises(Exception):
-                update_accounts_balances(test_data)
-            
-            # Verify rollback was called
-            mock_conn.rollback.assert_called_once()
-            
-            # Verify close was called
-            mock_conn.close.assert_called_once()
+        # Mock db.check_balance_exists to return False (record doesn't exist)
+        mock_db.check_balance_exists.return_value = False
         
-        self.log_case_result("Properly handles SQL errors", True)
+        # Make insert_account_balances raise an exception
+        mock_db.insert_account_balances.side_effect = sqlite3.Error("Simulated SQL error")
+        
+        # Create test data
+        test_data = pd.DataFrame({
+            'ClientAccountID': ['U1234567'],
+            'EndingCash': ['10000.50'],
+            'ToDate': ['2023-05-15']
+        })
+        
+        # Call function - we expect the exception to propagate
+        with self.assertRaises(Exception):
+            update_accounts_balances(test_data)
+        
+        self.log_case_result("Properly propagates database errors", True)
 
-class TestMainBlockExecution(BaseTestCase):
-    """Test cases for the main block functionality"""
+class TestProcessAccountData(BaseTestCase):
+    """Test cases for the process_account_data function"""
     
     @patch('analytics.cash.update_accounts_balances')
-    @patch('analytics.cash.process_ibkr_account')
-    @patch('analytics.cash.os.getenv')
-    def test_main_block_error_handling(self, mock_getenv, mock_process_ibkr, mock_update_balances):
-        """Test how the process_account_data function handles errors from process_ibkr_account"""
-        # Setup mocks for environment variables
-        mock_getenv.side_effect = lambda key: {
-            'IBKR_TOKEN_PAPER': 'paper_token',
-            'IBKR_QUERY_ID_CASH_PAPER': 'paper_query',
-            'IBKR_TOKEN_LIVE': 'live_token',
-            'IBKR_QUERY_ID_CASH_LIVE': 'live_query'
-        }.get(key)
+    @patch('analytics.cash.get_ibkr_report')
+    def test_successful_processing(self, mock_get_ibkr_report, mock_update_balances):
+        """Test successful data processing flow"""
+        # Setup mock to return a valid DataFrame
+        mock_df = pd.DataFrame({
+            'ClientAccountID': ['U1234567'],
+            'EndingCash': ['10000.50'],
+            'ToDate': ['2023-05-15']
+        })
+        mock_get_ibkr_report.return_value = mock_df
         
-        # Setup mock to return False
-        mock_process_ibkr.return_value = False
+        # Mock update_accounts_balances to return a count
+        mock_update_balances.return_value = 1
         
         # Capture stdout
         original_stdout = self.capture_stdout()
         
         # Call the process_account_data function
-        process_account_data('paper_token', 'paper_query', 'paper')
+        process_account_data('test_token', 'test_query', 'test')
         
         # Restore stdout
         self.restore_stdout(original_stdout)
         
-        # Verify results
-        output = self.captured_output.get_value()
-        self.assertIn("Failed to retrieve cash data for paper account", output)
+        # Verify
+        mock_get_ibkr_report.assert_called_once_with('test_token', 'test_query', 'cash')
+        mock_update_balances.assert_called_once_with(mock_df)
         
-        # Verify update_accounts_balances was not called
+        # Check output
+        output = self.captured_output.get_value()
+        self.assertIn("Processing test trading account", output)
+        self.assertIn("Updated database with 1 new cash entries", output)
+        
+        self.log_case_result("Successful data processing flow", True)
+    
+    @patch('analytics.cash.update_accounts_balances')
+    @patch('analytics.cash.get_ibkr_report')
+    def test_api_failure(self, mock_get_ibkr_report, mock_update_balances):
+        """Test handling when IBKR API returns False"""
+        # Setup mock to return False
+        mock_get_ibkr_report.return_value = False
+        
+        # Capture stdout
+        original_stdout = self.capture_stdout()
+        
+        # Call the process_account_data function
+        process_account_data('test_token', 'test_query', 'test')
+        
+        # Restore stdout
+        self.restore_stdout(original_stdout)
+        
+        # Verify
+        mock_get_ibkr_report.assert_called_once_with('test_token', 'test_query', 'cash')
         mock_update_balances.assert_not_called()
         
-        self.log_case_result("Main block handles False from process_ibkr_account", True)
+        # Check output
+        output = self.captured_output.get_value()
+        self.assertIn("Failed to retrieve cash data for test account", output)
+        
+        self.log_case_result("API failure handling", True)
+    
+    @patch('analytics.cash.update_accounts_balances')
+    @patch('analytics.cash.get_ibkr_report')
+    def test_no_new_data(self, mock_get_ibkr_report, mock_update_balances):
+        """Test handling when no new data is inserted"""
+        # Setup mock to return a valid DataFrame
+        mock_df = pd.DataFrame({
+            'ClientAccountID': ['U1234567'],
+            'EndingCash': ['10000.50'],
+            'ToDate': ['2023-05-15']
+        })
+        mock_get_ibkr_report.return_value = mock_df
+        
+        # Mock update_accounts_balances to return 0 (no records inserted)
+        mock_update_balances.return_value = 0
+        
+        # Capture stdout
+        original_stdout = self.capture_stdout()
+        
+        # Call the process_account_data function
+        process_account_data('test_token', 'test_query', 'test')
+        
+        # Restore stdout
+        self.restore_stdout(original_stdout)
+        
+        # Verify
+        mock_get_ibkr_report.assert_called_once_with('test_token', 'test_query', 'cash')
+        mock_update_balances.assert_called_once_with(mock_df)
+        
+        # Check output
+        output = self.captured_output.get_value()
+        self.assertIn("No new cash entries inserted", output)
+        
+        self.log_case_result("No new data handling", True)
+    
+    @patch('analytics.cash.update_accounts_balances')
+    @patch('analytics.cash.get_ibkr_report')
+    def test_exception_handling(self, mock_get_ibkr_report, mock_update_balances):
+        """Test exception handling in process_account_data"""
+        # Make get_ibkr_report raise an exception
+        mock_get_ibkr_report.side_effect = Exception("Test exception")
+        
+        # Capture stdout
+        original_stdout = self.capture_stdout()
+        
+        # Call the process_account_data function
+        process_account_data('test_token', 'test_query', 'test')
+        
+        # Restore stdout
+        self.restore_stdout(original_stdout)
+        
+        # Verify
+        mock_get_ibkr_report.assert_called_once_with('test_token', 'test_query', 'cash')
+        mock_update_balances.assert_not_called()
+        
+        # Check output
+        output = self.captured_output.get_value()
+        self.assertIn("Error processing test account: Test exception", output)
+        
+        self.log_case_result("Exception handling", True)
 
 class TestUtilities(BaseTestCase):
     """Test utility functions and patterns used in cash.py"""
