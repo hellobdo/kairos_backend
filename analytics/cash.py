@@ -8,10 +8,10 @@ import re
 # Handle import differently when run as script vs module
 try:
     # When imported as part of a package
-    from .ibkr_api import get_ibkr_flex_data
+    from .ibkr_connection import get_ibkr_flex_data
 except ImportError:
     # When run directly as a script
-    from analytics.ibkr_api import get_ibkr_flex_data
+    from ibkr_connection import get_ibkr_flex_data
 
 def update_accounts_balances(df):
     """
@@ -29,8 +29,6 @@ def update_accounts_balances(df):
         return
     
     conn = sqlite3.connect('data/kairos.db')
-    inserted_count = 0
-    
     try:
         # Get the mapping from account_external_ID to ID
         account_map_df = pd.read_sql("SELECT ID, account_external_ID FROM accounts", conn)
@@ -65,7 +63,6 @@ def update_accounts_balances(df):
                 conn, params=[db_account_id, date_value]
             )
             if not existing.empty:
-                print(f"Account ID {db_account_id} with date {date_value} already exists in database - skipping")
                 continue
             
             # Add to cash data for batch insert
@@ -80,15 +77,12 @@ def update_accounts_balances(df):
                 VALUES (?, ?, ?, ?)
             """, cash_data)
             conn.commit()
-            inserted_count = len(cash_data)
             
     except Exception as e:
         conn.rollback()
         raise
     finally:
         conn.close()
-        
-    return inserted_count
 
 def process_ibkr_account(token, query_id):
     """
@@ -121,11 +115,8 @@ def process_account_data(token, query_id, account_type="paper"):
     
     # Step 2: Update the database with the cash data
     if isinstance(df, pd.DataFrame):
-        inserted = update_accounts_balances(df)
-        if inserted:
-            print(f"Updated database with {inserted} new cash entries for {account_type} account")
-        else:
-            print(f"No new cash entries inserted for {account_type} account")
+        update_accounts_balances(df)
+        print(f"Updated database with cash data for {account_type} account")
     else:
         print(f"Failed to retrieve cash data for {account_type} account")
 
