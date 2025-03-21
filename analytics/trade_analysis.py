@@ -245,7 +245,7 @@ def create_trades_summary(risk_per_trade=0.005, mark_processed=True):
             trade_data.update({
                 'end_date': exit_exec['date'],
                 'end_time': exit_exec['time_of_day'],
-                'duration_hours': round(duration_hours, 2),
+                'duration_hours': duration_hours,
                 'exit_price': float(exit_exec['price']),
                 'status': 'closed'
             })
@@ -300,7 +300,7 @@ def create_trades_summary(risk_per_trade=0.005, mark_processed=True):
             trade_data.update({
                 'risk_reward': risk_reward_value,
                 'winning_trade': 1 if risk_reward_value > 0 else 0,
-                'perc_return': round(risk_reward_value * risk_per_trade * 100, 2)
+                'perc_return': risk_reward_value * risk_per_trade * 100
             })
         
         # Extract time periods
