@@ -23,15 +23,15 @@ def process_ibkr_data(df):
     
     # Filter out executions already in the database
     try:
-        existing_trades = db.get_existing_trade_ids()
-        new_trades = processed_df[~processed_df['TradeID'].isin(existing_trades)]
+        existing_executions = db.get_existing_trade_external_ids()
+        new_executions = processed_df[~processed_df['trade_external_ID'].isin(existing_executions)]
         
-        if len(new_trades) < len(processed_df):
-            print(f"Filtered out {len(processed_df) - len(new_trades)} executions already in database")
-        processed_df = new_trades
+        if len(new_executions) < len(processed_df):
+            print(f"Filtered out {len(processed_df) - len(new_executions)} executions already in database")
+        processed_df = new_executions
         
     except Exception as e:
-        print(f"Warning: Could not check existing trades in database: {e}")
+        print(f"Warning: Could not check existing executions in database: {e}")
     
     if processed_df.empty:
         print("No new executions to process")
@@ -227,10 +227,10 @@ def process_account_data(token, query_id, account_type="paper"):
             print(f"No new executions to process for {account_type} account")
             return False
             
-        df_with_trades = identify_trade_ids(df_processed)
+        df_executions_with_trade_ids = identify_trade_ids(df_processed)
         
         # Insert into database
-        inserted = insert_executions_to_db(df_with_trades)
+        inserted = insert_executions_to_db(df_executions_with_trade_ids)
         
         if inserted:
             print(f"Updated database with {inserted} new executions for {account_type} account")
