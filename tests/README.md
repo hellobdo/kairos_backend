@@ -38,38 +38,52 @@ The tests are organized into the following classes:
 
 #### Tested Functions
 
-1. **`process_account_data(token, query_id, account_type)`**: Retrieves and processes cash data from IBKR using the centralized report function.
-2. **`update_accounts_balances(df)`**: Updates the database with cash report data, ensuring only one entry per account_ID + date combination.
+##### `process_account_data(token, query_id, account_type)`
+- **Case: Successful processing**
+  - Tests the complete flow of retrieving and processing cash data with valid credentials
+  - Verifies correct database updates
 
-#### Test Cases
+- **Case: API failure handling**
+  - Tests behavior when the IBKR API call fails
+  - Verifies appropriate error messages and status
 
-The test suite includes the following categories of tests:
+- **Case: No new data handling**
+  - Tests behavior when no new cash data is available
+  - Verifies function returns gracefully
 
-1. **Basic Import Tests** (`TestCashImports.test_imports`):
-   - Verifies that functions are callable
-   - Checks that required modules are accessible
-   - Confirms DataFrame creation works
+- **Case: Exception handling**
+  - Tests behavior when unexpected exceptions occur
+  - Verifies proper error logging and exception propagation
 
-2. **Environment Variable Tests** (`TestCashImports.test_environment_variables`):
-   - Verifies that IBKR paper trading credentials are set
-   - Verifies that IBKR live trading credentials are set
+##### `update_accounts_balances(df)`
+- **Case: Successful insertion**
+  - Tests inserting valid cash balance data into the database
+  - Verifies correct record counts and data integrity
 
-3. **Function Tests for `update_accounts_balances`**:
-   - Successful insertion of valid data (`TestUpdateAccountsBalances.test_successful_insert`)
-   - Empty DataFrame handling (`TestUpdateAccountsBalances.test_empty_dataframe`)
-   - Missing required columns (`TestUpdateAccountsBalances.test_missing_columns`)
-   - Duplicate record detection and skipping (`TestUpdateAccountsBalances.test_duplicate_records`)
-   - SQL error handling (`TestUpdateAccountsBalances.test_sql_error_handling`)
+- **Case: Empty DataFrame handling**
+  - Tests behavior when an empty DataFrame is provided
+  - Verifies function returns early without errors
 
-4. **Function Tests for `process_account_data`**:
-   - Successful processing (`TestProcessAccountData.test_successful_processing`)
-   - API failure handling (`TestProcessAccountData.test_api_failure`)
-   - No new data handling (`TestProcessAccountData.test_no_new_data`)
-   - Exception handling (`TestProcessAccountData.test_exception_handling`)
+- **Case: Missing required columns**
+  - Tests behavior when DataFrame is missing essential columns
+  - Verifies appropriate error messages
 
-5. **Date Format Regex Testing** (`TestUtilities.test_date_format_regex`):
-   - Tests valid date formats (YYYY-MM-DD)
-   - Tests invalid date formats
+- **Case: Duplicate records**
+  - Tests handling of duplicate account/date combinations
+  - Verifies duplicates are properly skipped
+
+- **Case: SQL error handling**
+  - Tests behavior when database operations fail
+  - Verifies proper error capture and reporting
+
+##### Date Format Validation
+- **Case: Valid date formats**
+  - Tests that valid date formats (YYYY-MM-DD) are accepted
+  - Verifies regex pattern matching works correctly
+
+- **Case: Invalid date formats**
+  - Tests that invalid date formats are rejected
+  - Verifies error handling for improperly formatted dates
 
 ### `test_ibkr_api.py`
 
@@ -86,26 +100,39 @@ The tests are organized into the following classes:
 
 #### Tested Functions
 
-1. **`get_ibkr_report(token, query_id, report_type)`**: Centralized function that handles report generation, retrieval, and data processing for different report types.
+##### `get_ibkr_report(token, query_id, report_type)`
+- **Case: Successful report retrieval**
+  - Tests retrieving reports with valid credentials and query IDs
+  - Verifies correct parsing and data structure
 
-#### Test Cases
+- **Case: Failed report retrieval**
+  - Tests behavior when report generation fails
+  - Verifies appropriate error handling
 
-The test suite includes the following categories of tests:
+- **Case: Exception handling**
+  - Tests behavior when unexpected exceptions occur
+  - Verifies proper error logging and exception propagation
 
-1. **Basic Import Tests** (`TestIBKRAPIImports.test_imports`):
-   - Verifies that functions are callable
+- **Case: Report type logging**
+  - Tests that report type is correctly logged
+  - Verifies proper identification of cash vs. executions reports
 
-2. **Report Retrieval Tests**:
-   - Successful report retrieval (`TestGetIBKRReport.test_successful_report`)
-   - Failed report retrieval (`TestGetIBKRReport.test_failed_report`)
-   - Exception handling (`TestGetIBKRReport.test_exception_handling`)
-   - Report type logging (`TestGetIBKRReport.test_report_type_logging`)
+##### CSV Processing
+- **Case: Complex CSV processing**
+  - Tests handling of multi-row, multi-column CSV data
+  - Verifies correct parsing and structure conversion
 
-3. **CSV Processing Tests**:
-   - Complex CSV processing (`TestCSVProcessing.test_complex_csv_processing`)
-   - Single row CSV handling (`TestCSVProcessing.test_single_row_csv`)
-   - Invalid CSV response handling (`TestCSVProcessing.test_invalid_csv_response`)
-   - Empty DataFrame handling (`TestCSVProcessing.test_empty_dataframe`)
+- **Case: Single row CSV**
+  - Tests processing of CSV with only one row
+  - Verifies correct DataFrame creation
+
+- **Case: Invalid CSV response**
+  - Tests behavior with malformed CSV data
+  - Verifies appropriate error handling
+
+- **Case: Empty DataFrame**
+  - Tests handling of cases that result in empty DataFrames
+  - Verifies graceful handling without errors
 
 ### `test_executions.py`
 
@@ -123,31 +150,53 @@ The tests are organized into the following classes:
 
 #### Tested Functions
 
-1. **`process_ibkr_data(df)`**: Processes raw IBKR data and adds derived fields
-2. **`identify_trade_ids(df)`**: Assigns trade IDs based on position tracking
-3. **`insert_executions_to_db(df)`**: Inserts processed executions into the database
-4. **`process_account_data(token, query_id, account_type)`**: Handles end-to-end workflow
+##### `process_ibkr_data(df)`
+- **Case: Filtering existing trades**
+  - Tests that already processed executions are filtered out
+  - Verifies only new executions proceed to further processing
 
-#### Test Cases
+- **Case: Numeric field conversion**
+  - Tests conversion of string values to appropriate numeric types
+  - Verifies proper data typing for calculations
 
-1. **Process IBKR Data Tests**:
-   - Filtering existing trades (`TestProcessIBKRData.test_filtering_existing_trades`)
-   - Numeric field conversion (`TestProcessIBKRData.test_numeric_conversion`)
-   - Date/time processing (`TestProcessIBKRData.test_datetime_processing`)
-   - Trade side determination (`TestProcessIBKRData.test_side_determination`)
+- **Case: Date/time processing**
+  - Tests conversion of date/time string representations to proper datetime objects
+  - Verifies timezone handling and format consistency
 
-2. **Trade ID Tests**:
-   - New position opening (`TestIdentifyTradeIds.test_new_position_opening`)
-   - Position closing (`TestIdentifyTradeIds.test_position_closing`)
-   - Multiple symbols handling (`TestIdentifyTradeIds.test_multiple_symbols`)
+- **Case: Trade side determination**
+  - Tests correct identification of BUY/SELL based on quantity sign
+  - Verifies proper side assignment for position tracking
 
-3. **Database Operation Tests**:
-   - Successful insertion (`TestInsertExecutionsToDB.test_successful_insertion`)
-   - Database error handling (`TestInsertExecutionsToDB.test_database_error`)
+##### `identify_trade_ids(df)`
+- **Case: New position opening**
+  - Tests assignment of new trade IDs for initial positions
+  - Verifies trade IDs are unique and properly incremented
 
-4. **End-to-End Processing Tests**:
-   - Successful processing (`TestProcessAccountData.test_successful_processing`)
-   - API failure handling (`TestProcessAccountData.test_api_failure`)
+- **Case: Position closing**
+  - Tests matching of closing executions with existing positions
+  - Verifies correct trade ID assignment for exit executions
+
+- **Case: Multiple symbols handling**
+  - Tests position tracking across different symbols simultaneously
+  - Verifies independent tracking per symbol
+
+##### `insert_executions_to_db(df)`
+- **Case: Successful insertion**
+  - Tests inserting processed executions into the database
+  - Verifies correct record counts and data integrity
+
+- **Case: Database error handling**
+  - Tests behavior when database operations fail
+  - Verifies proper error capture and reporting
+
+##### `process_account_data(token, query_id, account_type)`
+- **Case: Successful processing**
+  - Tests the complete flow of retrieving, processing, and storing execution data
+  - Verifies all steps execute correctly
+
+- **Case: API failure handling**
+  - Tests behavior when the IBKR API call fails
+  - Verifies appropriate error messages and status
 
 ### `test_db_utils.py`
 
@@ -161,53 +210,256 @@ The tests are organized into the following classes:
 2. **`TestDatabaseManagerBasics`**: Tests basic functionality like connections
 3. **`TestAccountBalanceOperations`**: Tests account balance related database operations
 4. **`TestExecutionOperations`**: Tests execution related database operations
+5. **`TestTradeAnalysisOperations`**: Tests trade analysis related database operations
 
 #### Tested Functions
 
-The test suite tests the following DatabaseManager methods:
+##### Connection Management
+- **Case: Connection context manager**
+  - Tests that context manager correctly opens and closes connections
+  - Verifies resource cleanup
 
-1. **Connection Management**:
-   - Context manager for database connections
-   - Exception handling in connections
+- **Case: Exception handling**
+  - Tests behavior when connection or query errors occur
+  - Verifies proper exception propagation and resource cleanup
 
-2. **General Database Operations**:
-   - `execute_query`: Execute a single query
-   - `execute_many`: Execute a query with multiple parameter sets
-   - `fetch_df`: Fetch query results as a pandas DataFrame
-   - `record_exists`: Check if a record exists based on conditions
+##### `execute_query`
+- **Case: Simple query execution**
+  - Tests execution of basic SQL queries
+  - Verifies correct results returned
 
-3. **Account Balance Operations**:
-   - `get_account_map`: Get mapping from account_external_ID to ID
-   - `check_balance_exists`: Check if a balance record exists
-   - `insert_account_balances`: Insert account balance records
+- **Case: Parametrized queries**
+  - Tests query execution with parameters
+  - Verifies SQL injection protection
 
-4. **Execution Operations**:
-   - `get_existing_trade_ids`: Get set of existing trade IDs
-   - `get_max_trade_id`: Get the maximum trade ID
-   - `get_open_positions`: Get current open positions
-   - `insert_execution`: Insert a single execution record
+- **Case: Error handling**
+  - Tests behavior when query fails
+  - Verifies proper error reporting
 
-#### Test Cases
+##### `execute_many`
+- **Case: Batch execution**
+  - Tests execution of multiple parameter sets in a single query
+  - Verifies performance optimization for bulk operations
 
-The test suite includes the following categories of tests:
+- **Case: Empty parameter list**
+  - Tests behavior with empty list of parameters
+  - Verifies graceful handling
 
-1. **Basic Import Tests** (`TestDatabaseManagerImports.test_imports`):
-   - Verifies that the DatabaseManager class is importable
+##### `fetch_df`
+- **Case: Query to DataFrame conversion**
+  - Tests conversion of query results to pandas DataFrame
+  - Verifies column names and data types
 
-2. **Connection Management Tests**:
-   - Connection context manager (`TestDatabaseManagerBasics.test_connection_context_manager`)
-   - Exception handling in connections (`TestDatabaseManagerBasics.test_connection_exception_handling`)
+- **Case: Empty result set**
+  - Tests behavior when query returns no rows
+  - Verifies empty DataFrame creation
 
-3. **Account Balance Operations Tests**:
-   - Getting account mapping (`TestAccountBalanceOperations.test_get_account_map`)
-   - Checking if balance exists (`TestAccountBalanceOperations.test_check_balance_exists`)
-   - Inserting account balances (`TestAccountBalanceOperations.test_insert_account_balances`)
+##### Account Balance Operations
+- **Case: get_account_map**
+  - Tests mapping between external and internal account IDs
+  - Verifies correct ID translation
 
-4. **Execution Operations Tests**:
-   - Getting existing trade IDs (`TestExecutionOperations.test_get_existing_trade_ids`)
-   - Getting maximum trade ID (`TestExecutionOperations.test_get_max_trade_id`)
-   - Getting open positions (`TestExecutionOperations.test_get_open_positions`)
-   - Inserting execution (`TestExecutionOperations.test_insert_execution`)
+- **Case: check_balance_exists**
+  - Tests checking for existing balance records
+  - Verifies detection of duplicates
+
+- **Case: insert_account_balances**
+  - Tests insertion of new balance records
+  - Verifies data integrity constraints
+
+##### Execution Operations
+- **Case: get_max_trade_id**
+  - Tests finding the maximum trade ID in the database
+  - Verifies correct value for new ID allocation
+
+- **Case: get_open_positions**
+  - Tests retrieval of current open positions
+  - Verifies accurate position accounting
+
+- **Case: insert_execution**
+  - Tests insertion of execution records
+  - Verifies all fields stored correctly
+
+### `test_trade_analysis_utils.py`
+
+This file tests the functionality in `analytics/trade_analysis_utils.py`, which provides a TradeAnalysis class for analyzing trade executions and generating trade metrics.
+
+#### Test Classes and Organization
+
+The tests are organized into the following classes:
+
+1. **`TestTradeAnalysisImports`**: Tests basic imports and class setup
+2. **`TestTradeAnalysisInit`**: Tests initialization and cash balance setting
+3. **`TestTradeAnalysisDataPreparation`**: Tests data preparation methods
+4. **`TestTradeAnalysisCashBalance`**: Tests cash balance retrieval methods
+5. **`TestTradeAnalysisTradeExecution`**: Tests trade execution processing
+6. **`TestTradeAnalysisRiskCalculations`**: Tests risk calculation methods
+7. **`TestTradeAnalysisTradeMetrics`**: Tests trade metrics calculation
+8. **`TestTradeAnalysisTradeFiltering`**: Tests filtering of trades based on status
+
+#### Tested Functions
+
+##### Initialization
+- **Case: Class initialization**
+  - Tests that the class initializes with cash_balances_df set to None
+
+##### `set_cash_balances`
+- **Case: Valid cash balance data**
+  - Tests setting valid cash balance DataFrame
+  - Verifies data is correctly stored
+
+- **Case: Empty DataFrame**
+  - Tests setting empty cash balance DataFrame
+  - Verifies appropriate warning message
+
+##### `get_account_cash_balance`
+- **Case: Exact date match**
+  - Tests retrieving cash balance with exact date match
+  - Verifies correct balance returned
+
+- **Case: No exact date match**
+  - Tests behavior when no exact date match exists
+  - Verifies appropriate error raised
+
+- **Case: Future date**
+  - Tests requesting balance for future date
+  - Verifies appropriate error raised
+
+- **Case: Past date with data**
+  - Tests retrieving balance for past date with data
+  - Verifies correct historical balance returned
+
+- **Case: String date input**
+  - Tests using string date format as input
+  - Verifies correct date parsing and balance retrieval
+
+- **Case: Multiple entries for same date**
+  - Tests behavior when multiple entries exist for same date
+  - Verifies first entry used with warning
+
+- **Case: Invalid account ID**
+  - Tests requesting balance for non-existent account
+  - Verifies appropriate error raised
+
+- **Case: Cash balances not set**
+  - Tests behavior when cash_balances_df is None
+  - Verifies appropriate error raised
+
+- **Case: Only account_id provided**
+  - Tests providing only account_id without date
+  - Verifies appropriate error raised
+
+- **Case: Only date provided**
+  - Tests providing only date without account_id
+  - Verifies appropriate error raised
+
+##### `prepare_executions_data`
+- **Case: Empty DataFrame**
+  - Tests behavior with empty executions DataFrame
+  - Verifies empty DataFrame returned
+
+- **Case: Valid data merging**
+  - Tests merging execution data with account info
+  - Verifies correct join operation
+
+- **Case: Missing cash balances**
+  - Tests behavior when cash balances not set
+  - Verifies appropriate error handling
+
+##### `process_trade_entry`
+- **Case: Valid entry data**
+  - Tests extraction of entry data from executions
+  - Verifies all fields correctly extracted
+
+- **Case: Missing entry**
+  - Tests behavior when no entry execution found
+  - Verifies appropriate error reporting
+
+##### `process_trade_exit`
+- **Case: Valid exit data**
+  - Tests extraction of exit data from executions
+  - Verifies all fields correctly extracted
+
+- **Case: Missing exit**
+  - Tests behavior when no exit execution found
+  - Verifies appropriate handling for open trades
+
+##### `calculate_stop_price_based_on_risk_perc`
+- **Case: BUY side calculation**
+  - Tests stop price calculation for BUY trades
+  - Verifies correct risk-based stop price
+
+- **Case: SELL side calculation**
+  - Tests stop price calculation for SELL trades
+  - Verifies correct risk-based stop price
+
+- **Case: Missing account_id**
+  - Tests behavior with missing account_id
+  - Verifies appropriate error raised
+
+- **Case: Missing execution date**
+  - Tests behavior with missing execution date
+  - Verifies appropriate error raised
+
+- **Case: Account not in cash balances**
+  - Tests behavior with invalid account ID
+  - Verifies appropriate error raised
+
+- **Case: Cash balances not set**
+  - Tests behavior when cash_balances_df is None
+  - Verifies appropriate error raised
+
+##### `calculate_risk_metrics`
+- **Case: Open trade**
+  - Tests metrics calculation for open trades
+  - Verifies appropriate null values for unrealized metrics
+
+- **Case: Closed winning BUY trade**
+  - Tests metrics for profitable BUY trades
+  - Verifies correct risk/reward and percentage return
+
+- **Case: Closed losing SELL trade**
+  - Tests metrics for unprofitable SELL trades
+  - Verifies correct negative metrics
+
+##### `calculate_trade_metrics`
+- **Case: Complete trade**
+  - Tests metrics calculation for trades with entry and exit
+  - Verifies all metrics correctly calculated
+
+- **Case: Missing entry**
+  - Tests behavior when entry execution missing
+  - Verifies appropriate error handling
+
+- **Case: Open trade**
+  - Tests metrics for trades with entry but no exit
+  - Verifies appropriate status and blank exit fields
+
+##### `create_trades_summary`
+- **Case: Multiple trades**
+  - Tests creation of summary DataFrame for multiple trades
+  - Verifies correct aggregation and metrics
+
+- **Case: Empty executions**
+  - Tests behavior with empty executions DataFrame
+  - Verifies empty summary returned
+
+- **Case: Error handling during processing**
+  - Tests behavior when errors occur during individual trade processing
+  - Verifies other trades still processed
+
+##### `filter_out_closed_trade_executions`
+- **Case: Mixed closed and open trades**
+  - Tests filtering executions to remove closed trades
+  - Verifies only open trade executions remain
+
+- **Case: Empty DataFrames**
+  - Tests behavior with empty input DataFrames
+  - Verifies graceful handling
+
+- **Case: No closed trades**
+  - Tests behavior when no trades are closed
+  - Verifies all executions returned
 
 ## Test Framework
 

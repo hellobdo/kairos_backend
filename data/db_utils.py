@@ -16,8 +16,12 @@ class DatabaseManager:
     
     def _ensure_db_exists(self):
         """Make sure the database directory exists"""
+        # Skip directory creation for in-memory database
+        if self.db_path == ':memory:':
+            return
+            
         db_dir = os.path.dirname(self.db_path)
-        if not os.path.exists(db_dir):
+        if db_dir and not os.path.exists(db_dir):
             os.makedirs(db_dir)
     
     @contextmanager
@@ -72,7 +76,6 @@ class DatabaseManager:
         result = self.fetch_df(query, params)
         return not result.empty
     
-    # Cash module specific methods
     def get_account_map(self):
         """Get mapping from account_external_ID to ID"""
         return self.fetch_df("SELECT ID, account_external_ID FROM accounts")
@@ -92,34 +95,31 @@ class DatabaseManager:
             VALUES (?, ?, ?, ?)
         """, balances_data)
     
-    # Executions module specific methods
-    def get_existing_trade_ids(self):
-        """Get set of existing trade_external_IDs"""
-        cursor = self.execute_query("SELECT trade_external_ID FROM executions")
+    def get_existing_trade_external_ids(self):
+        """Get set of existing trade_external_ids"""
+        with self.connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT trade_external_ID FROM executions")
         return {row[0] for row in cursor.fetchall()}
     
     def get_max_trade_id(self):
         """Get the maximum trade_id from the executions table"""
-        cursor = self.execute_query("SELECT MAX(trade_id) FROM executions")
+        with self.connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT MAX(trade_id) FROM executions")
         result = cursor.fetchone()
         return result[0] if result[0] is not None else 0
     
     def get_open_positions(self):
-        """Get current open positions from the database"""
+        """Get current open positions from the trades table"""
         query = """
-            WITH position_sums AS (
-                SELECT 
-                    symbol,
-                    SUM(quantity) as total_quantity,
-                    MAX(trade_id) as latest_trade_id
-                FROM executions
-                GROUP BY symbol
-                HAVING SUM(quantity) != 0
-            )
-            SELECT symbol, total_quantity, latest_trade_id
-            FROM position_sums
+            SELECT symbol, quantity, trade_id 
+            FROM trades 
+            WHERE status = 'open'
         """
-        cursor = self.execute_query(query)
+        with self.connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(query)
         return cursor.fetchall()
     
     def insert_execution(self, execution_data):
@@ -131,4 +131,7 @@ class DatabaseManager:
                 date, time_of_day, side, trade_id, is_entry, is_exit
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
-        return self.execute_query(query, execution_data).rowcount 
+        with self.connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(query, execution_data)
+            return cursor.rowcount

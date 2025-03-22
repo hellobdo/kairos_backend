@@ -6,6 +6,8 @@ import io
 
 # Dictionary to track test results for summary
 test_results = {}
+# Global flag to indicate if any test has failed or had an error
+has_test_failures = False
 
 class CaptureOutput:
     """A class to capture stdout output safely in tests"""
@@ -72,18 +74,26 @@ class BaseTestCase(unittest.TestCase):
         """Helper to restore stdout after capture"""
         sys.stdout = original_stdout
 
+    def run(self, result=None):
+        """Override run to track if tests fail or have errors"""
+        global has_test_failures
+        # Run the test normally
+        super().run(result)
+        
+        # Check if this test failed or had an error
+        if result and (result.failures or result.errors):
+            has_test_failures = True
+
 def print_summary():
     """Print a summary of all test results"""
     print("\n" + "="*50)
     print("TEST SUMMARY")
     print("="*50)
     
+    # Track if any tests have failed according to our tracking
     all_passed = True
     
-    # Check unittest result
-    import sys
-    test_runner_failed = hasattr(sys, 'last_value') and sys.last_value is not None
-    
+    # Print the summary of our tracked tests
     for test_name, result in test_results.items():
         test_symbol = "✓" if result['passed'] else "✗"
         print(f"[{test_symbol}] {test_name}")
@@ -96,12 +106,12 @@ def print_summary():
                     print(f"    [✗] {case['name']}")
     
     print("\n" + "="*50)
-    if all_passed and not test_runner_failed:
+    # Use both our local tracking and the global flag
+    global has_test_failures
+    if all_passed and not has_test_failures:
         print("All tests passed successfully!")
     else:
-        print("Some tests failed. See details above.")
-        if test_runner_failed:
-            print(f"Uncaught error: {type(sys.last_value).__name__}: {sys.last_value}")
+        print("Some tests failed. See failures and errors above.")
     print("="*50)
 
 class MockDatabaseConnection:

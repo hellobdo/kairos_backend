@@ -23,6 +23,7 @@ def create_executions_fixtures():
     fixtures['raw_trades_df'] = pd.DataFrame({
         'ClientAccountID': ['U1234567', 'U1234567', 'U1234567'],
         'TradeID': ['T1', 'T2', 'T3'],
+        'trade_external_ID': ['T1', 'T2', 'T3'],
         'OrderID': ['O1', 'O2', 'O3'],
         'Symbol': ['AAPL', 'AAPL', 'AAPL'],
         'Quantity': ['100', '-50', '-50'],
@@ -71,7 +72,7 @@ class TestProcessIBKRData(BaseTestCase):
     def test_filtering_existing_trades(self, mock_db):
         """Test filtering out existing trades"""
         # Setup mock
-        mock_db.get_existing_trade_ids.return_value = self.fixtures['existing_trades']
+        mock_db.get_existing_trade_external_ids.return_value = self.fixtures['existing_trades']
         
         # Process data
         result = process_ibkr_data(self.fixtures['raw_trades_df'])

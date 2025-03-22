@@ -52,10 +52,69 @@ def create_module_fixtures():
         0            # is_exit
     )
     
+    # Sample executions dataframe
+    fixtures['executions_df'] = pd.DataFrame({
+        'id': [1, 2, 3],
+        'accountId': ['U1234567', 'U1234567', 'U7654321'],
+        'trade_external_ID': ['T123456', 'T123457', 'T123458'],
+        'symbol': ['AAPL', 'AAPL', 'MSFT'],
+        'quantity': [100, -100, 50],
+        'price': [150.50, 155.75, 250.25],
+        'netCashWithBillable': [15050.00, -15575.00, 12512.50],
+        'execution_timestamp': ['2023-05-15;10:30:00', '2023-05-15;14:30:00', '2023-05-16;11:45:00'],
+        'commission': [7.50, 7.50, 7.50],
+        'date': ['2023-05-15', '2023-05-15', '2023-05-16'],
+        'time_of_day': ['10:30:00', '14:30:00', '11:45:00'],
+        'side': ['BUY', 'SELL', 'BUY'],
+        'trade_id': [1, 1, 2],
+        'is_entry': [1, 0, 1],
+        'is_exit': [0, 1, 0]
+    })
+    
+    # Sample cash balances dataframe
+    fixtures['cash_balances_df'] = pd.DataFrame({
+        'account_ID': [1, 2],
+        'date': ['2023-05-15', '2023-05-15'],
+        'cash_balance': [10000.50, 5000.25]
+    })
+    
+    # Sample trades dataframe
+    fixtures['trades_df'] = pd.DataFrame({
+        'trade_id': [1, 2],
+        'num_executions': [2, 1],
+        'symbol': ['AAPL', 'MSFT'],
+        'start_date': ['2023-05-15', '2023-05-16'],
+        'start_time': ['10:30:00', '11:45:00'],
+        'end_date': ['2023-05-15', None],
+        'end_time': ['14:30:00', None],
+        'duration_hours': [4.0, None],
+        'quantity': [100, 50],
+        'entry_price': [150.50, 250.25],
+        'stop_price': [145.50, 245.25],
+        'exit_price': [155.75, None],
+        'capital_required': [15050.00, 12512.50],
+        'exit_type': ['market', None],
+        'risk_reward': [2.05, None],
+        'winning_trade': [1, None],
+        'perc_return': [1.025, None],
+        'week': ['20', '20'],
+        'month': ['5', '5'],
+        'year': [2023, 2023],
+        'account_id': [1, 2],
+        'risk_per_trade': [0.005, 0.005],
+        'status': ['closed', 'open']
+    })
+    
     return fixtures
 
-class TestDatabaseManagerImports(BaseTestCase):
-    """Test basic imports and module setup"""
+class TestDatabaseUtils(BaseTestCase):
+    """Tests for DatabaseManager functionality"""
+    
+    def setUp(self):
+        """Set up test fixtures"""
+        super().setUp()
+        self.fixtures = create_module_fixtures()
+        self.db_manager = DatabaseManager(':memory:')  # Use in-memory DB for tests
     
     def test_imports(self):
         """Test that imports are working correctly"""
@@ -65,15 +124,6 @@ class TestDatabaseManagerImports(BaseTestCase):
         except AssertionError:
             self.log_case_result("DatabaseManager class is importable", False)
             raise
-
-class TestDatabaseManagerBasics(BaseTestCase):
-    """Test basic functionality of DatabaseManager"""
-    
-    def setUp(self):
-        """Set up test fixtures"""
-        super().setUp()
-        self.fixtures = create_module_fixtures()
-        self.db_manager = DatabaseManager(':memory:')  # Use in-memory DB for tests
     
     @patch('sqlite3.connect')
     def test_connection_context_manager(self, mock_connect):
@@ -114,15 +164,6 @@ class TestDatabaseManagerBasics(BaseTestCase):
             mock_conn.close.assert_called_once()
         
         self.log_case_result("Connection properly handles exceptions", True)
-
-class TestAccountBalanceOperations(BaseTestCase):
-    """Test account balance related operations"""
-    
-    def setUp(self):
-        """Set up test fixtures"""
-        super().setUp()
-        self.fixtures = create_module_fixtures()
-        self.db_manager = DatabaseManager(':memory:')
     
     @patch('pandas.read_sql')
     def test_get_account_map(self, mock_read_sql):
@@ -182,103 +223,144 @@ class TestAccountBalanceOperations(BaseTestCase):
         self.assertIn("VALUES (?, ?, ?, ?)", sql)
         
         self.log_case_result("insert_account_balances inserts correctly", True)
-
-class TestExecutionOperations(BaseTestCase):
-    """Test execution related operations"""
     
-    def setUp(self):
-        """Set up test fixtures"""
-        super().setUp()
-        self.fixtures = create_module_fixtures()
-        self.db_manager = DatabaseManager(':memory:')
-    
-    def test_get_existing_trade_ids(self):
-        """Test getting existing trade IDs"""
-        # Setup mock cursor
+    def test_get_existing_trade_external_ids(self):
+        """Test getting existing trade external IDs"""
+        # Create a context manager mock to simulate the self.connection() behavior
+        mock_conn = MagicMock()
         mock_cursor = MagicMock()
-        mock_cursor.fetchall.return_value = [('T123456',), ('T234567',)]
+        mock_cursor.fetchall.return_value = [('T123456',), ('T123457',), ('T123458',)]
         
-        # Mock execute_query
-        self.db_manager.execute_query = MagicMock(return_value=mock_cursor)
+        # Setup the connection context
+        with patch.object(self.db_manager, 'connection') as mock_cm:
+            # When connection is called, return our mock connection
+            mock_cm.return_value.__enter__.return_value = mock_conn
+            mock_conn.cursor.return_value = mock_cursor
+            
+            # Call the method
+            result = self.db_manager.get_existing_trade_external_ids()
+            
+            # Verify
+            self.assertEqual(result, {'T123456', 'T123457', 'T123458'})
+            
+            # Verify connection was used correctly
+            mock_cm.assert_called_once()
+            mock_conn.cursor.assert_called_once()
+            
+            # Verify cursor operations
+            mock_cursor.execute.assert_called_with("SELECT trade_external_ID FROM executions")
+            mock_cursor.fetchall.assert_called_once()
         
-        # Call the method
-        result = self.db_manager.get_existing_trade_ids()
-        
-        # Verify
-        self.assertEqual(result, {'T123456', 'T234567'})
-        self.db_manager.execute_query.assert_called_once_with(
-            "SELECT trade_external_ID FROM executions")
-        
-        self.log_case_result("get_existing_trade_ids returns correct data", True)
+        self.log_case_result("get_existing_trade_external_ids returns correct data", True)
     
     def test_get_max_trade_id(self):
         """Test getting maximum trade ID"""
-        # Setup mock cursor
+        # Create a context manager mock to simulate the self.connection() behavior
+        mock_conn = MagicMock()
         mock_cursor = MagicMock()
         mock_cursor.fetchone.return_value = (5,)
         
-        # Mock execute_query
-        self.db_manager.execute_query = MagicMock(return_value=mock_cursor)
-        
-        # Call the method
-        result = self.db_manager.get_max_trade_id()
-        
-        # Verify
-        self.assertEqual(result, 5)
-        self.db_manager.execute_query.assert_called_once_with(
-            "SELECT MAX(trade_id) FROM executions")
+        # Setup the connection context
+        with patch.object(self.db_manager, 'connection') as mock_cm:
+            # When connection is called, return our mock connection
+            mock_cm.return_value.__enter__.return_value = mock_conn
+            mock_conn.cursor.return_value = mock_cursor
+            
+            # Call the method
+            result = self.db_manager.get_max_trade_id()
+            
+            # Verify
+            self.assertEqual(result, 5)
+            
+            # Verify connection was used correctly
+            mock_cm.assert_called_once()
+            mock_conn.cursor.assert_called_once()
+            
+            # Verify cursor operations
+            mock_cursor.execute.assert_called_with("SELECT MAX(trade_id) FROM executions")
+            mock_cursor.fetchone.assert_called_once()
         
         # Test when no trades exist
         mock_cursor.fetchone.return_value = (None,)
-        result = self.db_manager.get_max_trade_id()
-        self.assertEqual(result, 0)  # Should default to 0
+        
+        with patch.object(self.db_manager, 'connection') as mock_cm:
+            # When connection is called, return our mock connection
+            mock_cm.return_value.__enter__.return_value = mock_conn
+            mock_conn.cursor.return_value = mock_cursor
+            
+            result = self.db_manager.get_max_trade_id()
+            self.assertEqual(result, 0)  # Should default to 0
         
         self.log_case_result("get_max_trade_id returns correct value", True)
     
     def test_get_open_positions(self):
         """Test getting open positions"""
-        # Setup mock cursor
+        # Create a context manager mock to simulate the self.connection() behavior
+        mock_conn = MagicMock()
         mock_cursor = MagicMock()
         mock_cursor.fetchall.return_value = [('AAPL', 100, 1), ('MSFT', -50, 2)]
         
-        # Mock execute_query
-        self.db_manager.execute_query = MagicMock(return_value=mock_cursor)
-        
-        # Call the method
-        result = self.db_manager.get_open_positions()
-        
-        # Verify
-        self.assertEqual(result, [('AAPL', 100, 1), ('MSFT', -50, 2)])
-        self.db_manager.execute_query.assert_called_once()
-        
-        # Check if query contains correct SQL
-        sql = self.db_manager.execute_query.call_args[0][0]
-        self.assertIn("position_sums", sql)
-        self.assertIn("SUM(quantity)", sql)
-        self.assertIn("HAVING SUM(quantity) != 0", sql)
+        # Setup the connection context
+        with patch.object(self.db_manager, 'connection') as mock_cm:
+            # When connection is called, return our mock connection
+            mock_cm.return_value.__enter__.return_value = mock_conn
+            mock_conn.cursor.return_value = mock_cursor
+            
+            # Call the method
+            result = self.db_manager.get_open_positions()
+            
+            # Verify
+            self.assertEqual(result, [('AAPL', 100, 1), ('MSFT', -50, 2)])
+            
+            # Verify connection was used correctly
+            mock_cm.assert_called_once()
+            mock_conn.cursor.assert_called_once()
+            
+            # Verify cursor operations
+            mock_cursor.execute.assert_called_once()
+            
+            # Check if query contains correct SQL
+            sql = mock_cursor.execute.call_args[0][0]
+            self.assertIn("FROM trades", sql)
+            self.assertIn("WHERE status = 'open'", sql)
+            
+            mock_cursor.fetchall.assert_called_once()
         
         self.log_case_result("get_open_positions returns correct data", True)
     
     def test_insert_execution(self):
         """Test inserting execution"""
-        # Mock execute_query
+        # Create a context manager mock to simulate the self.connection() behavior
+        mock_conn = MagicMock()
         mock_cursor = MagicMock()
         mock_cursor.rowcount = 1
-        self.db_manager.execute_query = MagicMock(return_value=mock_cursor)
         
-        # Call the method
-        result = self.db_manager.insert_execution(self.fixtures['execution_data'])
-        
-        # Verify
-        self.assertEqual(result, 1)
-        self.db_manager.execute_query.assert_called_once()
-        
-        # Check if query contains correct SQL
-        sql = self.db_manager.execute_query.call_args[0][0]
-        self.assertIn("INSERT INTO executions", sql)
-        self.assertIn("VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", sql)
+        # Setup the connection context
+        with patch.object(self.db_manager, 'connection') as mock_cm:
+            # When connection is called, return our mock connection
+            mock_cm.return_value.__enter__.return_value = mock_conn
+            mock_conn.cursor.return_value = mock_cursor
+            
+            # Call the method
+            result = self.db_manager.insert_execution(self.fixtures['execution_data'])
+            
+            # Verify
+            self.assertEqual(result, 1)
+            
+            # Verify connection was used correctly
+            mock_cm.assert_called_once()
+            mock_conn.cursor.assert_called_once()
+            
+            # Verify cursor operations
+            mock_cursor.execute.assert_called_once()
+            
+            # Check if query contains correct SQL
+            sql = mock_cursor.execute.call_args[0][0]
+            self.assertIn("INSERT INTO executions", sql)
+            self.assertIn("VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", sql)
         
         self.log_case_result("insert_execution inserts correctly", True)
+
 
 if __name__ == '__main__':
     print("\n🔍 Running tests for db_utils.py...")
