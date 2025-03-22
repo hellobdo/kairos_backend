@@ -280,6 +280,21 @@ The tests are organized into the following classes:
   - Tests insertion of execution records
   - Verifies all fields stored correctly
 
+##### Backtest Operations
+- **Case: get_backtest_runs**
+  - Tests retrieving backtest runs with various filtering options
+  - Verifies correct SQL queries are generated for different filter combinations
+  - Tests filtering by run_id, symbol, and direction
+  - Verifies both DataFrame and dictionary list return formats
+  - Tests proper SQL parameters are passed to prevent injection
+
+- **Case: save_to_backtest_runs**
+  - Tests saving new backtest run data to the database
+  - Verifies correct SQL INSERT query is generated
+  - Tests that provided data is properly passed to the database
+  - Verifies proper transaction commit is performed
+  - Confirms the function returns the correct run_id from the database
+
 ### `test_trade_analysis_utils.py`
 
 This file tests the functionality in `analytics/trade_analysis_utils.py`, which provides a TradeAnalysis class for analyzing trade executions and generating trade metrics.

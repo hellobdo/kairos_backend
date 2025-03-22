@@ -14,22 +14,12 @@ from pathlib import Path
 import os
 from datetime import datetime
 import sys
-import sqlite3
-from contextlib import contextmanager
 import pandas as pd
 from bs4 import BeautifulSoup
+from data.db_utils import DatabaseManager
 
-# Database configuration
-DB_PATH = Path("data/kairos.db")
-
-@contextmanager
-def get_db_connection():
-    """Context manager for database connections"""
-    conn = sqlite3.connect(DB_PATH)
-    try:
-        yield conn
-    finally:
-        conn.close()
+# Create a database manager instance
+db = DatabaseManager()
 
 def get_latest_html_report(logs_dir: Path = None) -> Path:
     """
@@ -158,50 +148,6 @@ def extract_header_data(html_file_path):
     
     return header_data
 
-def save_to_backtest_runs(data):
-    """
-    Save the mapped data to the backtest_runs table.
-    
-    Args:
-        data (dict): Dictionary containing the mapped data
-        
-    Returns:
-        int: The ID of the inserted run
-        
-    Raises:
-        ValueError: If the report has already been processed
-    """
-    # First try to find if this report was already processed
-    select_sql = "SELECT run_id FROM backtest_runs WHERE source_file = :source_file"
-    insert_sql = """
-    INSERT INTO backtest_runs (
-        timestamp, indicators, symbols_traded, direction,
-        stop_loss, risk_reward, risk_per_trade,
-        backtest_start_date, backtest_end_date, source_file
-    ) VALUES (
-        :timestamp, :indicators, :symbols_traded, :direction,
-        :stop_loss, :risk_reward, :risk_per_trade,
-        :backtest_start_date, :backtest_end_date, :source_file
-    )
-    """
-    
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        
-        # Check if report already exists
-        cursor.execute(select_sql, {"source_file": data["source_file"]})
-        existing_run = cursor.fetchone()
-        
-        if existing_run:
-            raise ValueError(f"HTML already processed with run ID: {existing_run[0]}")
-        
-        # Insert new run
-        cursor.execute(insert_sql, data)
-        run_id = cursor.lastrowid
-        conn.commit()
-        print(f"Inserted backtest run with ID: {run_id}")
-        return run_id
-
 def extract_trade_summary(html_file_path):
     """
     Extract trade summary data from the HTML report.
@@ -306,7 +252,7 @@ def save_trades_to_db(trade_summary_data, run_id):
     )
     """
     
-    with get_db_connection() as conn:
+    with db.connection() as conn:
         cursor = conn.cursor()
         for trade_data in trade_summary_data:
             # Add run_id to each trade data
@@ -414,7 +360,7 @@ def save_executions_to_db(executions_data, run_id):
     )
     """
     
-    with get_db_connection() as conn:
+    with db.connection() as conn:
         cursor = conn.cursor()
         for execution_data in executions_data:
             # Add run_id to each execution data
@@ -468,7 +414,7 @@ def main():
         
         # Save to backtest_runs table - if this fails, we don't proceed with trades and executions
         try:
-            run_id = save_to_backtest_runs(db_data)
+            run_id = db.save_to_backtest_runs(db_data)
         except ValueError as e:
             print(f"\nError: {str(e)}")
             print("Skipping trades and executions processing.")
