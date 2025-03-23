@@ -96,7 +96,7 @@ class Strategy(BaseStrategy):
                 continue  # No matching rule found
 
             stop_loss_price, take_profit_price = self._calculate_price_levels(entry_price, stop_loss_amount, side, risk_reward)
-            quantity = self._calculate_qty(stop_loss_amount, risk_per_trade)
+            quantity = self._calculate_qty_based_on_risk_per_trade(stop_loss_amount, risk_per_trade)
             
             # Create a market order with attached stop loss and take profit orders
             # Trading on margin by passing custom parameter 'margin': True
