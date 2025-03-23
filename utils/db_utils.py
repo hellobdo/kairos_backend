@@ -2,6 +2,7 @@ import sqlite3
 import pandas as pd
 from contextlib import contextmanager
 import os
+from pathlib import Path
 
 class DatabaseManager:
     """
@@ -135,3 +136,88 @@ class DatabaseManager:
             cursor = conn.cursor()
             cursor.execute(query, execution_data)
             return cursor.rowcount
+    
+    def save_to_backtest_runs(self, data):
+        """
+        Save mapped data to the backtest_runs table.
+        
+        Args:
+            data (dict): Dictionary containing the mapped data
+            
+        Returns:
+            int: The ID of the inserted run
+        """
+        insert_sql = """
+        INSERT INTO backtest_runs (
+            timestamp, indicators, symbols_traded, direction,
+            stop_loss, risk_reward, risk_per_trade,
+            backtest_start_date, backtest_end_date, source_file, is_valid
+        ) VALUES (
+            :timestamp, :indicators, :symbols_traded, :direction,
+            :stop_loss, :risk_reward, :risk_per_trade,
+            :backtest_start_date, :backtest_end_date, :source_file, :is_valid
+        )
+        """
+        
+        with self.connection() as conn:
+            cursor = conn.cursor()
+            
+            # Insert new run
+            cursor.execute(insert_sql, data)
+            run_id = cursor.lastrowid
+            conn.commit()
+            return run_id
+    
+    def get_backtest_runs(self, run_id=None, symbol=None, direction=None, is_valid=None, as_df=True):
+        """
+        Retrieve backtest runs from the database with optional filtering.
+        
+        Args:
+            run_id (int, optional): Filter by specific run ID
+            symbol (str, optional): Filter by symbol traded 
+            direction (str, optional): Filter by direction (long/short)
+            is_valid (bool, optional): Filter by is_valid (True/False)
+            as_df (bool, optional): Return results as pandas DataFrame if True, list of dicts if False
+            
+        Returns:
+            If as_df=True: pandas DataFrame containing the backtest runs
+            If as_df=False: List of dictionaries containing the backtest runs
+        """
+        query = "SELECT * FROM backtest_runs"
+        params = []
+        conditions = []
+        
+        # Add filters
+        if run_id:
+            conditions.append("run_id = ?")
+            params.append(run_id)
+        
+        if symbol:
+            conditions.append("symbols_traded LIKE ?")
+            params.append(f"%{symbol}%")
+        
+        if direction:
+            conditions.append("direction = ?")
+            params.append(direction)
+        
+        if is_valid is not None:
+            conditions.append("is_valid = ?")
+            params.append(is_valid)
+        
+        # Add WHERE clause if needed
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
+        
+        # Add sorting and limit
+        query += " ORDER BY timestamp DESC"
+        
+        # Return as DataFrame if requested
+        if as_df:
+            return self.fetch_df(query, params)
+        
+        # Otherwise return as list of dictionaries
+        with self.connection() as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute(query, params)
+            return [dict(row) for row in cursor.fetchall()]

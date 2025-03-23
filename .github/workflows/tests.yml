@@ -4,25 +4,33 @@ on:
   push:
     branches: [ main, master ]
     paths:
-      - 'analytics/cash.py'
-      - 'analytics/ibkr_api.py'
-      - 'analytics/executions.py'
-      - 'data/db_utils.py'
-      - 'tests/test_cash.py'
-      - 'tests/test_ibkr_api.py'
+      - 'api/ibkr.py'
+      - 'analytics/broker_cash.py'
+      - 'analytics/broker_executions.py'
+      - 'utils/db_utils.py'
+      - 'indicators/helpers/column_utils.py'
+      - 'indicators/*.py'
+      - 'tests/test_broker_cash.py'
+      - 'tests/test_broker_executions.py'
       - 'tests/test_db_utils.py'
-      - 'tests/test_executions.py'
+      - 'tests/test_ibkr_api.py'
+      - 'tests/test_indicators.py'
+      - 'tests/test_column_utils.py'
   pull_request:
     branches: [ main, master ]
     paths:
-      - 'analytics/cash.py'
-      - 'analytics/ibkr_api.py'
-      - 'analytics/executions.py'
-      - 'data/db_utils.py'
-      - 'tests/test_cash.py'
-      - 'tests/test_ibkr_api.py'
+      - 'api/ibkr.py'
+      - 'analytics/broker_executions.py'
+      - 'analytics/broker_cash.py'
+      - 'utils/db_utils.py'
+      - 'indicators/helpers/column_utils.py'
+      - 'indicators/*.py'
+      - 'tests/test_broker_cash.py'
+      - 'tests/test_broker_executions.py'
       - 'tests/test_db_utils.py'
-      - 'tests/test_executions.py'
+      - 'tests/test_ibkr_api.py'
+      - 'tests/test_indicators.py'
+      - 'tests/test_column_utils.py'
   workflow_dispatch:  # Allow manual triggering
 
 jobs:
@@ -52,10 +60,10 @@ jobs:
       env:
         PYTHONPATH: ${{ github.workspace }}
         
-    - name: Run cash module tests
+    - name: Run broker_cash module tests
       run: |
         # Add current directory to Python path to find the tests package
-        python -m tests.test_cash
+        python -m tests.test_broker_cash
       env:
         # Set environment variables that match test expectations
         IBKR_TOKEN_PAPER: "dummy_token_paper"
@@ -74,16 +82,30 @@ jobs:
         IBKR_QUERY_ID_CASH_PAPER: "dummy_query_paper"
         PYTHONPATH: ${{ github.workspace }}
 
-    - name: Run executions module tests
+    - name: Run broker_executions module tests
       run: |
         # Add current directory to Python path to find the tests package
-        python -m tests.test_executions
+        python -m tests.test_broker_executions
       env:
         # Use dummy tokens for CI testing
         IBKR_TOKEN_PAPER: "dummy_token_paper"
         IBKR_QUERY_ID_TRADE_CONFIRMATION_PAPER: "dummy_query_paper"
         IBKR_TOKEN_LIVE: "dummy_token_live"
         IBKR_QUERY_ID_TRADE_CONFIRMATION_LIVE: "dummy_query_live"
+        PYTHONPATH: ${{ github.workspace }}
+        
+    - name: Run indicators tests
+      run: |
+        # Add current directory to Python path to find the tests package
+        python -m tests.test_indicators
+      env:
+        PYTHONPATH: ${{ github.workspace }}
+
+    - name: Run column_utils tests
+      run: |
+        # Add current directory to Python path to find the tests package
+        python -m tests.test_column_utils
+      env:
         PYTHONPATH: ${{ github.workspace }}
         
     - name: Notify on failure

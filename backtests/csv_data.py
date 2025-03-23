@@ -12,7 +12,7 @@ from lumibot.credentials import IS_BACKTESTING
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Import trade processing helper
-from helpers import process_trades_from_strategy
+from analytics.backtest_executions import process_backtest_executions
 
 # Import indicators
 from indicators import load_indicators
@@ -197,4 +197,4 @@ if __name__ == "__main__":
     )
     
     # Process and analyze trades after backtest completes
-    process_trades_from_strategy(LongTightness) 
+    process_backtest_executions(LongTightness) 

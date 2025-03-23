@@ -23,7 +23,7 @@ The testing framework is built with modularity in mind:
 
 ## Test Documentation
 
-### `test_cash.py`
+### `test_broker_cash.py`
 
 This file tests the functionality in `analytics/cash.py`, which handles cash data processing from Interactive Brokers (IBKR) and updates the database with cash balances.
 
@@ -134,7 +134,7 @@ The tests are organized into the following classes:
   - Tests handling of cases that result in empty DataFrames
   - Verifies graceful handling without errors
 
-### `test_executions.py`
+### `test_broker_executions.py`
 
 This file tests the functionality in `analytics/executions.py`, which handles trade execution data processing from IBKR and manages trade identification and position tracking.
 
@@ -280,186 +280,146 @@ The tests are organized into the following classes:
   - Tests insertion of execution records
   - Verifies all fields stored correctly
 
-### `test_trade_analysis_utils.py`
+##### Backtest Operations
+- **Case: get_backtest_runs**
+  - Tests retrieving backtest runs with various filtering options
+  - Verifies correct SQL queries are generated for different filter combinations
+  - Tests filtering by run_id, symbol, and direction
+  - Tests filtering by is_valid boolean flag for backtest run validation status
+  - Verifies both DataFrame and dictionary list return formats
+  - Tests proper SQL parameters are passed to prevent injection
 
-This file tests the functionality in `analytics/trade_analysis_utils.py`, which provides a TradeAnalysis class for analyzing trade executions and generating trade metrics.
+- **Case: save_to_backtest_runs**
+  - Tests saving new backtest run data to the database
+  - Verifies correct SQL INSERT query is generated
+  - Tests that provided data is properly passed to the database
+  - Verifies proper handling of the is_valid field for backtest validation status
+  - Verifies proper transaction commit is performed
+  - Confirms the function returns the correct run_id from the database
+
+### `test_backtest_executions.py`
+
+This file tests the functionality in `analytics/backtest_executions.py`, which processes trades from backtest executions, identifies complete trades, and generates performance reports.
 
 #### Test Classes and Organization
 
 The tests are organized into the following classes:
 
-1. **`TestTradeAnalysisImports`**: Tests basic imports and class setup
-2. **`TestTradeAnalysisInit`**: Tests initialization and cash balance setting
-3. **`TestTradeAnalysisDataPreparation`**: Tests data preparation methods
-4. **`TestTradeAnalysisCashBalance`**: Tests cash balance retrieval methods
-5. **`TestTradeAnalysisTradeExecution`**: Tests trade execution processing
-6. **`TestTradeAnalysisRiskCalculations`**: Tests risk calculation methods
-7. **`TestTradeAnalysisTradeMetrics`**: Tests trade metrics calculation
-8. **`TestTradeAnalysisTradeFiltering`**: Tests filtering of trades based on status
+1. **`TestBacktestExecutionsImports`**: Tests basic imports and module setup
+2. **`TestProcessBacktestExecutions`**: Tests the main processing function with different scenarios
+3. **`TestCleanBacktestExecutions`**: Tests the data cleaning and preparation function
 
 #### Tested Functions
 
-##### Initialization
-- **Case: Class initialization**
-  - Tests that the class initializes with cash_balances_df set to None
+##### `process_backtest_executions(strategy, file_path)`
+- **Case: import availability**
+  - Tests that the function is importable and callable
+  - Verifies basic module setup
 
-##### `set_cash_balances`
-- **Case: Valid cash balance data**
-  - Tests setting valid cash balance DataFrame
-  - Verifies data is correctly stored
+- **Case: strategy parameter extraction**
+  - Tests that parameters are correctly extracted from the strategy object
+  - Verifies parameters like 'side' and 'risk_reward' are properly accessed
+  - Ensures the extracted parameters are correctly printed to the output
 
-- **Case: Empty DataFrame**
-  - Tests setting empty cash balance DataFrame
-  - Verifies appropriate warning message
+- **Case: missing strategy side parameter**
+  - Tests behavior when the 'side' parameter is missing from strategy parameters
+  - Verifies the function returns False and prints an appropriate error message
+  - Confirms the exact error message format matches expectations
 
-##### `get_account_cash_balance`
-- **Case: Exact date match**
-  - Tests retrieving cash balance with exact date match
-  - Verifies correct balance returned
+- **Case: strategy side assignment**
+  - Tests that the strategy_side variable is correctly assigned from strategy_params['side']
+  - Verifies the assigned value is correctly passed to downstream functions
+  - Uses a custom strategy with 'sell' side to distinguish from default test cases
 
-- **Case: No exact date match**
-  - Tests behavior when no exact date match exists
-  - Verifies appropriate error raised
+##### `clean_backtest_executions(file_path)`
+- **Case: CSV file reading**
+  - Tests that the function can read from a CSV file
+  - Verifies pandas.read_csv is called with the correct file path
+  - Confirms returned DataFrame contains the expected data
 
-- **Case: Future date**
-  - Tests requesting balance for future date
-  - Verifies appropriate error raised
+- **Case: time column slicing**
+  - Tests that timestamps are correctly truncated to 19 characters
+  - Verifies the function handles both long timestamps and standard-length ones
+  - Confirms the sliced timestamps have the correct format
 
-- **Case: Past date with data**
-  - Tests retrieving balance for past date with data
-  - Verifies correct historical balance returned
+- **Case: date and time column creation**
+  - Tests that 'date' and 'time_of_day' columns are correctly created from timestamps
+  - Verifies these columns have the correct data types
+  - Confirms the values match the original timestamp data
 
-- **Case: String date input**
-  - Tests using string date format as input
-  - Verifies correct date parsing and balance retrieval
+- **Case: column renaming**
+  - Tests that the 'time' column is correctly renamed to 'execution_timestamp'
+  - Verifies the original column no longer exists and the new one is present
 
-- **Case: Multiple entries for same date**
-  - Tests behavior when multiple entries exist for same date
-  - Verifies first entry used with warning
+- **Case: zero quantity filtering**
+  - Tests that trades with zero quantity are properly filtered out
+  - Verifies rejected trades are stored separately with appropriate rejection reasons
+  - Confirms the filtered DataFrame only contains valid quantity trades
+  - Checks that the correct information is printed to stdout
 
-- **Case: Invalid account ID**
-  - Tests requesting balance for non-existent account
-  - Verifies appropriate error raised
+- **Case: rejected trades merging**
+  - Tests that multiple rejected trades are correctly combined into a single DataFrame
+  - Verifies rejection reasons are properly assigned
+  - Confirms all rejected trades are included in the result
 
-- **Case: Cash balances not set**
-  - Tests behavior when cash_balances_df is None
-  - Verifies appropriate error raised
+- **Case: return value structure**
+  - Tests that the function returns a tuple containing exactly two DataFrames
+  - Verifies both DataFrames have the expected structure and content
+  - Confirms valid trades and rejected trades are correctly separated
 
-- **Case: Only account_id provided**
-  - Tests providing only account_id without date
-  - Verifies appropriate error raised
+### `test_get_latest_trade_report.py`
 
-- **Case: Only date provided**
-  - Tests providing only date without account_id
-  - Verifies appropriate error raised
+This file tests the functionality in `backtests/helpers/utils/get_latest_trade_report.py`, which provides a utility function to find the most recent trade report file in the logs directory.
 
-##### `prepare_executions_data`
-- **Case: Empty DataFrame**
-  - Tests behavior with empty executions DataFrame
-  - Verifies empty DataFrame returned
+#### Test Classes and Organization
 
-- **Case: Valid data merging**
-  - Tests merging execution data with account info
-  - Verifies correct join operation
+The tests are organized into the `TestGetLatestTradeReport` class with several test cases that verify different aspects of the function:
 
-- **Case: Missing cash balances**
-  - Tests behavior when cash balances not set
-  - Verifies appropriate error handling
+1. **Import Tests**: Test that the module imports correctly
+2. **Type Validation Tests**: Test that the function validates input types correctly
+3. **Logs Directory Handling**: Test how the function behaves when the logs directory doesn't exist
+4. **File Finding Tests**: Test the function's ability to find and return the most recent file
 
-##### `process_trade_entry`
-- **Case: Valid entry data**
-  - Tests extraction of entry data from executions
-  - Verifies all fields correctly extracted
+#### Tested Functions
 
-- **Case: Missing entry**
-  - Tests behavior when no entry execution found
-  - Verifies appropriate error reporting
+##### `get_latest_trade_report(type)`
+- **Case: import availability**
+  - Tests that the function is importable and callable
+  - Verifies basic module setup
 
-##### `process_trade_exit`
-- **Case: Valid exit data**
-  - Tests extraction of exit data from executions
-  - Verifies all fields correctly extracted
+- **Case: invalid report type**
+  - Tests behavior with invalid report type ("pdf" instead of "html" or "csv")
+  - Verifies appropriate ValueError is raised with correct message
 
-- **Case: Missing exit**
-  - Tests behavior when no exit execution found
-  - Verifies appropriate handling for open trades
+- **Case: missing type parameter**
+  - Tests behavior when no type parameter is provided
+  - Verifies appropriate TypeError is raised
 
-##### `calculate_stop_price_based_on_risk_perc`
-- **Case: BUY side calculation**
-  - Tests stop price calculation for BUY trades
-  - Verifies correct risk-based stop price
+- **Case: HTML type**
+  - Tests finding HTML report files using the correct glob pattern
+  - Verifies the function returns the newest file based on timestamp
+  - Checks that appropriate information is printed to stdout
 
-- **Case: SELL side calculation**
-  - Tests stop price calculation for SELL trades
-  - Verifies correct risk-based stop price
+- **Case: CSV type**
+  - Tests finding CSV report files using the correct glob pattern
+  - Verifies the function returns the newest file based on timestamp
+  - Checks that appropriate information is printed to stdout
 
-- **Case: Missing account_id**
-  - Tests behavior with missing account_id
-  - Verifies appropriate error raised
+- **Case: logs directory not found**
+  - Tests behavior when the logs directory doesn't exist
+  - Verifies appropriate FileNotFoundError is raised
+  - Verifies error message contains reference to the logs directory
 
-- **Case: Missing execution date**
-  - Tests behavior with missing execution date
-  - Verifies appropriate error raised
+- **Case: no files found**
+  - Tests behavior when no files match the specified pattern
+  - Verifies appropriate FileNotFoundError is raised
+  - Verifies error message mentions the file type that wasn't found
 
-- **Case: Account not in cash balances**
-  - Tests behavior with invalid account ID
-  - Verifies appropriate error raised
+- **Case: newest file selection**
+  - Tests function's ability to select the newest file based on timestamp
+  - Verifies the function correctly identifies the newest file regardless of the order in which files are discovered
+  - Tests both HTML and CSV file types
 
-- **Case: Cash balances not set**
-  - Tests behavior when cash_balances_df is None
-  - Verifies appropriate error raised
-
-##### `calculate_risk_metrics`
-- **Case: Open trade**
-  - Tests metrics calculation for open trades
-  - Verifies appropriate null values for unrealized metrics
-
-- **Case: Closed winning BUY trade**
-  - Tests metrics for profitable BUY trades
-  - Verifies correct risk/reward and percentage return
-
-- **Case: Closed losing SELL trade**
-  - Tests metrics for unprofitable SELL trades
-  - Verifies correct negative metrics
-
-##### `calculate_trade_metrics`
-- **Case: Complete trade**
-  - Tests metrics calculation for trades with entry and exit
-  - Verifies all metrics correctly calculated
-
-- **Case: Missing entry**
-  - Tests behavior when entry execution missing
-  - Verifies appropriate error handling
-
-- **Case: Open trade**
-  - Tests metrics for trades with entry but no exit
-  - Verifies appropriate status and blank exit fields
-
-##### `create_trades_summary`
-- **Case: Multiple trades**
-  - Tests creation of summary DataFrame for multiple trades
-  - Verifies correct aggregation and metrics
-
-- **Case: Empty executions**
-  - Tests behavior with empty executions DataFrame
-  - Verifies empty summary returned
-
-- **Case: Error handling during processing**
-  - Tests behavior when errors occur during individual trade processing
-  - Verifies other trades still processed
-
-##### `filter_out_closed_trade_executions`
-- **Case: Mixed closed and open trades**
-  - Tests filtering executions to remove closed trades
-  - Verifies only open trade executions remain
-
-- **Case: Empty DataFrames**
-  - Tests behavior with empty input DataFrames
-  - Verifies graceful handling
-
-- **Case: No closed trades**
-  - Tests behavior when no trades are closed
-  - Verifies all executions returned
 
 ## Test Framework
 

@@ -14,7 +14,7 @@ import re
 from tests import BaseTestCase, print_summary, MockDatabaseConnection
 
 # Import the module to test
-from data.db_utils import DatabaseManager
+from utils.db_utils import DatabaseManager
 
 # Module specific test fixtures
 def create_module_fixtures():
@@ -104,6 +104,36 @@ def create_module_fixtures():
         'risk_per_trade': [0.005, 0.005],
         'status': ['closed', 'open']
     })
+    
+    # Sample backtest runs dataframe
+    fixtures['backtest_runs_df'] = pd.DataFrame({
+        'run_id': [1, 2, 3],
+        'timestamp': ['2023-05-10 10:00:00', '2023-05-11 11:00:00', '2023-05-12 12:00:00'],
+        'symbols_traded': ['AAPL,MSFT', 'GOOGL', 'AAPL,AMZN'],
+        'direction': ['long', 'short', 'long'],
+        'indicators': ['macd,rsi', 'macd', 'rsi,ema']
+    })
+    
+    # Sample backtest dict list for non-DataFrame return
+    fixtures['backtest_dict_list'] = [
+        {'run_id': 1, 'timestamp': '2023-05-10 10:00:00', 'symbols_traded': 'AAPL,MSFT', 'direction': 'long'},
+        {'run_id': 2, 'timestamp': '2023-05-11 11:00:00', 'symbols_traded': 'GOOGL', 'direction': 'short'}
+    ]
+    
+    # Sample backtest data for insertion
+    fixtures['backtest_data'] = {
+        'timestamp': '2023-06-01 10:00:00',
+        'indicators': 'macd,rsi,bollinger',
+        'symbols_traded': 'AAPL,MSFT',
+        'direction': 'long',
+        'stop_loss': '0.02',
+        'risk_reward': '2.5',
+        'risk_per_trade': '0.01',
+        'backtest_start_date': '2023-01-01',
+        'backtest_end_date': '2023-05-31',
+        'source_file': 'test_report.html',
+        'is_valid': True
+    }
     
     return fixtures
 
@@ -360,6 +390,147 @@ class TestDatabaseUtils(BaseTestCase):
             self.assertIn("VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", sql)
         
         self.log_case_result("insert_execution inserts correctly", True)
+        
+    def test_get_backtest_runs(self):
+        """Test getting backtest runs with various filtering options"""
+        # Test 1: Test with dataframe return and no filters
+        with patch.object(self.db_manager, 'fetch_df', return_value=self.fixtures['backtest_runs_df']) as mock_fetch_df:
+            result = self.db_manager.get_backtest_runs()
+            self.assertEqual(result.to_dict(), self.fixtures['backtest_runs_df'].to_dict())
+            mock_fetch_df.assert_called_once()
+            
+            # Verify query has no WHERE clause and has ORDER BY
+            query, params = mock_fetch_df.call_args[0]
+            self.assertIn("SELECT * FROM backtest_runs", query)
+            self.assertIn("ORDER BY timestamp DESC", query)
+            self.assertEqual(params, [])
+            
+        # Test 2: Test with run_id filter
+        with patch.object(self.db_manager, 'fetch_df', return_value=self.fixtures['backtest_runs_df'].iloc[[0]]) as mock_fetch_df:
+            result = self.db_manager.get_backtest_runs(run_id=1)
+            self.assertEqual(result.to_dict(), self.fixtures['backtest_runs_df'].iloc[[0]].to_dict())
+            
+            # Verify query has correct WHERE clause
+            query, params = mock_fetch_df.call_args[0]
+            self.assertIn("WHERE run_id = ?", query)
+            self.assertEqual(params, [1])
+            
+        # Test 3: Test with symbol filter
+        with patch.object(self.db_manager, 'fetch_df', return_value=self.fixtures['backtest_runs_df'].iloc[[0, 2]]) as mock_fetch_df:
+            result = self.db_manager.get_backtest_runs(symbol='AAPL')
+            self.assertEqual(result.to_dict(), self.fixtures['backtest_runs_df'].iloc[[0, 2]].to_dict())
+            
+            # Verify query has correct WHERE clause
+            query, params = mock_fetch_df.call_args[0]
+            self.assertIn("WHERE symbols_traded LIKE ?", query)
+            self.assertEqual(params, ['%AAPL%'])
+            
+        # Test 4: Test with direction filter
+        with patch.object(self.db_manager, 'fetch_df', return_value=self.fixtures['backtest_runs_df'].iloc[[1]]) as mock_fetch_df:
+            result = self.db_manager.get_backtest_runs(direction='short')
+            self.assertEqual(result.to_dict(), self.fixtures['backtest_runs_df'].iloc[[1]].to_dict())
+            
+            # Verify query has correct WHERE clause
+            query, params = mock_fetch_df.call_args[0]
+            self.assertIn("WHERE direction = ?", query)
+            self.assertEqual(params, ['short'])
+            
+        # Test 5: Test with multiple filters
+        with patch.object(self.db_manager, 'fetch_df', return_value=self.fixtures['backtest_runs_df'].iloc[[0]]) as mock_fetch_df:
+            result = self.db_manager.get_backtest_runs(symbol='AAPL', direction='long')
+            self.assertEqual(result.to_dict(), self.fixtures['backtest_runs_df'].iloc[[0]].to_dict())
+            
+            # Verify query has correct WHERE clause with AND
+            query, params = mock_fetch_df.call_args[0]
+            self.assertIn("WHERE", query)
+            self.assertIn("AND", query)
+            self.assertEqual(params, ['%AAPL%', 'long'])
+        
+        # Test 6: Test with is_valid filter
+        with patch.object(self.db_manager, 'fetch_df', return_value=self.fixtures['backtest_runs_df'].iloc[[0, 2]]) as mock_fetch_df:
+            result = self.db_manager.get_backtest_runs(is_valid=True)
+            self.assertEqual(result.to_dict(), self.fixtures['backtest_runs_df'].iloc[[0, 2]].to_dict())
+            
+            # Verify query has correct WHERE clause
+            query, params = mock_fetch_df.call_args[0]
+            self.assertIn("WHERE is_valid = ?", query)
+            self.assertEqual(params, [True])
+            
+        # Test 7: Test with multiple filters including is_valid
+        with patch.object(self.db_manager, 'fetch_df', return_value=self.fixtures['backtest_runs_df'].iloc[[0]]) as mock_fetch_df:
+            result = self.db_manager.get_backtest_runs(symbol='AAPL', is_valid=True)
+            self.assertEqual(result.to_dict(), self.fixtures['backtest_runs_df'].iloc[[0]].to_dict())
+            
+            # Verify query has correct WHERE clause with AND
+            query, params = mock_fetch_df.call_args[0]
+            self.assertIn("WHERE", query)
+            self.assertIn("AND", query)
+            self.assertEqual(params, ['%AAPL%', True])
+            
+        # Test 8: Test with list of dictionaries return
+        mock_cursor = MagicMock()
+        mock_conn = MagicMock()
+        mock_cursor.fetchall.return_value = self.fixtures['backtest_dict_list']
+        
+        with patch.object(self.db_manager, 'connection') as mock_cm:
+            # When connection is called, return our mock connection
+            mock_cm.return_value.__enter__.return_value = mock_conn
+            mock_conn.cursor.return_value = mock_cursor
+            
+            # Call with as_df=False
+            result = self.db_manager.get_backtest_runs(as_df=False)
+            
+            # Verify correct SQL and row_factory was set
+            self.assertTrue(hasattr(mock_conn, 'row_factory'))
+            self.assertEqual(mock_conn.row_factory, sqlite3.Row)
+            
+            # Verify cursor operations and result conversion
+            sql = mock_cursor.execute.call_args[0][0]
+            self.assertIn("SELECT * FROM backtest_runs", sql)
+            self.assertIn("ORDER BY timestamp DESC", sql)
+            mock_cursor.fetchall.assert_called_once()
+        
+        self.log_case_result("get_backtest_runs works correctly with various filters", True)
+    
+    def test_save_to_backtest_runs(self):
+        """Test saving backtest run data to the database"""
+        # Create mock connection and cursor
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.lastrowid = 42  # Simulate the returned run_id
+        
+        # Setup the connection context
+        with patch.object(self.db_manager, 'connection') as mock_cm:
+            # When connection is called, return our mock connection
+            mock_cm.return_value.__enter__.return_value = mock_conn
+            mock_conn.cursor.return_value = mock_cursor
+            
+            # Call the method
+            run_id = self.db_manager.save_to_backtest_runs(self.fixtures['backtest_data'])
+            
+            # Verify the result
+            self.assertEqual(run_id, 42)
+            
+            # Verify connection was used correctly
+            mock_cm.assert_called_once()
+            mock_conn.cursor.assert_called_once()
+            
+            # Verify cursor operations
+            mock_cursor.execute.assert_called_once()
+            
+            # Check if query contains correct SQL
+            sql = mock_cursor.execute.call_args[0][0]
+            self.assertIn("INSERT INTO backtest_runs", sql)
+            self.assertIn("VALUES", sql)
+            
+            # Verify the data was passed correctly
+            data_param = mock_cursor.execute.call_args[0][1]
+            self.assertEqual(data_param, self.fixtures['backtest_data'])
+            
+            # Verify commit was called (important since we modified this in the implementation)
+            mock_conn.commit.assert_called_once()
+        
+        self.log_case_result("save_to_backtest_runs inserts data correctly", True)
 
 
 if __name__ == '__main__':

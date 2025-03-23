@@ -1,22 +1,19 @@
+# Add the project root directory to Python's path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import pandas as pd
 from datetime import datetime
 import os
 import subprocess
 import sys
-
-# Add the project root directory to Python's path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
+from analytics.backtest_executions import process_backtest_executions
 from lumibot.strategies.strategy import Strategy
 from lumibot.entities import Order, Asset
 from lumibot.backtesting import PolygonDataBacktesting
-
-# Import helpers
-from helpers import process_trades_from_strategy
-
-# Import indicators
 from indicators import load_indicators
-t_shaped = load_indicators('t-shaped.py')
+from utils.get_latest_trade_report import get_latest_trade_report
+
+indicator1 = load_indicators('t-shaped.py')
 
 # Define backtest dates
 backtesting_start = datetime.strptime(os.getenv("BACKTESTING_START"), "%Y-%m-%d")
@@ -56,7 +53,7 @@ class Strategy(Strategy):
         self.minutes_before_closing = 0.1 # close positions before market close, see below def before_market_closes()
             
     def on_trading_iteration(self):
-        calculate_t = t_shaped.calculate_indicator
+        calculate_indicator = indicator1.calculate_indicator
         symbols = self.parameters.get("symbols", [])
         risk_reward = self.parameters.get("risk_reward")
         side = self.parameters.get("side")
@@ -94,11 +91,11 @@ class Strategy(Strategy):
 
             # Calculate T-shaped indicator
             df = bars.df.copy()
-            df = calculate_t(df)
+            df = calculate_indicator(df)
             
             # Check if the latest candle is t-shaped
             latest_candle = df.iloc[-1]
-            if latest_candle['is_t_shaped']:
+            if latest_candle['is_indicator']:
                 entry_price = self.get_last_price(symbol)
                 if entry_price is None:
                     continue
@@ -186,4 +183,13 @@ if __name__ == "__main__":
     )
     
     # Process and analyze trades after backtest completes
-    process_trades_from_strategy(Strategy) 
+    # First, find the latest trades CSV file
+    try:
+        file_path = get_latest_trade_report("csv")
+        print(f"Found trades file: {file_path}")    
+        process_backtest_executions(Strategy, file_path)
+        
+    except FileNotFoundError as e:
+        print(f"Error: {str(e)}")
+    except Exception as e:
+        print(f"Error finding or processing latest trades file: {str(e)}") 

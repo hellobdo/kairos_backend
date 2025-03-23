@@ -82,7 +82,20 @@ class BaseTestCase(unittest.TestCase):
         
         # Check if this test failed or had an error
         if result and (result.failures or result.errors):
-            has_test_failures = True
+            # Check if this test specifically failed
+            for failure in result.failures:
+                if failure[0] == self:
+                    # Update our tracking to mark the test as failed
+                    test_results[self.test_name]['passed'] = False
+                    has_test_failures = True
+                    break
+            
+            for error in result.errors:
+                if error[0] == self:
+                    # Update our tracking to mark the test as failed
+                    test_results[self.test_name]['passed'] = False
+                    has_test_failures = True
+                    break
 
 def print_summary():
     """Print a summary of all test results"""
@@ -92,13 +105,20 @@ def print_summary():
     
     # Track if any tests have failed according to our tracking
     all_passed = True
+    test_count = 0
+    pass_count = 0
     
     # Print the summary of our tracked tests
     for test_name, result in test_results.items():
-        test_symbol = "✓" if result['passed'] else "✗"
+        test_count += 1
+        test_passed = result['passed']
+        if test_passed:
+            pass_count += 1
+            
+        test_symbol = "✓" if test_passed else "✗"
         print(f"[{test_symbol}] {test_name}")
         
-        if not result['passed']:
+        if not test_passed:
             all_passed = False
             # Print failed cases
             for case in result['cases']:
@@ -106,12 +126,14 @@ def print_summary():
                     print(f"    [✗] {case['name']}")
     
     print("\n" + "="*50)
+    print(f"TESTS: {pass_count}/{test_count} passed")
+    
     # Use both our local tracking and the global flag
     global has_test_failures
     if all_passed and not has_test_failures:
-        print("All tests passed successfully!")
+        print("✅ All tests passed successfully!")
     else:
-        print("Some tests failed. See failures and errors above.")
+        print("❌ Some tests failed. See failures and errors above.")
     print("="*50)
 
 class MockDatabaseConnection:

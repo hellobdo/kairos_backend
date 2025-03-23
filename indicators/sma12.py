@@ -9,6 +9,7 @@ and potential support/resistance levels.
 
 import numpy as np
 import pandas as pd
+from indicators.helpers.column_utils import normalize_ohlc_columns
 
 def calculate_indicator(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -18,24 +19,22 @@ def calculate_indicator(df: pd.DataFrame) -> pd.DataFrame:
         df: DataFrame with OHLCV columns (can be uppercase or lowercase)
         
     Returns:
-        DataFrame with SMA12 column added and is_above_sma12 flag
+        DataFrame with SMA12 column added and is_indicator flag
     """
-    df = df.copy()
-    
-    # Handle both uppercase and lowercase column names
-    close_price = 'Close' if 'Close' in df.columns else 'close'
+    # Normalize column names to lowercase
+    df = normalize_ohlc_columns(df)
     
     # Ensure we have enough data points
     if len(df) < 12:
         # Add SMA12 column with NaN values if not enough data
         df['SMA12'] = np.nan
-        df['is_above_sma12'] = False
+        df['is_indicator'] = False
         return df
     
     # Calculate 12-period Simple Moving Average
-    df['SMA12'] = df[close_price].rolling(window=12).mean()
+    df['SMA12'] = df['close'].rolling(window=12).mean()
     
-    # Add is_above_sma12 flag (starting with 'is_' to be compatible with plot_helper)
-    df['is_above_sma12'] = df[close_price] > df['SMA12']
+    # Add is_indicator flag (starting with 'is_' to be compatible with plot_helper)
+    df['is_indicator'] = df['close'] > df['SMA12']
     
     return df

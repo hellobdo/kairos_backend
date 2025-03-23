@@ -15,11 +15,11 @@ from tests import BaseTestCase, print_summary, MockDatabaseConnection
 sys.modules['ibkr_connection'] = MagicMock()
 
 # Set up a mock for the actual function used by cash.py
-from ibkr_connection import get_ibkr_report
-sys.modules['ibkr_connection'].get_ibkr_report = MagicMock()
+from api.ibkr import get_ibkr_report
+sys.modules['api.ibkr'].get_ibkr_report = MagicMock()
 
 # Import the functions we want to test
-from analytics.cash import update_accounts_balances, process_account_data
+from analytics.broker_cash import update_accounts_balances, process_account_data
 
 # Cash module specific test fixtures
 def create_cash_fixtures():
@@ -129,7 +129,7 @@ class TestUpdateAccountsBalances(BaseTestCase):
         super().setUp()
         self.fixtures = create_cash_fixtures()
     
-    @patch('analytics.cash.db')
+    @patch('analytics.broker_cash.db')
     def test_successful_insert(self, mock_db):
         """Test successful insertion of valid data"""
         # Mock db.get_account_map
@@ -152,7 +152,7 @@ class TestUpdateAccountsBalances(BaseTestCase):
         
         self.log_case_result("Successful insert of valid data", True)
     
-    @patch('analytics.cash.db')
+    @patch('analytics.broker_cash.db')
     def test_empty_dataframe(self, mock_db):
         """Test handling of empty DataFrame"""
         # Call function
@@ -164,7 +164,7 @@ class TestUpdateAccountsBalances(BaseTestCase):
         
         self.log_case_result("Properly handles empty DataFrame", True)
     
-    @patch('analytics.cash.db')
+    @patch('analytics.broker_cash.db')
     def test_missing_columns(self, mock_db):
         """Test handling of DataFrames with missing required columns"""
         # Test with missing ClientAccountID
@@ -190,7 +190,7 @@ class TestUpdateAccountsBalances(BaseTestCase):
         
         self.log_case_result("Handles DataFrames with missing columns", True)
     
-    @patch('analytics.cash.db')
+    @patch('analytics.broker_cash.db')
     def test_duplicate_records(self, mock_db):
         """Test handling of duplicate records"""
         # Mock db.get_account_map
@@ -227,7 +227,7 @@ class TestUpdateAccountsBalances(BaseTestCase):
         
         self.log_case_result("Properly skips duplicate records and prints message", True)
     
-    @patch('analytics.cash.db')
+    @patch('analytics.broker_cash.db')
     def test_sql_error_handling(self, mock_db):
         """Test handling of SQL errors"""
         # Mock db.get_account_map
@@ -255,8 +255,8 @@ class TestUpdateAccountsBalances(BaseTestCase):
 class TestProcessAccountData(BaseTestCase):
     """Test cases for the process_account_data function"""
     
-    @patch('analytics.cash.update_accounts_balances')
-    @patch('analytics.cash.get_ibkr_report')
+    @patch('analytics.broker_cash.update_accounts_balances')
+    @patch('analytics.broker_cash.get_ibkr_report')
     def test_successful_processing(self, mock_get_ibkr_report, mock_update_balances):
         """Test successful data processing flow"""
         # Setup mock to return a valid DataFrame
@@ -290,8 +290,8 @@ class TestProcessAccountData(BaseTestCase):
         
         self.log_case_result("Successful data processing flow", True)
     
-    @patch('analytics.cash.update_accounts_balances')
-    @patch('analytics.cash.get_ibkr_report')
+    @patch('analytics.broker_cash.update_accounts_balances')
+    @patch('analytics.broker_cash.get_ibkr_report')
     def test_api_failure(self, mock_get_ibkr_report, mock_update_balances):
         """Test handling when IBKR API returns False"""
         # Setup mock to return False
@@ -316,8 +316,8 @@ class TestProcessAccountData(BaseTestCase):
         
         self.log_case_result("API failure handling", True)
     
-    @patch('analytics.cash.update_accounts_balances')
-    @patch('analytics.cash.get_ibkr_report')
+    @patch('analytics.broker_cash.update_accounts_balances')
+    @patch('analytics.broker_cash.get_ibkr_report')
     def test_no_new_data(self, mock_get_ibkr_report, mock_update_balances):
         """Test handling when no new data is inserted"""
         # Setup mock to return a valid DataFrame
@@ -350,8 +350,8 @@ class TestProcessAccountData(BaseTestCase):
         
         self.log_case_result("No new data handling", True)
     
-    @patch('analytics.cash.update_accounts_balances')
-    @patch('analytics.cash.get_ibkr_report')
+    @patch('analytics.broker_cash.update_accounts_balances')
+    @patch('analytics.broker_cash.get_ibkr_report')
     def test_exception_handling(self, mock_get_ibkr_report, mock_update_balances):
         """Test exception handling in process_account_data"""
         # Make get_ibkr_report raise an exception
