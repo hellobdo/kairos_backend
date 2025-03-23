@@ -56,7 +56,7 @@ class BaseStrategy(Strategy):
         # All indicators returned True
         return True, df
     
-    def _calculate_qty(self, stop_loss_amount, risk_per_trade):
+    def _calculate_qty_based_on_risk_per_trade(self, stop_loss_amount, risk_per_trade):
         """Calculate quantity based on risk per trade and stop loss amount"""
 
         risk_size = 30000 * risk_per_trade

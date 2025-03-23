@@ -3,15 +3,20 @@ Tests for helper methods in BaseStrategy class from backtests/utils/backtest_fun
 """
 import unittest
 import sys
+import os
 from datetime import datetime
 import pandas as pd
 from unittest.mock import patch, MagicMock
+
+# Add the project root directory to the Python path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 # Import our test utilities from the tests package
 from tests.utils.test_utils import BaseTestCase, print_summary
 
 # Import the class to test
 from backtests.utils.backtest_functions import BaseStrategy
+from lumibot.entities import Asset
 
 # Module specific test fixtures
 def create_module_fixtures():
@@ -48,10 +53,16 @@ def create_module_fixtures():
 # Mock class for broker
 class MockBroker:
     def __init__(self):
-        pass
-    
+        self.name = "mock_broker"
+        
     def get_datetime(self):
         return datetime.now()
+        
+    def is_backtesting(self):
+        return True
+        
+    def get_last_price(self, *args, **kwargs):
+        return 100.0
 
 # Base class for all BaseStrategy tests
 class BaseStrategyTestCase(BaseTestCase):
@@ -63,20 +74,28 @@ class BaseStrategyTestCase(BaseTestCase):
         self.fixtures = create_module_fixtures()
         
         # Create a patch for the Strategy.__init__ to avoid broker validation
-        self.init_patcher = patch('lumibot.strategies.strategy.Strategy.__init__')
+        self.init_patcher = patch('lumibot.strategies.strategy.Strategy.__init__', return_value=None)
         self.mock_init = self.init_patcher.start()
-        self.mock_init.return_value = None
         
-        # Create BaseStrategy instance
+        # Create a BaseStrategy instance
         self.base_strategy = BaseStrategy()
         
         # Mock necessary properties and methods
-        self.base_strategy.broker = MockBroker()
-        self.base_strategy.parameters = {'max_loss_positions': 2}
-        self.base_strategy.vars = MagicMock()
-        self.base_strategy.vars.daily_loss_count = 0
+        # Set broker and other attributes via object.__setattr__ to bypass property restrictions
+        object.__setattr__(self.base_strategy, 'broker', MockBroker())
+        object.__setattr__(self.base_strategy, 'parameters', {'max_loss_positions': 2, 'risk_per_trade': 0.01})
+        
+        # Create a vars object with realistic properties
+        vars_obj = type('obj', (object,), {
+            'daily_loss_count': 0,
+            'trade_log': []
+        })
+        object.__setattr__(self.base_strategy, 'vars', vars_obj)
+        
+        # Mock methods
         self.base_strategy.get_positions = MagicMock(return_value=[])
         self.base_strategy.get_datetime = MagicMock(return_value=datetime.now())
+        self.base_strategy.get_last_price = MagicMock(return_value=100.0)
     
     def tearDown(self):
         """Clean up patchers"""
@@ -280,11 +299,11 @@ class TestQuantityCalculation(BaseStrategyTestCase):
         expected = 600
         
         # Call the method
-        result = self.base_strategy._calculate_qty(stop_loss_amount, risk_per_trade)
+        result = self.base_strategy._calculate_qty_based_on_risk_per_trade(stop_loss_amount, risk_per_trade)
         
         # Verify the result
         self.assertEqual(result, expected)
-        self.log_case_result("_calculate_qty returns correct integer value", True)
+        self.log_case_result("_calculate_qty_based_on_risk_per_trade returns correct integer value", True)
     
     def test_different_risk_values(self):
         """Test with different risk values"""
@@ -293,16 +312,16 @@ class TestQuantityCalculation(BaseStrategyTestCase):
         # Test with 0.5% risk
         risk_per_trade = 0.005
         expected = 150  # 30000 * 0.005 // 1.0 = 150
-        result = self.base_strategy._calculate_qty(stop_loss_amount, risk_per_trade)
+        result = self.base_strategy._calculate_qty_based_on_risk_per_trade(stop_loss_amount, risk_per_trade)
         self.assertEqual(result, expected)
         
         # Test with 2% risk
         risk_per_trade = 0.02
         expected = 600  # 30000 * 0.02 // 1.0 = 600
-        result = self.base_strategy._calculate_qty(stop_loss_amount, risk_per_trade)
+        result = self.base_strategy._calculate_qty_based_on_risk_per_trade(stop_loss_amount, risk_per_trade)
         self.assertEqual(result, expected)
         
-        self.log_case_result("_calculate_qty handles different risk_per_trade values", True)
+        self.log_case_result("_calculate_qty_based_on_risk_per_trade handles different risk_per_trade values", True)
 
 class TestStopLossRules(BaseStrategyTestCase):
     """Test stop loss rule application"""
