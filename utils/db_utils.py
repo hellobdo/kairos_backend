@@ -151,11 +151,11 @@ class DatabaseManager:
         INSERT INTO backtest_runs (
             timestamp, indicators, symbols_traded, direction,
             stop_loss, risk_reward, risk_per_trade,
-            backtest_start_date, backtest_end_date, source_file
+            backtest_start_date, backtest_end_date, source_file, is_valid
         ) VALUES (
             :timestamp, :indicators, :symbols_traded, :direction,
             :stop_loss, :risk_reward, :risk_per_trade,
-            :backtest_start_date, :backtest_end_date, :source_file
+            :backtest_start_date, :backtest_end_date, :source_file, :is_valid
         )
         """
         
@@ -168,7 +168,7 @@ class DatabaseManager:
             conn.commit()
             return run_id
     
-    def get_backtest_runs(self, run_id=None, symbol=None, direction=None, as_df=True):
+    def get_backtest_runs(self, run_id=None, symbol=None, direction=None, is_valid=None, as_df=True):
         """
         Retrieve backtest runs from the database with optional filtering.
         
@@ -176,6 +176,7 @@ class DatabaseManager:
             run_id (int, optional): Filter by specific run ID
             symbol (str, optional): Filter by symbol traded 
             direction (str, optional): Filter by direction (long/short)
+            is_valid (bool, optional): Filter by is_valid (True/False)
             as_df (bool, optional): Return results as pandas DataFrame if True, list of dicts if False
             
         Returns:
@@ -199,6 +200,10 @@ class DatabaseManager:
             conditions.append("direction = ?")
             params.append(direction)
         
+        if is_valid is not None:
+            conditions.append("is_valid = ?")
+            params.append(is_valid)
+        
         # Add WHERE clause if needed
         if conditions:
             query += " WHERE " + " AND ".join(conditions)
@@ -216,4 +221,3 @@ class DatabaseManager:
             cursor = conn.cursor()
             cursor.execute(query, params)
             return [dict(row) for row in cursor.fetchall()]
-        

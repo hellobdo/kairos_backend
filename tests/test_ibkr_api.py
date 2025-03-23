@@ -11,7 +11,7 @@ from io import StringIO
 from tests import BaseTestCase, print_summary, MockDatabaseConnection
 
 # Import the module to test
-from analytics.ibkr_api import get_ibkr_flex_data, get_ibkr_report
+from api.ibkr import get_ibkr_flex_data, get_ibkr_report
 
 # Module specific test fixtures
 def create_module_fixtures():

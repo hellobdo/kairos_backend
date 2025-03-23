@@ -8,7 +8,7 @@ from datetime import datetime
 from tests import BaseTestCase, print_summary, MockDatabaseConnection
 
 # Import the functions we want to test
-from analytics.executions import (
+from analytics.broker_executions import (
     process_ibkr_data,
     identify_trade_ids,
     insert_executions_to_db,
@@ -68,7 +68,7 @@ class TestProcessIBKRData(BaseTestCase):
         super().setUp()
         self.fixtures = create_executions_fixtures()
     
-    @patch('analytics.executions.db')
+    @patch('analytics.broker_executions.db')
     def test_filtering_existing_trades(self, mock_db):
         """Test filtering out existing trades"""
         # Setup mock
@@ -82,7 +82,7 @@ class TestProcessIBKRData(BaseTestCase):
         self.assertNotIn('T1', result['TradeID'].values)
         self.log_case_result("Successfully filters existing trades", True)
     
-    @patch('analytics.executions.db')
+    @patch('analytics.broker_executions.db')
     def test_numeric_conversion(self, mock_db):
         """Test numeric field conversion"""
         # Setup mock
@@ -98,7 +98,7 @@ class TestProcessIBKRData(BaseTestCase):
         
         self.log_case_result("Successfully converts numeric fields", True)
     
-    @patch('analytics.executions.db')
+    @patch('analytics.broker_executions.db')
     def test_datetime_processing(self, mock_db):
         """Test date/time field processing"""
         # Setup mock
@@ -115,7 +115,7 @@ class TestProcessIBKRData(BaseTestCase):
         
         self.log_case_result("Successfully processes date/time fields", True)
     
-    @patch('analytics.executions.db')
+    @patch('analytics.broker_executions.db')
     def test_side_determination(self, mock_db):
         """Test trade side determination"""
         # Setup mock
@@ -138,7 +138,7 @@ class TestIdentifyTradeIds(BaseTestCase):
         super().setUp()
         self.fixtures = create_executions_fixtures()
     
-    @patch('analytics.executions.db')
+    @patch('analytics.broker_executions.db')
     def test_new_position_opening(self, mock_db):
         """Test opening a new position"""
         # Setup mock
@@ -161,7 +161,7 @@ class TestIdentifyTradeIds(BaseTestCase):
         
         self.log_case_result("Successfully identifies new position entry", True)
     
-    @patch('analytics.executions.db')
+    @patch('analytics.broker_executions.db')
     def test_position_closing(self, mock_db):
         """Test closing an existing position"""
         # Setup mock
@@ -184,7 +184,7 @@ class TestIdentifyTradeIds(BaseTestCase):
         
         self.log_case_result("Successfully identifies position exit", True)
     
-    @patch('analytics.executions.db')
+    @patch('analytics.broker_executions.db')
     def test_multiple_symbols(self, mock_db):
         """Test handling multiple symbols simultaneously"""
         # Setup mock
@@ -216,7 +216,7 @@ class TestInsertExecutionsToDB(BaseTestCase):
         super().setUp()
         self.fixtures = create_executions_fixtures()
     
-    @patch('analytics.executions.db')
+    @patch('analytics.broker_executions.db')
     def test_successful_insertion(self, mock_db):
         """Test successful insertion of records"""
         # Create test data
@@ -247,7 +247,7 @@ class TestInsertExecutionsToDB(BaseTestCase):
         
         self.log_case_result("Successfully inserts records", True)
     
-    @patch('analytics.executions.db')
+    @patch('analytics.broker_executions.db')
     def test_database_error(self, mock_db):
         """Test database error handling"""
         # Setup mock to raise exception
@@ -273,10 +273,10 @@ class TestProcessAccountData(BaseTestCase):
         super().setUp()
         self.fixtures = create_executions_fixtures()
     
-    @patch('analytics.executions.get_ibkr_report')
-    @patch('analytics.executions.process_ibkr_data')
-    @patch('analytics.executions.identify_trade_ids')
-    @patch('analytics.executions.insert_executions_to_db')
+    @patch('analytics.broker_executions.get_ibkr_report')
+    @patch('analytics.broker_executions.process_ibkr_data')
+    @patch('analytics.broker_executions.identify_trade_ids')
+    @patch('analytics.broker_executions.insert_executions_to_db')
     def test_successful_processing(self, mock_insert, mock_identify, mock_process, mock_get_report):
         """Test successful end-to-end processing"""
         # Setup mocks
@@ -297,7 +297,7 @@ class TestProcessAccountData(BaseTestCase):
         
         self.log_case_result("Successfully processes account data", True)
     
-    @patch('analytics.executions.get_ibkr_report')
+    @patch('analytics.broker_executions.get_ibkr_report')
     def test_api_failure(self, mock_get_report):
         """Test handling of API failure"""
         # Setup mock to simulate API failure
@@ -312,7 +312,7 @@ class TestProcessAccountData(BaseTestCase):
         self.log_case_result("Properly handles API failure", True)
 
 if __name__ == '__main__':
-    print("\n🔍 Running tests for executions.py...")
+    print("\n🔍 Running tests for broker_executions.py...")
     
     # Run the tests with default verbosity
     unittest.main(exit=False, verbosity=0)

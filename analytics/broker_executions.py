@@ -2,8 +2,8 @@ import os
 import pandas as pd
 from dotenv import load_dotenv
 from datetime import datetime
-from analytics.ibkr_api import get_ibkr_report
-from data.db_utils import DatabaseManager
+from api.ibkr import get_ibkr_report
+from utils.db_utils import DatabaseManager
 
 # Initialize database manager
 db = DatabaseManager()

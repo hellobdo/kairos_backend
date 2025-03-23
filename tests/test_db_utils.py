@@ -14,7 +14,7 @@ import re
 from tests import BaseTestCase, print_summary, MockDatabaseConnection
 
 # Import the module to test
-from data.db_utils import DatabaseManager
+from utils.db_utils import DatabaseManager
 
 # Module specific test fixtures
 def create_module_fixtures():
@@ -131,7 +131,8 @@ def create_module_fixtures():
         'risk_per_trade': '0.01',
         'backtest_start_date': '2023-01-01',
         'backtest_end_date': '2023-05-31',
-        'source_file': 'test_report.html'
+        'source_file': 'test_report.html',
+        'is_valid': True
     }
     
     return fixtures
@@ -444,8 +445,29 @@ class TestDatabaseUtils(BaseTestCase):
             self.assertIn("WHERE", query)
             self.assertIn("AND", query)
             self.assertEqual(params, ['%AAPL%', 'long'])
+        
+        # Test 6: Test with is_valid filter
+        with patch.object(self.db_manager, 'fetch_df', return_value=self.fixtures['backtest_runs_df'].iloc[[0, 2]]) as mock_fetch_df:
+            result = self.db_manager.get_backtest_runs(is_valid=True)
+            self.assertEqual(result.to_dict(), self.fixtures['backtest_runs_df'].iloc[[0, 2]].to_dict())
             
-        # Test 6: Test with list of dictionaries return
+            # Verify query has correct WHERE clause
+            query, params = mock_fetch_df.call_args[0]
+            self.assertIn("WHERE is_valid = ?", query)
+            self.assertEqual(params, [True])
+            
+        # Test 7: Test with multiple filters including is_valid
+        with patch.object(self.db_manager, 'fetch_df', return_value=self.fixtures['backtest_runs_df'].iloc[[0]]) as mock_fetch_df:
+            result = self.db_manager.get_backtest_runs(symbol='AAPL', is_valid=True)
+            self.assertEqual(result.to_dict(), self.fixtures['backtest_runs_df'].iloc[[0]].to_dict())
+            
+            # Verify query has correct WHERE clause with AND
+            query, params = mock_fetch_df.call_args[0]
+            self.assertIn("WHERE", query)
+            self.assertIn("AND", query)
+            self.assertEqual(params, ['%AAPL%', True])
+            
+        # Test 8: Test with list of dictionaries return
         mock_cursor = MagicMock()
         mock_conn = MagicMock()
         mock_cursor.fetchall.return_value = self.fixtures['backtest_dict_list']

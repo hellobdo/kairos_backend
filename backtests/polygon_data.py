@@ -1,21 +1,18 @@
+# Add the project root directory to Python's path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import pandas as pd
 from datetime import datetime
 import os
 import subprocess
 import sys
-
-# Add the project root directory to Python's path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
+from analytics.backtest_executions import process_backtest_executions
 from lumibot.strategies.strategy import Strategy
 from lumibot.entities import Order, Asset
 from lumibot.backtesting import PolygonDataBacktesting
-
-# Import helpers
-from helpers import process_trades_from_strategy
-
-# Import indicators
 from indicators import load_indicators
+from utils.get_latest_trade_report import get_latest_trade_report
+
 t_shaped = load_indicators('t-shaped.py')
 
 # Define backtest dates
@@ -186,4 +183,13 @@ if __name__ == "__main__":
     )
     
     # Process and analyze trades after backtest completes
-    process_trades_from_strategy(Strategy) 
+    # First, find the latest trades CSV file
+    try:
+        file_path = get_latest_trade_report("csv")
+        print(f"Found trades file: {file_path}")    
+        process_backtest_executions(Strategy, file_path)
+        
+    except FileNotFoundError as e:
+        print(f"Error: {str(e)}")
+    except Exception as e:
+        print(f"Error finding or processing latest trades file: {str(e)}") 
