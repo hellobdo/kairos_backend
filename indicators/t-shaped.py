@@ -10,6 +10,7 @@ A T-shaped candle has:
 
 import numpy as np
 import pandas as pd
+from indicators.helpers.column_utils import normalize_ohlc_columns
 
 def calculate_indicator(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -20,38 +21,33 @@ def calculate_indicator(df: pd.DataFrame) -> pd.DataFrame:
         tight_threshold: Maximum body size relative to open price
         
     Returns:
-        DataFrame with is_t_shaped column added
+        DataFrame with is_indicator column added
     """
-    df = df.copy()
-    
-    # Handle both uppercase and lowercase column names
-    open_price = 'Open' if 'Open' in df.columns else 'open'
-    high_price = 'High' if 'High' in df.columns else 'high'
-    low_price = 'Low' if 'Low' in df.columns else 'low'
-    close_price = 'Close' if 'Close' in df.columns else 'close'
+    # Normalize column names to lowercase
+    df = normalize_ohlc_columns(df)
     
     # Calculate absolute difference between open and close
-    abs_delta_open_close_perc = (abs(df[close_price] - df[open_price]) / df[open_price])
+    abs_delta_open_close_perc = (abs(df['close'] - df['open']) / df['open'])
     
     # Calculate threshold based on close price
-    tight_threshold = np.where(df[close_price] < 80, 0.12, 0.25)
+    tight_threshold = np.where(df['close'] < 80, 0.12, 0.25)
     
     # tight body condition
     condition1 = abs_delta_open_close_perc < tight_threshold
 
     # lower shadow exists
-    condition2 = df[low_price] < df[open_price]
+    condition2 = df['low'] < df['open']
     
     condition3 = (
         # Only calculate ratio where there's a lower shadow to avoid division by zero
-        ((df[open_price] - df[low_price]) > (2.5 * abs(df[high_price] - df[close_price]))) &
-        ((df[open_price] - df[low_price]) > (2.5 * abs(df[high_price] - df[open_price])))
+        ((df['open'] - df['low']) > (2.5 * abs(df['high'] - df['close']))) &
+        ((df['open'] - df['low']) > (2.5 * abs(df['high'] - df['open'])))
     )
-
+    
     # close price is bigger than open price
-    condition4 = df[close_price] > df[open_price]
+    condition4 = df['close'] > df['open']
     
     # Combine conditions
-    df['is_t_shaped'] = condition1 & condition2 & condition3 & condition4
+    df['is_indicator'] = (condition1 & condition2 & condition3 & condition4)
     
     return df

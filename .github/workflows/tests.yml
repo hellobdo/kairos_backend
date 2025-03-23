@@ -5,32 +5,32 @@ on:
     branches: [ main, master ]
     paths:
       - 'api/ibkr.py'
-      - 'analytics/backtest_executions.py'
       - 'analytics/broker_cash.py'
       - 'analytics/broker_executions.py'
       - 'utils/db_utils.py'
-      - 'utils/get_latest_trade_report.py'
+      - 'indicators/helpers/column_utils.py'
+      - 'indicators/*.py'
       - 'tests/test_broker_cash.py'
       - 'tests/test_broker_executions.py'
       - 'tests/test_db_utils.py'
-      - 'tests/test_get_latest_trade_report.py'
       - 'tests/test_ibkr_api.py'
-      - 'tests/test_backtest_executions.py'
+      - 'tests/test_indicators.py'
+      - 'tests/test_column_utils.py'
   pull_request:
     branches: [ main, master ]
     paths:
       - 'api/ibkr.py'
-      - 'analytics/backtest_executions.py'
       - 'analytics/broker_executions.py'
       - 'analytics/broker_cash.py'
       - 'utils/db_utils.py'
-      - 'utils/get_latest_trade_report.py'
+      - 'indicators/helpers/column_utils.py'
+      - 'indicators/*.py'
       - 'tests/test_broker_cash.py'
       - 'tests/test_broker_executions.py'
       - 'tests/test_db_utils.py'
-      - 'tests/test_get_latest_trade_report.py'
       - 'tests/test_ibkr_api.py'
-      - 'tests/test_backtest_executions.py'
+      - 'tests/test_indicators.py'
+      - 'tests/test_column_utils.py'
   workflow_dispatch:  # Allow manual triggering
 
 jobs:
@@ -94,17 +94,17 @@ jobs:
         IBKR_QUERY_ID_TRADE_CONFIRMATION_LIVE: "dummy_query_live"
         PYTHONPATH: ${{ github.workspace }}
         
-    - name: Run get_latest_trade_report module tests
+    - name: Run indicators tests
       run: |
         # Add current directory to Python path to find the tests package
-        python -m tests.test_get_latest_trade_report
+        python -m tests.test_indicators
       env:
         PYTHONPATH: ${{ github.workspace }}
-        
-    - name: Run backtest_executions module tests
+
+    - name: Run column_utils tests
       run: |
         # Add current directory to Python path to find the tests package
-        python -m tests.test_backtest_executions
+        python -m tests.test_column_utils
       env:
         PYTHONPATH: ${{ github.workspace }}
         

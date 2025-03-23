@@ -3,16 +3,8 @@ from dotenv import load_dotenv
 import pandas as pd
 from datetime import datetime
 import re
-
-# Handle import differently when run as script vs module
-try:
-    # When imported as part of a package
-    from ..api.ibkr import get_ibkr_report
-    from utils.db_utils import DatabaseManager
-except ImportError:
-    # When run directly as a script
-    from api.ibkr import get_ibkr_report
-    from utils.db_utils import DatabaseManager
+from api.ibkr import get_ibkr_report
+from utils.db_utils import DatabaseManager
 
 # Initialize database manager
 db = DatabaseManager()

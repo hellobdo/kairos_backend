@@ -87,8 +87,8 @@ class TestGetIBKRFlexData(BaseTestCase):
         super().setUp()
         self.fixtures = create_module_fixtures()
     
-    @patch('analytics.ibkr_api.requests.get')
-    @patch('analytics.ibkr_api.time.sleep')
+    @patch('api.ibkr.requests.get')
+    @patch('api.ibkr.time.sleep')
     def test_successful_report_retrieval(self, mock_sleep, mock_get):
         """Test successful execution of report retrieval"""
         # Setup mock responses
@@ -117,8 +117,8 @@ class TestGetIBKRFlexData(BaseTestCase):
         
         self.log_case_result("Successfully retrieves and processes report data", True)
 
-    @patch('analytics.ibkr_api.requests.get')
-    @patch('analytics.ibkr_api.time.sleep')
+    @patch('api.ibkr.requests.get')
+    @patch('api.ibkr.time.sleep')
     def test_single_row_csv(self, mock_sleep, mock_get):
         """Test processing of a CSV with only a single row (cash report case)"""
         # Setup mock responses
@@ -147,8 +147,8 @@ class TestGetIBKRFlexData(BaseTestCase):
         
         self.log_case_result("Successfully processes single-row CSV (cash report case)", True)
 
-    @patch('analytics.ibkr_api.requests.get')
-    @patch('analytics.ibkr_api.time.sleep')
+    @patch('api.ibkr.requests.get')
+    @patch('api.ibkr.time.sleep')
     def test_proper_xml_parsing(self, mock_sleep, mock_get):
         """Test handling of properly formatted XML responses"""
         # Setup mock responses
@@ -175,7 +175,7 @@ class TestGetIBKRFlexData(BaseTestCase):
         
         self.log_case_result("Successfully parses proper XML format", True)
         
-    @patch('analytics.ibkr_api.requests.get')
+    @patch('api.ibkr.requests.get')
     def test_xml_with_missing_reference(self, mock_get):
         """Test handling of XML with missing reference code"""
         # Setup mock response
@@ -192,7 +192,7 @@ class TestGetIBKRFlexData(BaseTestCase):
         
         self.log_case_result("Properly handles XML with missing reference code", True)
         
-    @patch('analytics.ibkr_api.requests.get')
+    @patch('api.ibkr.requests.get')
     def test_xml_with_failure_status(self, mock_get):
         """Test handling of XML with failure status"""
         # Setup mock response
@@ -209,8 +209,8 @@ class TestGetIBKRFlexData(BaseTestCase):
         
         self.log_case_result("Properly handles XML with failure status", True)
         
-    @patch('analytics.ibkr_api.requests.get')
-    @patch('analytics.ibkr_api.time.sleep')
+    @patch('api.ibkr.requests.get')
+    @patch('api.ibkr.time.sleep')
     def test_complex_csv_processing(self, mock_sleep, mock_get):
         """Test handling of more complex CSV data with various formats"""
         # Setup mock responses
@@ -245,7 +245,7 @@ class TestGetIBKRFlexData(BaseTestCase):
         
         self.log_case_result("Successfully processes complex CSV with various data formats", True)
         
-    @patch('analytics.ibkr_api.requests.get')
+    @patch('api.ibkr.requests.get')
     def test_failed_report_generation(self, mock_get):
         """Test when the initial report generation fails"""
         # Setup mock response
@@ -262,7 +262,7 @@ class TestGetIBKRFlexData(BaseTestCase):
         
         self.log_case_result("Properly handles failed report generation", True)
         
-    @patch('analytics.ibkr_api.requests.get')
+    @patch('api.ibkr.requests.get')
     def test_empty_reference_code(self, mock_get):
         """Test when no reference code is returned"""
         # Setup mock response
@@ -279,8 +279,8 @@ class TestGetIBKRFlexData(BaseTestCase):
         
         self.log_case_result("Properly handles missing reference code", True)
         
-    @patch('analytics.ibkr_api.requests.get')
-    @patch('analytics.ibkr_api.time.sleep')
+    @patch('api.ibkr.requests.get')
+    @patch('api.ibkr.time.sleep')
     def test_invalid_csv_response(self, mock_sleep, mock_get):
         """Test when the report response is not valid CSV"""
         # Setup mock responses
@@ -302,8 +302,8 @@ class TestGetIBKRFlexData(BaseTestCase):
         
         self.log_case_result("Properly handles invalid CSV response", True)
         
-    @patch('analytics.ibkr_api.requests.get')
-    @patch('analytics.ibkr_api.time.sleep')
+    @patch('api.ibkr.requests.get')
+    @patch('api.ibkr.time.sleep')
     def test_empty_dataframe(self, mock_sleep, mock_get):
         """Test when the CSV produces an empty DataFrame"""
         # Setup mock responses
@@ -325,7 +325,7 @@ class TestGetIBKRFlexData(BaseTestCase):
         
         self.log_case_result("Properly handles empty DataFrame", True)
         
-    @patch('analytics.ibkr_api.requests.get')
+    @patch('api.ibkr.requests.get')
     def test_exception_handling(self, mock_get):
         """Test exception handling in the function"""
         # Setup mock to raise an exception
@@ -347,7 +347,7 @@ class TestGetIBKRReport(BaseTestCase):
         super().setUp()
         self.fixtures = create_module_fixtures()
     
-    @patch('analytics.ibkr_api.get_ibkr_flex_data')
+    @patch('api.ibkr.get_ibkr_flex_data')
     def test_successful_report(self, mock_get_ibkr_flex_data):
         """Test successful retrieval of a report"""
         # Create a mock DataFrame
@@ -377,7 +377,7 @@ class TestGetIBKRReport(BaseTestCase):
         
         self.log_case_result("Successfully retrieves report with proper logging", True)
     
-    @patch('analytics.ibkr_api.get_ibkr_flex_data')
+    @patch('api.ibkr.get_ibkr_flex_data')
     def test_failed_report(self, mock_get_ibkr_flex_data):
         """Test handling when the report retrieval fails"""
         # Setup mock to return False
@@ -404,7 +404,7 @@ class TestGetIBKRReport(BaseTestCase):
         
         self.log_case_result("Properly handles failed report retrieval", True)
     
-    @patch('analytics.ibkr_api.get_ibkr_flex_data')
+    @patch('api.ibkr.get_ibkr_flex_data')
     def test_exception_handling(self, mock_get_ibkr_flex_data):
         """Test exception handling in the get_ibkr_report function"""
         # Setup mock to raise an exception
@@ -429,7 +429,7 @@ class TestGetIBKRReport(BaseTestCase):
         
         self.log_case_result("Properly handles exceptions", True)
     
-    @patch('analytics.ibkr_api.get_ibkr_flex_data')
+    @patch('api.ibkr.get_ibkr_flex_data')
     def test_report_type_logging(self, mock_get_ibkr_flex_data):
         """Test that report_type is used correctly in logging"""
         # Create a mock DataFrame

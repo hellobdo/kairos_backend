@@ -13,7 +13,7 @@ from lumibot.backtesting import PolygonDataBacktesting
 from indicators import load_indicators
 from utils.get_latest_trade_report import get_latest_trade_report
 
-t_shaped = load_indicators('t-shaped.py')
+indicator1 = load_indicators('t-shaped.py')
 
 # Define backtest dates
 backtesting_start = datetime.strptime(os.getenv("BACKTESTING_START"), "%Y-%m-%d")
@@ -53,7 +53,7 @@ class Strategy(Strategy):
         self.minutes_before_closing = 0.1 # close positions before market close, see below def before_market_closes()
             
     def on_trading_iteration(self):
-        calculate_t = t_shaped.calculate_indicator
+        calculate_indicator = indicator1.calculate_indicator
         symbols = self.parameters.get("symbols", [])
         risk_reward = self.parameters.get("risk_reward")
         side = self.parameters.get("side")
@@ -91,11 +91,11 @@ class Strategy(Strategy):
 
             # Calculate T-shaped indicator
             df = bars.df.copy()
-            df = calculate_t(df)
+            df = calculate_indicator(df)
             
             # Check if the latest candle is t-shaped
             latest_candle = df.iloc[-1]
-            if latest_candle['is_t_shaped']:
+            if latest_candle['is_indicator']:
                 entry_price = self.get_last_price(symbol)
                 if entry_price is None:
                     continue

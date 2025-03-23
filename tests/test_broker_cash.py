@@ -15,8 +15,8 @@ from tests import BaseTestCase, print_summary, MockDatabaseConnection
 sys.modules['ibkr_connection'] = MagicMock()
 
 # Set up a mock for the actual function used by cash.py
-from ibkr_connection import get_ibkr_report
-sys.modules['ibkr_connection'].get_ibkr_report = MagicMock()
+from api.ibkr import get_ibkr_report
+sys.modules['api.ibkr'].get_ibkr_report = MagicMock()
 
 # Import the functions we want to test
 from analytics.broker_cash import update_accounts_balances, process_account_data
