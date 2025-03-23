@@ -1,6 +1,11 @@
 import pandas as pd
 from datetime import datetime
 import os
+import sys
+
+# Add the project root directory to the Python path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 from lumibot.entities import Order, Asset, Data
 from lumibot.backtesting import PolygonDataBacktesting, PandasDataBacktesting
 from indicators import load_indicators
@@ -9,7 +14,7 @@ from backtests.utils.backtest_functions import BaseStrategy
 # Define backtest dates
 backtesting_start = datetime.strptime(os.getenv("BACKTESTING_START"), "%Y-%m-%d")
 backtesting_end = datetime.strptime(os.getenv("BACKTESTING_END"), "%Y-%m-%d")
-tickers = ["NVDA"]
+tickers = ["QQQ"]
 data_source = "polygon"
 
 class Strategy(BaseStrategy):    
@@ -161,4 +166,5 @@ if __name__ == "__main__":
             backtesting_start,
             backtesting_end,
             parameters=Strategy.parameters,
+            pandas_data=pandas_data
         )
