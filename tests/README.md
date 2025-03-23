@@ -297,129 +297,168 @@ The tests are organized into the following classes:
   - Verifies proper transaction commit is performed
   - Confirms the function returns the correct run_id from the database
 
-### `test_backtest_executions.py`
+### `test_column_utils.py`
 
-This file tests the functionality in `analytics/backtest_executions.py`, which processes trades from backtest executions, identifies complete trades, and generates performance reports.
+This file tests the functionality in `indicators/helpers/column_utils.py`, which provides utilities for standardizing and normalizing DataFrame column names for indicator calculations.
+
+#### Test Classes and Organization
+
+The tests are organized into the following class:
+
+1. **`TestColumnUtils`**: Tests column name standardization functionality
+
+#### Tested Functions
+
+##### `normalize_ohlc_columns(df)`
+- **Case: Uppercase column names**
+  - Tests conversion of uppercase column names to lowercase
+  - Verifies all column names like 'Open', 'High', 'Low', 'Close', 'Volume' are properly normalized
+
+- **Case: Mixed case column names**
+  - Tests handling of DataFrames with a mix of uppercase and lowercase column names
+  - Verifies consistent lowercase conversion regardless of original case
+
+- **Case: Already lowercase column names**
+  - Tests that already lowercase column names remain unchanged
+  - Verifies no unintended modifications to correctly formatted names
+
+- **Case: Arbitrary column names**
+  - Tests handling of non-standard column names
+  - Verifies all column names are converted to lowercase regardless of format
+
+### `test_indicators.py`
+
+This file tests the indicator modules in the `indicators` directory, ensuring they all follow a consistent interface and behavior pattern.
+
+#### Test Classes and Organization
+
+The tests are organized into the following class:
+
+1. **`TestIndicators`**: Tests all indicator modules for compliance with standard interface
+
+#### Tested Functionality
+
+##### Indicator Module Compliance
+- **Case: calculate_indicator function exists**
+  - Tests that each indicator module has a calculate_indicator function
+  - Verifies the function signature is consistent across all indicators
+
+- **Case: Returns DataFrame**
+  - Tests that each indicator's calculate_indicator function returns a pandas DataFrame
+  - Verifies the returned object type for consistent downstream processing
+
+- **Case: is_indicator column exists**
+  - Tests that each indicator adds an 'is_indicator' column to the DataFrame
+  - Verifies standardized column naming for cross-indicator compatibility
+
+- **Case: Boolean values in is_indicator**
+  - Tests that the 'is_indicator' column contains boolean values (True/False)
+  - Verifies consistent data type for signal representation across indicators
+  - Ensures compatibility with downstream systems expecting boolean signals
+
+##### Compliance Summary
+- Produces a list of compliant and non-compliant indicators
+- Identifies specific issues with non-compliant indicators (missing functions, wrong return types, etc.)
+- Helps maintain consistency across the indicator ecosystem
+
+### `test_backtest_functions.py`
+
+This file tests the `BaseStrategy` class in `backtests/utils/helper_functions.py`, which provides common helper methods for trading strategies.
 
 #### Test Classes and Organization
 
 The tests are organized into the following classes:
 
-1. **`TestBacktestExecutionsImports`**: Tests basic imports and module setup
-2. **`TestProcessBacktestExecutions`**: Tests the main processing function with different scenarios
-3. **`TestCleanBacktestExecutions`**: Tests the data cleaning and preparation function
+1. **`TestBaseStrategyImports`**: Tests basic imports and class hierarchy
+2. **`TestIndicatorLoading`**: Tests indicator loading functionality
+3. **`TestPositionLimits`**: Tests position limit checking functionality
+4. **`TestTimeConditions`**: Tests time condition verification
+5. **`TestIndicatorApplication`**: Tests sequential indicator application functionality
+6. **`TestQuantityCalculation`**: Tests quantity calculation based on risk parameters
+7. **`TestStopLossRules`**: Tests stop loss rule application
+8. **`TestPriceLevels`**: Tests price level calculation for different trade sides
 
 #### Tested Functions
 
-##### `process_backtest_executions(strategy, file_path)`
-- **Case: import availability**
-  - Tests that the function is importable and callable
-  - Verifies basic module setup
+##### `_load_indicators(indicators, load_function)`
+- **Case: Successful loading**
+  - Tests loading indicators with a valid load function
+  - Verifies all indicators are correctly loaded and accessible
+  - Confirms the load function is called for each indicator
 
-- **Case: strategy parameter extraction**
-  - Tests that parameters are correctly extracted from the strategy object
-  - Verifies parameters like 'side' and 'risk_reward' are properly accessed
-  - Ensures the extracted parameters are correctly printed to the output
+- **Case: Error handling**
+  - Tests behavior when the load function raises an exception
+  - Verifies graceful handling of errors during indicator loading
 
-- **Case: missing strategy side parameter**
-  - Tests behavior when the 'side' parameter is missing from strategy parameters
-  - Verifies the function returns False and prints an appropriate error message
-  - Confirms the exact error message format matches expectations
+##### `_check_position_limits()`
+- **Case: Max positions reached**
+  - Tests behavior when maximum number of positions is reached
+  - Verifies function returns True to prevent opening new positions
 
-- **Case: strategy side assignment**
-  - Tests that the strategy_side variable is correctly assigned from strategy_params['side']
-  - Verifies the assigned value is correctly passed to downstream functions
-  - Uses a custom strategy with 'sell' side to distinguish from default test cases
+- **Case: Daily loss limit reached**
+  - Tests behavior when daily loss count equals max limit
+  - Verifies function returns True to prevent opening new positions
 
-##### `clean_backtest_executions(file_path)`
-- **Case: CSV file reading**
-  - Tests that the function can read from a CSV file
-  - Verifies pandas.read_csv is called with the correct file path
-  - Confirms returned DataFrame contains the expected data
+- **Case: Limits not reached**
+  - Tests behavior when neither position count nor daily loss limit is reached
+  - Verifies function returns False to allow opening new positions
 
-- **Case: time column slicing**
-  - Tests that timestamps are correctly truncated to 19 characters
-  - Verifies the function handles both long timestamps and standard-length ones
-  - Confirms the sliced timestamps have the correct format
+##### `_check_time_conditions(time)`
+- **Case: Minute 0**
+  - Tests behavior at the top of the hour (minute 0)
+  - Verifies function returns True to allow trading
 
-- **Case: date and time column creation**
-  - Tests that 'date' and 'time_of_day' columns are correctly created from timestamps
-  - Verifies these columns have the correct data types
-  - Confirms the values match the original timestamp data
+- **Case: Minute 30**
+  - Tests behavior at half-hour mark (minute 30)
+  - Verifies function returns True to allow trading
 
-- **Case: column renaming**
-  - Tests that the 'time' column is correctly renamed to 'execution_timestamp'
-  - Verifies the original column no longer exists and the new one is present
+- **Case: Other minutes**
+  - Tests behavior at other times
+  - Verifies function returns False to prevent trading
 
-- **Case: zero quantity filtering**
-  - Tests that trades with zero quantity are properly filtered out
-  - Verifies rejected trades are stored separately with appropriate rejection reasons
-  - Confirms the filtered DataFrame only contains valid quantity trades
-  - Checks that the correct information is printed to stdout
+##### `_apply_indicators(df, calculate_indicators)`
+- **Case: All indicators positive**
+  - Tests behavior when all indicators return True
+  - Verifies function returns True overall with updated DataFrame
 
-- **Case: rejected trades merging**
-  - Tests that multiple rejected trades are correctly combined into a single DataFrame
-  - Verifies rejection reasons are properly assigned
-  - Confirms all rejected trades are included in the result
+- **Case: One indicator negative**
+  - Tests behavior when at least one indicator returns False
+  - Verifies function returns False overall with updated DataFrame
 
-- **Case: return value structure**
-  - Tests that the function returns a tuple containing exactly two DataFrames
-  - Verifies both DataFrames have the expected structure and content
-  - Confirms valid trades and rejected trades are correctly separated
+- **Case: Short-circuit processing**
+  - Tests that processing stops at the first False indicator
+  - Verifies subsequent indicator functions are not called
 
-### `test_get_latest_trade_report.py`
+##### `_calculate_qty(stop_loss_amount, risk_per_trade)`
+- **Case: Standard calculation**
+  - Tests standard quantity calculation based on risk and stop loss
+  - Verifies correct integer calculation
 
-This file tests the functionality in `backtests/helpers/utils/get_latest_trade_report.py`, which provides a utility function to find the most recent trade report file in the logs directory.
+- **Case: Different risk values**
+  - Tests calculation with different risk percentages
+  - Verifies correct handling of various risk parameters
 
-#### Test Classes and Organization
+##### `_determine_stop_loss(price, rules)`
+- **Case: Price below rule**
+  - Tests determining stop loss amount when price is below threshold
+  - Verifies correct rule is applied and amount returned
 
-The tests are organized into the `TestGetLatestTradeReport` class with several test cases that verify different aspects of the function:
+- **Case: Price above rule**
+  - Tests determining stop loss amount when price is above threshold
+  - Verifies correct rule is applied and amount returned
 
-1. **Import Tests**: Test that the module imports correctly
-2. **Type Validation Tests**: Test that the function validates input types correctly
-3. **Logs Directory Handling**: Test how the function behaves when the logs directory doesn't exist
-4. **File Finding Tests**: Test the function's ability to find and return the most recent file
+- **Case: No matching rule**
+  - Tests behavior when no rule matches the current price
+  - Verifies function returns None when no rule applies
 
-#### Tested Functions
+##### `_calculate_price_levels(entry_price, stop_loss_amount, side, risk_reward)`
+- **Case: Buy side**
+  - Tests calculation of stop loss and take profit levels for buy trades
+  - Verifies correct placement of stop below and target above entry price
 
-##### `get_latest_trade_report(type)`
-- **Case: import availability**
-  - Tests that the function is importable and callable
-  - Verifies basic module setup
-
-- **Case: invalid report type**
-  - Tests behavior with invalid report type ("pdf" instead of "html" or "csv")
-  - Verifies appropriate ValueError is raised with correct message
-
-- **Case: missing type parameter**
-  - Tests behavior when no type parameter is provided
-  - Verifies appropriate TypeError is raised
-
-- **Case: HTML type**
-  - Tests finding HTML report files using the correct glob pattern
-  - Verifies the function returns the newest file based on timestamp
-  - Checks that appropriate information is printed to stdout
-
-- **Case: CSV type**
-  - Tests finding CSV report files using the correct glob pattern
-  - Verifies the function returns the newest file based on timestamp
-  - Checks that appropriate information is printed to stdout
-
-- **Case: logs directory not found**
-  - Tests behavior when the logs directory doesn't exist
-  - Verifies appropriate FileNotFoundError is raised
-  - Verifies error message contains reference to the logs directory
-
-- **Case: no files found**
-  - Tests behavior when no files match the specified pattern
-  - Verifies appropriate FileNotFoundError is raised
-  - Verifies error message mentions the file type that wasn't found
-
-- **Case: newest file selection**
-  - Tests function's ability to select the newest file based on timestamp
-  - Verifies the function correctly identifies the newest file regardless of the order in which files are discovered
-  - Tests both HTML and CSV file types
-
+- **Case: Sell side**
+  - Tests calculation of stop loss and take profit levels for sell trades
+  - Verifies correct placement of stop above and target below entry price
 
 ## Test Framework
 

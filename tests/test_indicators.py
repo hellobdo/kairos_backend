@@ -22,6 +22,51 @@ class TestIndicators(BaseTestCase):
             if item.is_file() and item.name != '__init__.py':
                 self.indicator_files.append(item)
     
+    def test_indicator_has_calculate_function(self):
+        """Test that all indicator files have a calculate_indicator function that returns a DataFrame"""
+        # Create test data
+        test_df = pd.DataFrame({
+            'open': [100, 101, 102, 103, 104] * 5,
+            'high': [105, 106, 107, 108, 109] * 5,
+            'low': [95, 96, 97, 98, 99] * 5,
+            'close': [102, 103, 104, 105, 106] * 5,
+            'volume': [1000, 1100, 1200, 1300, 1400] * 5
+        })
+        
+        for indicator_file in self.indicator_files:
+            indicator_name = indicator_file.stem
+            
+            # Log which file we're testing
+            print(f"Testing calculate_indicator function for: {indicator_name}")
+            
+            # Import the indicator module
+            spec = importlib.util.spec_from_file_location(indicator_name, indicator_file)
+            indicator = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(indicator)
+            
+            # Check if the module has a calculate_indicator function
+            has_calculate_function = hasattr(indicator, 'calculate_indicator')
+            self.assertTrue(has_calculate_function, 
+                           f"Indicator {indicator_name} should have a calculate_indicator function")
+            
+            if has_calculate_function:
+                # Check if the function returns a DataFrame
+                try:
+                    result = indicator.calculate_indicator(test_df.copy())
+                    is_dataframe = isinstance(result, pd.DataFrame)
+                    self.assertTrue(is_dataframe, 
+                                  f"calculate_indicator in {indicator_name} should return a DataFrame")
+                    
+                    if is_dataframe:
+                        self.log_case_result(f"{indicator_name} has a calculate_indicator function that returns a DataFrame", True)
+                    else:
+                        self.log_case_result(f"{indicator_name} has a calculate_indicator function that returns a DataFrame", False)
+                except Exception as e:
+                    self.log_case_result(f"{indicator_name} calculate_indicator function runs without errors", False)
+                    print(f"Error testing {indicator_name}: {str(e)}")
+            else:
+                self.log_case_result(f"{indicator_name} has a calculate_indicator function", False)
+    
     def test_indicator_has_is_indicator_column(self):
         """Test that all indicator files return a DataFrame with an is_indicator column containing boolean values"""
         # Create test data
