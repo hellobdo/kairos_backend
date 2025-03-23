@@ -10,13 +10,13 @@ from pathlib import Path
 
 def load_indicators(indicator_name):
     """
-    Load an indicator module by name.
+    Load an indicator's calculate_indicator function directly by name.
     
     Args:
         indicator_name: Name of the indicator file (can include .py extension)
         
     Returns:
-        Indicator module with calculate_indicator function
+        calculate_indicator function from the indicator module
     """
     # Handle both with and without .py extension
     if indicator_name.endswith('.py'):
@@ -36,7 +36,8 @@ def load_indicators(indicator_name):
     if not hasattr(indicator, 'calculate_indicator'):
         raise ValueError(f"Indicator {indicator_name} must have a calculate_indicator function")
     
-    return indicator
+    # Return the calculate_indicator function directly
+    return indicator.calculate_indicator
 
 # Export only the load_indicators function
 __all__ = ['load_indicators'] 

@@ -10,12 +10,14 @@ on:
       - 'utils/db_utils.py'
       - 'indicators/helpers/column_utils.py'
       - 'indicators/*.py'
+      - 'backtests/utils/backtest_functions.py'
       - 'tests/test_broker_cash.py'
       - 'tests/test_broker_executions.py'
       - 'tests/test_db_utils.py'
       - 'tests/test_ibkr_api.py'
       - 'tests/test_indicators.py'
       - 'tests/test_column_utils.py'
+      - 'tests/test_backtest_functions.py'
   pull_request:
     branches: [ main, master ]
     paths:
@@ -25,12 +27,14 @@ on:
       - 'utils/db_utils.py'
       - 'indicators/helpers/column_utils.py'
       - 'indicators/*.py'
+      - 'backtests/utils/backtest_functions.py'
       - 'tests/test_broker_cash.py'
       - 'tests/test_broker_executions.py'
       - 'tests/test_db_utils.py'
       - 'tests/test_ibkr_api.py'
       - 'tests/test_indicators.py'
       - 'tests/test_column_utils.py'
+      - 'tests/test_backtest_functions.py'
   workflow_dispatch:  # Allow manual triggering
 
 jobs:
@@ -105,6 +109,13 @@ jobs:
       run: |
         # Add current directory to Python path to find the tests package
         python -m tests.test_column_utils
+      env:
+        PYTHONPATH: ${{ github.workspace }}
+        
+    - name: Run backtest functions tests
+      run: |
+        # Add current directory to Python path to find the tests package
+        python -m tests.test_backtest_functions
       env:
         PYTHONPATH: ${{ github.workspace }}
         
