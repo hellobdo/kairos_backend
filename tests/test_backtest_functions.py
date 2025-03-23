@@ -299,11 +299,11 @@ class TestQuantityCalculation(BaseStrategyTestCase):
         expected = 600
         
         # Call the method
-        result = self.base_strategy._calculate_qty(stop_loss_amount, risk_per_trade)
+        result = self.base_strategy._calculate_qty_based_on_risk_per_trade(stop_loss_amount, risk_per_trade)
         
         # Verify the result
         self.assertEqual(result, expected)
-        self.log_case_result("_calculate_qty returns correct integer value", True)
+        self.log_case_result("_calculate_qty_based_on_risk_per_trade returns correct integer value", True)
     
     def test_different_risk_values(self):
         """Test with different risk values"""
@@ -312,16 +312,16 @@ class TestQuantityCalculation(BaseStrategyTestCase):
         # Test with 0.5% risk
         risk_per_trade = 0.005
         expected = 150  # 30000 * 0.005 // 1.0 = 150
-        result = self.base_strategy._calculate_qty(stop_loss_amount, risk_per_trade)
+        result = self.base_strategy._calculate_qty_based_on_risk_per_trade(stop_loss_amount, risk_per_trade)
         self.assertEqual(result, expected)
         
         # Test with 2% risk
         risk_per_trade = 0.02
         expected = 600  # 30000 * 0.02 // 1.0 = 600
-        result = self.base_strategy._calculate_qty(stop_loss_amount, risk_per_trade)
+        result = self.base_strategy._calculate_qty_based_on_risk_per_trade(stop_loss_amount, risk_per_trade)
         self.assertEqual(result, expected)
         
-        self.log_case_result("_calculate_qty handles different risk_per_trade values", True)
+        self.log_case_result("_calculate_qty_based_on_risk_per_trade handles different risk_per_trade values", True)
 
 class TestStopLossRules(BaseStrategyTestCase):
     """Test stop loss rule application"""
