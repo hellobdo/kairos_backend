@@ -49,39 +49,17 @@ jobs:
       - name: Set test modules
         id: set-test-modules
         run: |
-          # Extract test modules from workflow file
-          # Find paths with tests/test_*.py in the workflow file
-          TEST_PATHS=$(grep -o "tests/test_[^ ]*" $GITHUB_WORKSPACE/.github/workflows/tests.yml | sort | uniq)
+          # Explicitly list the test modules
+          TEST_MODULES_JSON='["db_utils", "broker_cash", "ibkr_api", "broker_executions", "indicators", "column_utils", "backtest_functions"]'
           
-          # Extract module names from paths
-          TEST_MODULES_JSON="["
-          FIRST=true
-          for path in $TEST_PATHS; do
-            # Extract module name from path (remove 'tests/test_' prefix and '.py' suffix)
-            MODULE=$(echo $path | sed -E 's/tests\/test_(.*)\.py/\1/')
-            
-            # Add to JSON array
-            if [ "$FIRST" = true ]; then
-              FIRST=false
-            else
-              TEST_MODULES_JSON="$TEST_MODULES_JSON, "
-            fi
-            TEST_MODULES_JSON="$TEST_MODULES_JSON\"$MODULE\""
-          done
-          TEST_MODULES_JSON="$TEST_MODULES_JSON]"
-          
-          # Set output for matrix
+          # Set output for the test job
           echo "test_modules=$TEST_MODULES_JSON" >> $GITHUB_OUTPUT
-          echo "Detected test modules: $TEST_MODULES_JSON"
+          echo "Using test modules: $TEST_MODULES_JSON"
 
   test:
     needs: setup
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false  # Continue running other tests even if one fails
-      matrix:
-        test_module: ${{ fromJSON(needs.setup.outputs.test_modules) }}
-
+    
     steps:
       - uses: actions/checkout@v3
       
@@ -98,11 +76,41 @@ jobs:
           # Install any development dependencies
           if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
       
-      - name: Run ${{ matrix.test_module }} tests
-        id: run_test
+      # Run each test module sequentially
+      - name: Run all tests
+        id: run_tests
         run: |
-          # Add current directory to Python path to find the tests package
-          python -m tests.test_${{ matrix.test_module }}
+          # Get the list of test modules from the setup job
+          TEST_MODULES='${{ needs.setup.outputs.test_modules }}'
+          
+          # Remove brackets and quotes, split into an array
+          TEST_MODULES=$(echo $TEST_MODULES | tr -d '[]"' | tr ',' ' ')
+          
+          # Initialize failure tracking
+          FAILED_MODULES=""
+          FAILURE=false
+          
+          # Run each test module
+          for module in $TEST_MODULES; do
+            echo "::group::Running test module: $module"
+            if python -m tests.test_$module; then
+              echo "✅ Test module $module: SUCCESS"
+            else
+              echo "❌ Test module $module: FAILURE"
+              FAILED_MODULES="$FAILED_MODULES $module"
+              FAILURE=true
+            fi
+            echo "::endgroup::"
+          done
+          
+          # Output summary
+          echo "========== TEST SUMMARY =========="
+          if [ "$FAILURE" = true ]; then
+            echo "❌ Some tests failed: $FAILED_MODULES"
+            exit 1
+          else
+            echo "✅ All tests passed successfully!"
+          fi
         env:
           PYTHONPATH: ${{ github.workspace }}
           # Common test tokens
