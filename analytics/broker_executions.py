@@ -166,21 +166,22 @@ def insert_executions_to_db(df):
             
             # Prepare execution data as a tuple
             execution_data = (
-                row.get('ClientAccountID', ''),
-                row.get('TradeID', ''),
-                row.get('OrderID', ''),
-                row.get('Symbol', ''),
-                row.get('Quantity', 0),
-                row.get('Price', 0),
-                row.get('NetCashWithBillable', 0),
-                row.get('execution_timestamp', ''),
-                row.get('Commission', 0),
-                row.get('date', ''),
-                row.get('time_of_day', ''),
-                row.get('side', ''),
-                row.get('trade_id'),
-                is_entry_int,
-                is_exit_int
+                row.get('ClientAccountID', ''),  # account_id
+                row.get('TradeID', ''),          # execution_external_id 
+                row.get('OrderID', ''),          # order_id
+                row.get('Symbol', ''),           # symbol
+                row.get('Quantity', 0),          # quantity
+                row.get('Price', 0),             # price
+                row.get('NetCashWithBillable', 0), # net_cash_with_billable
+                row.get('execution_timestamp', ''), # execution_timestamp
+                row.get('Commission', 0),        # commission
+                row.get('date', ''),             # date
+                row.get('time_of_day', ''),      # time_of_day
+                row.get('side', ''),             # side
+                row.get('trade_id'),             # trade_id
+                is_entry_int,                    # is_entry
+                is_exit_int,                      # is_exit
+                row.get('OrderType', '')          # order_type
             )
             
             # Insert the execution

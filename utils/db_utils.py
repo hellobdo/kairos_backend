@@ -100,7 +100,7 @@ class DatabaseManager:
         """Get set of existing trade_external_ids"""
         with self.connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT trade_external_ID FROM executions")
+            cursor.execute("SELECT execution_external_id FROM executions")
         return {row[0] for row in cursor.fetchall()}
     
     def get_max_trade_id(self):
@@ -127,10 +127,10 @@ class DatabaseManager:
         """Insert a single execution record"""
         query = """
             INSERT INTO executions (
-                accountId, trade_external_ID, orderID, symbol, quantity, 
-                price, netCashWithBillable, execution_timestamp, commission,
-                date, time_of_day, side, trade_id, is_entry, is_exit
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                account_id, execution_external_id, order_id, symbol, quantity, 
+                price, net_cash_with_billable, execution_timestamp, commission,
+                date, time_of_day, side, trade_id, is_entry, is_exit, order_type
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         with self.connection() as conn:
             cursor = conn.cursor()
