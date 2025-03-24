@@ -139,6 +139,11 @@ def print_summary():
 class MockDatabaseConnection:
     """A utility class for mocking database connections in tests"""
     
+    def __init__(self):
+        """Initialize the mock database connection"""
+        self.insert_dataframe = MagicMock()
+        self.insert_dataframe.return_value = 0
+    
     @staticmethod
     def create_mock_db():
         """Create a mock database connection and cursor"""

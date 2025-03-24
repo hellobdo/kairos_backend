@@ -24,7 +24,7 @@ def update_accounts_balances(df):
         ValueError: If date is not in YYYY-MM-DD format
     """
     # Skip if DataFrame is empty or missing required columns
-    if df.empty or not all(col in df.columns for col in ['ClientAccountID', 'EndingCash', 'ToDate']):
+    if df.empty or not all(col in df.columns for col in ['clientaccountid', 'endingcash', 'todate']):
         return 0
     
     inserted_count = 0
@@ -36,38 +36,47 @@ def update_accounts_balances(df):
         # Current timestamp for record_date
         current_timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         
+        # Create empty DataFrame with the required columns
+        balances_df = pd.DataFrame(columns=['account_ID', 'date', 'cash_balance', 'record_date'])
+        
         # Process each valid row
-        cash_data = []
         for _, row in df.iterrows():
             # Skip rows with missing data
-            if not (row.get('ClientAccountID') and row.get('EndingCash')):
+            if not (row.get('clientaccountid') and row.get('endingcash')):
                 continue
                 
             # Find matching account ID
-            matching_accounts = account_map_df[account_map_df['account_external_ID'] == str(row['ClientAccountID'])]
+            matching_accounts = account_map_df[account_map_df['account_external_ID'] == str(row['clientaccountid'])]
             if matching_accounts.empty:
                 continue
                 
             # Extract and validate data
             db_account_id = int(matching_accounts['ID'].iloc[0])
-            cash_balance = float(row['EndingCash'])
-            date_value = str(row['ToDate'])[:10]  # Get only YYYY-MM-DD part
+            cash_balance = float(row['endingcash'])
+            date_value = str(row['todate'])[:10]  # Get only YYYY-MM-DD part
             
             # Validate date format
             if not re.match(r'^\d{4}-\d{2}-\d{2}$', date_value):
-                raise ValueError(f"Date must be in YYYY-MM-DD format. Got: {row['ToDate']}, extracted: {date_value}")
+                raise ValueError(f"Date must be in YYYY-MM-DD format. Got: {row['todate']}, extracted: {date_value}")
             
             # Check if record already exists
             if db.check_balance_exists(db_account_id, date_value):
                 print(f"Account ID {db_account_id} with date {date_value} already exists in database - skipping")
                 continue
             
-            # Add to cash data for batch insert
-            cash_data.append((db_account_id, date_value, cash_balance, current_timestamp))
+            # Add to DataFrame directly
+            new_row = pd.DataFrame({
+                'account_ID': [db_account_id],
+                'date': [date_value],
+                'cash_balance': [cash_balance],
+                'record_date': [current_timestamp]
+            })
+            balances_df = pd.concat([balances_df, new_row], ignore_index=True)
         
         # Batch insert all records
-        if cash_data:
-            inserted_count = db.insert_account_balances(cash_data)
+        if not balances_df.empty:
+            # Insert using the new method
+            inserted_count = db.insert_dataframe(balances_df, 'accounts_balances')
             
     except Exception as e:
         raise

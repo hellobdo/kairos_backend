@@ -8,9 +8,12 @@ on:
       - 'analytics/broker_cash.py'
       - 'analytics/broker_executions.py'
       - 'utils/db_utils.py'
+      - 'utils/pandas_utils.py'
+      - 'utils/process_executions_utils.py'
       - 'indicators/helpers/column_utils.py'
       - 'indicators/*.py'
       - 'backtests/utils/backtest_functions.py'
+      - 'backtests/utils/process_executions.py'
       - 'tests/test_broker_cash.py'
       - 'tests/test_broker_executions.py'
       - 'tests/test_db_utils.py'
@@ -18,6 +21,9 @@ on:
       - 'tests/test_indicators.py'
       - 'tests/test_column_utils.py'
       - 'tests/test_backtest_functions.py'
+      - 'tests/test_process_executions.py'
+      - 'tests/test_pandas_utils.py'
+      - 'tests/test_process_executions_utils.py'
   pull_request:
     branches: [ main, master ]
     paths:
@@ -25,9 +31,12 @@ on:
       - 'analytics/broker_executions.py'
       - 'analytics/broker_cash.py'
       - 'utils/db_utils.py'
+      - 'utils/pandas_utils.py'
+      - 'utils/process_executions_utils.py'
       - 'indicators/helpers/column_utils.py'
       - 'indicators/*.py'
       - 'backtests/utils/backtest_functions.py'
+      - 'backtests/utils/process_executions.py'
       - 'tests/test_broker_cash.py'
       - 'tests/test_broker_executions.py'
       - 'tests/test_db_utils.py'
@@ -35,6 +44,9 @@ on:
       - 'tests/test_indicators.py'
       - 'tests/test_column_utils.py'
       - 'tests/test_backtest_functions.py'
+      - 'tests/test_process_executions.py'
+      - 'tests/test_pandas_utils.py'
+      - 'tests/test_process_executions_utils.py'
   workflow_dispatch:  # Allow manual triggering
 
 jobs:
@@ -50,7 +62,7 @@ jobs:
         id: set-test-modules
         run: |
           # Explicitly list the test modules
-          TEST_MODULES_JSON='["db_utils", "broker_cash", "ibkr_api", "broker_executions", "indicators", "column_utils", "backtest_functions"]'
+          TEST_MODULES_JSON='["db_utils", "broker_cash", "ibkr_api", "broker_executions", "indicators", "column_utils", "backtest_functions", "process_executions", "pandas_utils", "process_executions_utils"]'
           
           # Set output for the test job
           echo "test_modules=$TEST_MODULES_JSON" >> $GITHUB_OUTPUT

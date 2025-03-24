@@ -32,30 +32,30 @@ def create_cash_fixtures():
         'account_external_ID': ['U1234567', 'U7654321', 'U9999999']
     })
     
-    # Sample valid cash report data
+    # Sample valid cash report data - with lowercase column names
     fixtures['valid_cash_df'] = pd.DataFrame({
-        'ClientAccountID': ['U1234567', 'U7654321'],
-        'EndingCash': ['10000.50', '5000.25'],
-        'ToDate': ['2023-05-15', '2023-05-15']
+        'clientaccountid': ['U1234567', 'U7654321'],
+        'endingcash': ['10000.50', '5000.25'],
+        'todate': ['2023-05-15', '2023-05-15']
     })
     
     # Sample empty DataFrame
     fixtures['empty_df'] = pd.DataFrame()
     
-    # Sample invalid data (missing required columns)
+    # Sample invalid data (missing required columns) - with lowercase column names
     fixtures['missing_account_df'] = pd.DataFrame({
-        'EndingCash': ['10000.50'],
-        'ToDate': ['2023-05-15']
+        'endingcash': ['10000.50'],
+        'todate': ['2023-05-15']
     })
     
     fixtures['missing_cash_df'] = pd.DataFrame({
-        'ClientAccountID': ['U1234567'],
-        'ToDate': ['2023-05-15']
+        'clientaccountid': ['U1234567'],
+        'todate': ['2023-05-15']
     })
     
     fixtures['missing_date_df'] = pd.DataFrame({
-        'ClientAccountID': ['U1234567'],
-        'EndingCash': ['10000.50']
+        'clientaccountid': ['U1234567'],
+        'endingcash': ['10000.50']
     })
     
     return fixtures
@@ -138,8 +138,8 @@ class TestUpdateAccountsBalances(BaseTestCase):
         # Mock db.check_balance_exists to return False (record doesn't exist)
         mock_db.check_balance_exists.return_value = False
         
-        # Mock db.insert_account_balances to return the count of inserted records
-        mock_db.insert_account_balances.return_value = 2
+        # Mock db.insert_dataframe to return the count of inserted records
+        mock_db.insert_dataframe.return_value = 2
         
         # Call function
         result = update_accounts_balances(self.fixtures['valid_cash_df'])
@@ -148,7 +148,13 @@ class TestUpdateAccountsBalances(BaseTestCase):
         self.assertEqual(result, 2)
         mock_db.get_account_map.assert_called_once()
         self.assertEqual(mock_db.check_balance_exists.call_count, 2)  # Called for each row
-        mock_db.insert_account_balances.assert_called_once()
+        mock_db.insert_dataframe.assert_called_once()
+        
+        # Verify DataFrame was passed to insert_dataframe
+        args, kwargs = mock_db.insert_dataframe.call_args
+        self.assertIsInstance(args[0], pd.DataFrame)
+        self.assertEqual(args[1], 'accounts_balances')
+        self.assertEqual(len(args[0]), 2)  # DataFrame should have 2 rows
         
         self.log_case_result("Successful insert of valid data", True)
     
@@ -161,6 +167,7 @@ class TestUpdateAccountsBalances(BaseTestCase):
         # Verify
         self.assertEqual(result, 0)
         mock_db.get_account_map.assert_not_called()
+        mock_db.insert_dataframe.assert_not_called()
         
         self.log_case_result("Properly handles empty DataFrame", True)
     
@@ -171,6 +178,7 @@ class TestUpdateAccountsBalances(BaseTestCase):
         result = update_accounts_balances(self.fixtures['missing_account_df'])
         self.assertEqual(result, 0)
         mock_db.get_account_map.assert_not_called()
+        mock_db.insert_dataframe.assert_not_called()
         
         # Reset mock
         mock_db.reset_mock()
@@ -179,6 +187,7 @@ class TestUpdateAccountsBalances(BaseTestCase):
         result = update_accounts_balances(self.fixtures['missing_cash_df'])
         self.assertEqual(result, 0)
         mock_db.get_account_map.assert_not_called()
+        mock_db.insert_dataframe.assert_not_called()
         
         # Reset mock
         mock_db.reset_mock()
@@ -187,6 +196,7 @@ class TestUpdateAccountsBalances(BaseTestCase):
         result = update_accounts_balances(self.fixtures['missing_date_df'])
         self.assertEqual(result, 0)
         mock_db.get_account_map.assert_not_called()
+        mock_db.insert_dataframe.assert_not_called()
         
         self.log_case_result("Handles DataFrames with missing columns", True)
     
@@ -202,11 +212,11 @@ class TestUpdateAccountsBalances(BaseTestCase):
         # Capture stdout
         original_stdout = self.capture_stdout()
         
-        # Create test data with one row
+        # Create test data with one row - using lowercase column names
         test_data = pd.DataFrame({
-            'ClientAccountID': ['U1234567'],
-            'EndingCash': ['10000.50'],
-            'ToDate': ['2023-05-15']
+            'clientaccountid': ['U1234567'],
+            'endingcash': ['10000.50'],
+            'todate': ['2023-05-15']
         })
         
         # Call function
@@ -219,7 +229,7 @@ class TestUpdateAccountsBalances(BaseTestCase):
         self.assertEqual(result, 0)
         mock_db.get_account_map.assert_called_once()
         mock_db.check_balance_exists.assert_called_once()
-        mock_db.insert_account_balances.assert_not_called()
+        mock_db.insert_dataframe.assert_not_called()
         
         # Verify the skipped message was printed
         output = self.captured_output.get_value()
@@ -236,14 +246,14 @@ class TestUpdateAccountsBalances(BaseTestCase):
         # Mock db.check_balance_exists to return False (record doesn't exist)
         mock_db.check_balance_exists.return_value = False
         
-        # Make insert_account_balances raise an exception
-        mock_db.insert_account_balances.side_effect = sqlite3.Error("Simulated SQL error")
+        # Make insert_dataframe raise an exception
+        mock_db.insert_dataframe.side_effect = sqlite3.Error("Simulated SQL error")
         
-        # Create test data
+        # Create test data with lowercase column names
         test_data = pd.DataFrame({
-            'ClientAccountID': ['U1234567'],
-            'EndingCash': ['10000.50'],
-            'ToDate': ['2023-05-15']
+            'clientaccountid': ['U1234567'],
+            'endingcash': ['10000.50'],
+            'todate': ['2023-05-15']
         })
         
         # Call function - we expect the exception to propagate
@@ -251,6 +261,42 @@ class TestUpdateAccountsBalances(BaseTestCase):
             update_accounts_balances(test_data)
         
         self.log_case_result("Properly propagates database errors", True)
+    
+    @patch('analytics.broker_cash.db')
+    def test_dataframe_structure(self, mock_db):
+        """Test the structure of the DataFrame being sent to insert_dataframe"""
+        # Mock db.get_account_map
+        mock_db.get_account_map.return_value = self.fixtures['account_map_df']
+        
+        # Mock db.check_balance_exists to return False (record doesn't exist)
+        mock_db.check_balance_exists.return_value = False
+        
+        # Mock db.insert_dataframe to return a count
+        mock_db.insert_dataframe.return_value = 1
+        
+        # Create test data with one row - using lowercase column names
+        test_data = pd.DataFrame({
+            'clientaccountid': ['U1234567'],
+            'endingcash': ['10000.50'],
+            'todate': ['2023-05-15']
+        })
+        
+        # Call function
+        update_accounts_balances(test_data)
+        
+        # Get the DataFrame that was passed to insert_dataframe
+        args, kwargs = mock_db.insert_dataframe.call_args
+        df_arg = args[0]
+        
+        # Verify DataFrame structure
+        self.assertIsInstance(df_arg, pd.DataFrame)
+        self.assertEqual(len(df_arg), 1)
+        self.assertListEqual(list(df_arg.columns), ['account_ID', 'date', 'cash_balance', 'record_date'])
+        self.assertEqual(df_arg['account_ID'].iloc[0], 1)
+        self.assertEqual(df_arg['date'].iloc[0], '2023-05-15')
+        self.assertEqual(df_arg['cash_balance'].iloc[0], 10000.50)
+        
+        self.log_case_result("DataFrame has correct structure", True)
 
 class TestProcessAccountData(BaseTestCase):
     """Test cases for the process_account_data function"""
@@ -259,11 +305,11 @@ class TestProcessAccountData(BaseTestCase):
     @patch('analytics.broker_cash.get_ibkr_report')
     def test_successful_processing(self, mock_get_ibkr_report, mock_update_balances):
         """Test successful data processing flow"""
-        # Setup mock to return a valid DataFrame
+        # Setup mock to return a valid DataFrame with lowercase column names
         mock_df = pd.DataFrame({
-            'ClientAccountID': ['U1234567'],
-            'EndingCash': ['10000.50'],
-            'ToDate': ['2023-05-15']
+            'clientaccountid': ['U1234567'],
+            'endingcash': ['10000.50'],
+            'todate': ['2023-05-15']
         })
         mock_get_ibkr_report.return_value = mock_df
         
@@ -320,11 +366,11 @@ class TestProcessAccountData(BaseTestCase):
     @patch('analytics.broker_cash.get_ibkr_report')
     def test_no_new_data(self, mock_get_ibkr_report, mock_update_balances):
         """Test handling when no new data is inserted"""
-        # Setup mock to return a valid DataFrame
+        # Setup mock to return a valid DataFrame with lowercase column names
         mock_df = pd.DataFrame({
-            'ClientAccountID': ['U1234567'],
-            'EndingCash': ['10000.50'],
-            'ToDate': ['2023-05-15']
+            'clientaccountid': ['U1234567'],
+            'endingcash': ['10000.50'],
+            'todate': ['2023-05-15']
         })
         mock_get_ibkr_report.return_value = mock_df
         

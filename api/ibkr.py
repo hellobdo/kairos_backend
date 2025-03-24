@@ -126,6 +126,10 @@ def get_ibkr_report(token, query_id, report_type='generic'):
         
         if df is not False:
             print(f"Successfully retrieved {report_type} report with {len(df)} rows")
+            
+            # Normalize column names to lowercase for consistency
+            df.columns = df.columns.str.lower()
+            print("Column names normalized to lowercase")
         # No need for else block since get_ibkr_flex_data already prints error messages
         
         return df

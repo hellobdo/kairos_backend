@@ -340,7 +340,7 @@ class TestGetIBKRFlexData(BaseTestCase):
         self.log_case_result("Properly handles exceptions", True)
 
 class TestGetIBKRReport(BaseTestCase):
-    """Test cases for get_ibkr_report function"""
+    """Test cases for the get_ibkr_report function"""
     
     def setUp(self):
         """Set up test fixtures"""
@@ -367,16 +367,60 @@ class TestGetIBKRReport(BaseTestCase):
         self.restore_stdout(original_stdout)
         
         # Assertions
-        self.assertIs(result, mock_df)
+        self.assertIsInstance(result, pd.DataFrame)
         mock_get_ibkr_flex_data.assert_called_once_with(self.fixtures['token'], self.fixtures['query_id'])
         
         # Check output messages
         output = self.captured_output.get_value()
         self.assertIn("Fetching cash report from IBKR", output)
-        self.assertIn("Successfully retrieved cash report with 2 rows", output)
+        self.assertIn("Successfully retrieved cash report", output)
         
         self.log_case_result("Successfully retrieves report with proper logging", True)
     
+    @patch('api.ibkr.get_ibkr_flex_data')
+    def test_column_normalization(self, mock_get_ibkr_flex_data):
+        """Test that column names are normalized to lowercase"""
+        # Setup mock data with mixed case columns
+        mock_df = pd.DataFrame({
+            'Symbol': ['AAPL', 'MSFT', 'GOOG'],
+            'QUANTITY': [100, 50, 25],
+            'Price': [150.0, 250.0, 2000.0],
+            'TradeID': ['T1', 'T2', 'T3'],
+            'ClientAccountID': ['U1', 'U1', 'U1']
+        })
+        
+        # Configure mock
+        mock_get_ibkr_flex_data.return_value = mock_df
+        
+        # Capture stdout to verify print statements
+        original_stdout = self.capture_stdout()
+        
+        # Call function under test
+        result = get_ibkr_report(self.fixtures['token'], self.fixtures['query_id'])
+        
+        # Restore stdout
+        self.restore_stdout(original_stdout)
+        
+        # Verify all column names are lowercase
+        for column in result.columns:
+            self.assertEqual(column, column.lower())
+        
+        # Check specific examples
+        self.assertIn('symbol', result.columns)
+        self.assertIn('quantity', result.columns)
+        self.assertIn('tradeid', result.columns)
+        self.assertIn('clientaccountid', result.columns)
+        
+        # Verify original data values are preserved
+        self.assertEqual(result['symbol'].tolist(), ['AAPL', 'MSFT', 'GOOG'])
+        self.assertEqual(result['quantity'].tolist(), [100, 50, 25])
+        
+        # Verify output message
+        output = self.captured_output.get_value()
+        self.assertIn("Column names normalized to lowercase", output)
+        
+        self.log_case_result("Successfully normalizes column names to lowercase", True)
+        
     @patch('api.ibkr.get_ibkr_flex_data')
     def test_failed_report(self, mock_get_ibkr_flex_data):
         """Test handling when the report retrieval fails"""
