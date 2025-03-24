@@ -38,100 +38,106 @@ on:
   workflow_dispatch:  # Allow manual triggering
 
 jobs:
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      test_modules: ${{ steps.set-test-modules.outputs.test_modules }}
+    
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Set test modules
+        id: set-test-modules
+        run: |
+          # Explicitly list the test modules
+          TEST_MODULES_JSON='["db_utils", "broker_cash", "ibkr_api", "broker_executions", "indicators", "column_utils", "backtest_functions"]'
+          
+          # Set output for the test job
+          echo "test_modules=$TEST_MODULES_JSON" >> $GITHUB_OUTPUT
+          echo "Using test modules: $TEST_MODULES_JSON"
+
   test:
+    needs: setup
     runs-on: ubuntu-latest
     
     steps:
-    - uses: actions/checkout@v3
-    
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.10'
-        
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install pytest
-        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-        # Install any development dependencies
-        if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
-        
-    - name: Run db_utils tests
-      run: |
-        # Add current directory to Python path to find the tests package
-        python -m tests.test_db_utils
-      env:
-        PYTHONPATH: ${{ github.workspace }}
-        
-    - name: Run broker_cash module tests
-      run: |
-        # Add current directory to Python path to find the tests package
-        python -m tests.test_broker_cash
-      env:
-        # Set environment variables that match test expectations
-        IBKR_TOKEN_PAPER: "dummy_token_paper"
-        IBKR_QUERY_ID_CASH_PAPER: "dummy_query_paper" 
-        IBKR_TOKEN_LIVE: "dummy_token_live"
-        IBKR_QUERY_ID_CASH_LIVE: "dummy_query_live"
-        PYTHONPATH: ${{ github.workspace }}
-        
-    - name: Run IBKR API tests
-      run: |
-        # Add current directory to Python path to find the tests package
-        python -m tests.test_ibkr_api
-      env:
-        # Use dummy tokens for CI testing
-        IBKR_TOKEN_PAPER: "dummy_token_paper"
-        IBKR_QUERY_ID_CASH_PAPER: "dummy_query_paper"
-        PYTHONPATH: ${{ github.workspace }}
-
-    - name: Run broker_executions module tests
-      run: |
-        # Add current directory to Python path to find the tests package
-        python -m tests.test_broker_executions
-      env:
-        # Use dummy tokens for CI testing
-        IBKR_TOKEN_PAPER: "dummy_token_paper"
-        IBKR_QUERY_ID_TRADE_CONFIRMATION_PAPER: "dummy_query_paper"
-        IBKR_TOKEN_LIVE: "dummy_token_live"
-        IBKR_QUERY_ID_TRADE_CONFIRMATION_LIVE: "dummy_query_live"
-        PYTHONPATH: ${{ github.workspace }}
-        
-    - name: Run indicators tests
-      run: |
-        # Add current directory to Python path to find the tests package
-        python -m tests.test_indicators
-      env:
-        PYTHONPATH: ${{ github.workspace }}
-
-    - name: Run column_utils tests
-      run: |
-        # Add current directory to Python path to find the tests package
-        python -m tests.test_column_utils
-      env:
-        PYTHONPATH: ${{ github.workspace }}
-        
-    - name: Run backtest functions tests
-      run: |
-        # Add current directory to Python path to find the tests package
-        python -m tests.test_backtest_functions
-      env:
-        PYTHONPATH: ${{ github.workspace }}
-        
-    - name: Notify on failure
-      if: failure()
-      uses: actions/github-script@v6
-      with:
-        github-token: ${{ secrets.GITHUB_TOKEN }}
-        script: |
-          const { repo, owner } = context.repo;
-          const run_id = context.runId;
-          const run_url = `https://github.com/${owner}/${repo}/actions/runs/${run_id}`;
+      - uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
           
-          github.rest.issues.create({
-            owner,
-            repo,
-            title: 'Analytics modules tests failing in CI',
-            body: `Tests for the analytics modules are failing in the CI pipeline. [View the workflow run](${run_url}) for details.`
-          }); 
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          # Install any development dependencies
+          if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
+      
+      # Run each test module sequentially
+      - name: Run all tests
+        id: run_tests
+        run: |
+          # Get the list of test modules from the setup job
+          TEST_MODULES='${{ needs.setup.outputs.test_modules }}'
+          
+          # Remove brackets and quotes, split into an array
+          TEST_MODULES=$(echo $TEST_MODULES | tr -d '[]"' | tr ',' ' ')
+          
+          # Initialize failure tracking
+          FAILED_MODULES=""
+          FAILURE=false
+          
+          # Run each test module
+          for module in $TEST_MODULES; do
+            echo "::group::Running test module: $module"
+            if python -m tests.test_$module; then
+              echo "✅ Test module $module: SUCCESS"
+            else
+              echo "❌ Test module $module: FAILURE"
+              FAILED_MODULES="$FAILED_MODULES $module"
+              FAILURE=true
+            fi
+            echo "::endgroup::"
+          done
+          
+          # Output summary
+          echo "========== TEST SUMMARY =========="
+          if [ "$FAILURE" = true ]; then
+            echo "❌ Some tests failed: $FAILED_MODULES"
+            exit 1
+          else
+            echo "✅ All tests passed successfully!"
+          fi
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+          # Common test tokens
+          IBKR_TOKEN_PAPER: "dummy_token_paper"
+          IBKR_TOKEN_LIVE: "dummy_token_live"
+          IBKR_QUERY_ID_CASH_PAPER: "dummy_query_paper"
+          IBKR_QUERY_ID_CASH_LIVE: "dummy_query_live"
+          IBKR_QUERY_ID_TRADE_CONFIRMATION_PAPER: "dummy_query_paper"
+          IBKR_QUERY_ID_TRADE_CONFIRMATION_LIVE: "dummy_query_live"
+    
+  notify:
+    needs: test
+    runs-on: ubuntu-latest
+    if: failure()  # Only run if any of the test jobs failed
+    steps:
+      - name: Notify on failure
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const { repo, owner } = context.repo;
+            const run_id = context.runId;
+            const run_url = `https://github.com/${owner}/${repo}/actions/runs/${run_id}`;
+            
+            github.rest.issues.create({
+              owner,
+              repo,
+              title: `CI Tests Failed`,
+              body: `One or more tests failed in the CI pipeline.\n\n[View the workflow run](${run_url}) for details.`
+            }); 

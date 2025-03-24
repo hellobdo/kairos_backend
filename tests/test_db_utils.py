@@ -49,18 +49,19 @@ def create_module_fixtures():
         'BUY',       # side
         1,           # trade_id
         1,           # is_entry
-        0            # is_exit
+        0,           # is_exit
+        'MARKET'     # order_type
     )
     
     # Sample executions dataframe
     fixtures['executions_df'] = pd.DataFrame({
         'id': [1, 2, 3],
-        'accountId': ['U1234567', 'U1234567', 'U7654321'],
-        'trade_external_ID': ['T123456', 'T123457', 'T123458'],
+        'account_id': ['U1234567', 'U1234567', 'U7654321'],
+        'execution_external_id': ['T123456', 'T123457', 'T123458'],
         'symbol': ['AAPL', 'AAPL', 'MSFT'],
         'quantity': [100, -100, 50],
         'price': [150.50, 155.75, 250.25],
-        'netCashWithBillable': [15050.00, -15575.00, 12512.50],
+        'net_cash_with_billable': [15050.00, -15575.00, 12512.50],
         'execution_timestamp': ['2023-05-15;10:30:00', '2023-05-15;14:30:00', '2023-05-16;11:45:00'],
         'commission': [7.50, 7.50, 7.50],
         'date': ['2023-05-15', '2023-05-15', '2023-05-16'],
@@ -68,7 +69,9 @@ def create_module_fixtures():
         'side': ['BUY', 'SELL', 'BUY'],
         'trade_id': [1, 1, 2],
         'is_entry': [1, 0, 1],
-        'is_exit': [0, 1, 0]
+        'is_exit': [0, 1, 0],
+        'order_id': ['O123456', 'O123457', 'O123458'],
+        'order_type': ['MARKET', 'MARKET', 'LIMIT']
     })
     
     # Sample cash balances dataframe
@@ -278,7 +281,7 @@ class TestDatabaseUtils(BaseTestCase):
             mock_conn.cursor.assert_called_once()
             
             # Verify cursor operations
-            mock_cursor.execute.assert_called_with("SELECT trade_external_ID FROM executions")
+            mock_cursor.execute.assert_called_with("SELECT execution_external_id FROM executions")
             mock_cursor.fetchall.assert_called_once()
         
         self.log_case_result("get_existing_trade_external_ids returns correct data", True)
@@ -387,7 +390,7 @@ class TestDatabaseUtils(BaseTestCase):
             # Check if query contains correct SQL
             sql = mock_cursor.execute.call_args[0][0]
             self.assertIn("INSERT INTO executions", sql)
-            self.assertIn("VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", sql)
+            self.assertIn("VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", sql)
         
         self.log_case_result("insert_execution inserts correctly", True)
         
