@@ -9,7 +9,7 @@ and potential support/resistance levels.
 
 import numpy as np
 import pandas as pd
-from indicators.helpers.column_utils import normalize_ohlc_columns
+from indicators.helpers.column_utils import normalize_columns
 
 def calculate_indicator(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -22,7 +22,7 @@ def calculate_indicator(df: pd.DataFrame) -> pd.DataFrame:
         DataFrame with SMA12 column added and is_indicator flag
     """
     # Normalize column names to lowercase
-    df = normalize_ohlc_columns(df)
+    df = normalize_columns(df)
     
     # Ensure we have enough data points
     if len(df) < 12:

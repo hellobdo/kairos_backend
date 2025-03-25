@@ -12,7 +12,7 @@ def process_datetime_fields(df, datetime_column):
     
     Args:
         df (pandas.DataFrame): DataFrame containing a datetime column
-        datetime_column (str): Name of the datetime column to process (default: 'Date/Time')
+        datetime_column (str): Name of the datetime column to process
         
     Returns:
         pandas.DataFrame: DataFrame with processed date and time columns, sorted by execution_timestamp.

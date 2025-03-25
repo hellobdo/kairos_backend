@@ -5,6 +5,7 @@ import numpy as np
 from pathlib import Path
 import importlib.util
 from tests.utils.test_utils import BaseTestCase, print_summary
+import inspect
 
 class TestIndicators(BaseTestCase):
     """Test suite for checking indicator files"""
@@ -136,6 +137,80 @@ class TestIndicators(BaseTestCase):
             else:
                 self.non_compliant_indicators.append(f"{indicator_name} (missing calculate_indicator function)")
                 self.log_case_result(f"{indicator_name} has calculate_indicator function", False)
+    
+    def test_normalize_columns_call(self):
+        """Test that all indicator files call normalize_columns at the beginning of calculate_indicator"""
+        # Track indicators that comply and don't comply with this requirement
+        normalize_compliant = []
+        normalize_non_compliant = []
+        
+        for indicator_file in self.indicator_files:
+            indicator_name = indicator_file.stem
+            
+            # Log which file we're testing
+            print(f"Testing normalize_columns usage in: {indicator_name}")
+            
+            # Import the indicator module
+            spec = importlib.util.spec_from_file_location(indicator_name, indicator_file)
+            indicator = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(indicator)
+            
+            # Check if the module has a calculate_indicator function
+            if hasattr(indicator, 'calculate_indicator'):
+                # Get the source code of the calculate_indicator function
+                source_code = inspect.getsource(indicator.calculate_indicator)
+                
+                # Check if normalize_columns is imported
+                module_source = inspect.getsource(indicator)
+                normalize_imported = 'normalize_columns' in module_source
+                
+                # Check if normalize_columns is called at the beginning
+                function_lines = source_code.strip().split('\n')
+                
+                # Skip function definition and docstring
+                code_start_index = 0
+                for i, line in enumerate(function_lines):
+                    if i == 0:
+                        continue  # Skip function definition
+                    if line.strip().startswith('"""') or line.strip().startswith("'''"):
+                        # Skip until end of docstring
+                        for j in range(i + 1, len(function_lines)):
+                            if ('"""' in function_lines[j] and function_lines[i].strip().startswith('"""')) or \
+                               ("'''" in function_lines[j] and function_lines[i].strip().startswith("'''")):
+                                code_start_index = j + 1
+                                break
+                        break
+                    else:
+                        code_start_index = i
+                        break
+                
+                if code_start_index < len(function_lines):
+                    first_code_lines = [line.strip() for line in function_lines[code_start_index:code_start_index+5]]
+                    normalize_called_first = any('normalize_columns' in line and '=' in line for line in first_code_lines)
+                    
+                    if normalize_imported and normalize_called_first:
+                        normalize_compliant.append(indicator_name)
+                        self.log_case_result(f"{indicator_name} calls normalize_columns at the beginning", True)
+                    else:
+                        reason = "normalize_columns not imported" if not normalize_imported else "normalize_columns not called at beginning"
+                        normalize_non_compliant.append(f"{indicator_name} ({reason})")
+                        self.log_case_result(f"{indicator_name} calls normalize_columns at the beginning", False)
+                else:
+                    normalize_non_compliant.append(f"{indicator_name} (empty function body)")
+                    self.log_case_result(f"{indicator_name} calls normalize_columns at the beginning", False)
+            else:
+                normalize_non_compliant.append(f"{indicator_name} (missing calculate_indicator function)")
+                self.log_case_result(f"{indicator_name} calls normalize_columns at the beginning", False)
+        
+        # Print summary of normalize_columns compliance
+        print("\nIndicators that properly call normalize_columns first:")
+        for indicator in normalize_compliant:
+            print(f"✓ {indicator}")
+        
+        if normalize_non_compliant:
+            print("\nIndicators that don't properly call normalize_columns first:")
+            for indicator in normalize_non_compliant:
+                print(f"✗ {indicator}")
     
     def tearDown(self):
         """Print summary of compliant and non-compliant indicators"""

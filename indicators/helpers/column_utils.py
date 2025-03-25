@@ -1,6 +1,6 @@
 import pandas as pd
 
-def normalize_ohlc_columns(df: pd.DataFrame) -> pd.DataFrame:
+def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
     """
     Standardize column names by converting them to lowercase.
     

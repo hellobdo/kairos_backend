@@ -33,8 +33,9 @@ def insert_executions_to_db(df):
             'date': df['date'],
             'time_of_day': df['time_of_day'],
             'trade_id': df['trade_id'],
-            'is_entry': df['is_entry'],
-            'is_exit': df['is_exit']
+            'is_entry': df['is_entry'].astype(int),
+            'is_exit': df['is_exit'].astype(int),
+            'net_cash_with_billable': df['quantity'] * df['price'] + df['commission']
         })
         
         # Add run_id only if it exists in the DataFrame
