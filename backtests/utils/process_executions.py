@@ -123,63 +123,98 @@ def process_csv(csv_path, run_id=None):
     
     Args:
         csv_path (str): Path to the CSV file
+        run_id (str, optional): ID for the backtest run
         
     Returns:
-        pandas.DataFrame: Processed DataFrame, or None if CSV reading failed
+        bool: True if processing and database insertion succeeded, False otherwise
     """
     print(f"Processing CSV file: {csv_path}")
     
     # Step 1: Read CSV into DataFrame
-    df = csv_to_dataframe(csv_path)
-    
-    # Check if CSV loading was successful
-    if df is None:
-        # No need to print another error message as csv_to_dataframe already did
-        return None
-    
-    print(f"CSV loaded successfully. Shape: {df.shape}")
+    try:
+        df = csv_to_dataframe(csv_path)
+        
+        # Check if CSV loading was successful
+        if df is None:
+            # No need to print another error message as csv_to_dataframe already did
+            return False
+        
+        print(f"CSV loaded successfully. Shape: {df.shape}")
+    except Exception as e:
+        print(f"Error loading CSV file: {e}")
+        return False
     
     try:
         # Step 2: Drop unnecessary columns
         df = drop_columns(df)
         print("Columns dropped successfully")
+    except Exception as e:
+        print(f"Error dropping columns: {e}")
+        return False
 
+    try:
+        # Step 3: Clean empty rows
         df = clean_empty_rows(df, 'filled_quantity')
+        print("Empty rows cleaned successfully")
+    except Exception as e:
+        print(f"Error cleaning empty rows: {e}")
+        return False
 
-        # Step 3: Convert numeric fields
+    try:
+        # Step 4: Convert numeric fields
         numeric_fields = ['filled_quantity', 'price', 'trade_cost']
         df = convert_to_numeric(df, numeric_fields)
         print("Numeric conversion successful")
-        
-        # Step 4: Process date and time fields
+    except Exception as e:
+        print(f"Error converting numeric fields: {e}")
+        return False
+    
+    try:    
+        # Step 5: Process date and time fields
         # This also validates execution_timestamp and sorts the DataFrame
         df = process_datetime_fields(df, 'time')
         if df.empty:
             print("WARNING: process_datetime_fields returned an empty DataFrame")
-            return pd.DataFrame()
+            return False
         
         print("Datetime processing successful")
+    except Exception as e:
+        print(f"Error processing datetime fields: {e}")
+        return False
 
-
-        # Renaming quantity field for compatibility with identify_trade_ids
+    try:
+        # Step 6: Rename quantity field for compatibility with identify_trade_ids
         df = df.rename(columns={
             'filled_quantity': 'quantity', 
             })
+        print("Column renaming successful")
+    except Exception as e:
+        print(f"Error renaming columns: {e}")
+        return False
 
+    try:
+        # Step 7: Identify trade IDs
         df_executions_with_trade_ids = identify_trade_ids(df)
-
+        print("Trade IDs identification successful")
+        
+        # Step 8: Add run_id if provided
         if run_id is not None:
-            df['run_id'] = run_id
+            df_executions_with_trade_ids['run_id'] = run_id
+            print(f"Added run_id: {run_id}")
+    except Exception as e:
+        print(f"Error in trade ID identification: {e}")
+        return False
 
-        inserted = insert_executions_to_db(df_executions_with_trade_ids, run_id)
-
+    try:
+        # Step 9: Insert into database
+        inserted = insert_executions_to_db(df_executions_with_trade_ids)
+        
         if inserted:
             print(f"Updated database with {inserted} new executions for {run_id} backtest")
             return True
         else:
             print(f"No new executions inserted for {run_id} backtest")
             return False
-        
     except Exception as e:
-        print(f"Error processing CSV: {e}")
+        print(f"Error during database insertion: {e}")
         return False
