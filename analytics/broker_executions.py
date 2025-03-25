@@ -4,6 +4,8 @@ from dotenv import load_dotenv
 from datetime import datetime
 from api.ibkr import get_ibkr_report
 from utils.db_utils import DatabaseManager
+from utils.pandas_utils import convert_to_numeric
+from utils.process_executions_utils import process_datetime_fields,identify_trade_ids
 
 # Initialize database manager
 db = DatabaseManager()
@@ -38,113 +40,24 @@ def process_ibkr_data(df):
         return processed_df
     
     # Convert numeric fields
-    numeric_fields = ['Quantity', 'Price', 'NetCashWithBillable', 'Commission']
-    for field in numeric_fields:
-        if field in processed_df.columns:
-            processed_df[field] = pd.to_numeric(processed_df[field], errors='coerce')
+    numeric_fields = ['quantity', 'price', 'netcashwithbillable', 'commission']
+    processed_df = convert_to_numeric(processed_df, numeric_fields)
     
-    # Process date and time fields
-    if 'Date/Time' in processed_df.columns:
-        # Add execution_timestamp (rename of Date/Time)
-        processed_df['execution_timestamp'] = processed_df['Date/Time']
-        
-        # Example format for debugging if available
-        if not processed_df.empty:
-            print(f"Example Date/Time format: {processed_df['Date/Time'].iloc[0]}")
-        
-        try:
-            # Extract date and time components (format: YYYY-MM-DD;HH:MM:SS)
-            processed_df[['date', 'time_of_day']] = processed_df['Date/Time'].str.split(';', n=1, expand=True)
-            print("Successfully extracted date and time components")
-        except Exception as e:
-            print(f"Error splitting Date/Time: {e}")
-            processed_df['date'] = processed_df['Date/Time']
-            processed_df['time_of_day'] = ''
+    # Process date and time fields using the utility function
+    # This also validates execution_timestamp and sorts the DataFrame
+    processed_df = process_datetime_fields(processed_df, 'date/time')
+    
+    # If process_datetime_fields returned an empty DataFrame, return it
+    if processed_df.empty:
+        return processed_df
     
     # Determine trade side from quantity
-    if 'Quantity' in processed_df.columns:
-        processed_df['side'] = processed_df['Quantity'].apply(
-            lambda x: 'BUY' if pd.to_numeric(x, errors='coerce') > 0 else 'SELL'
+    if 'quantity' in processed_df.columns:
+        processed_df['side'] = processed_df['quantity'].apply(
+            lambda x: 'buy' if pd.to_numeric(x, errors='coerce') > 0 else 'sell'
         )
     
-    # Check for execution_timestamp and sort
-    if 'execution_timestamp' not in processed_df.columns:
-        print("ERROR: 'execution_timestamp' field is missing")
-        return pd.DataFrame()
-    
-    # Sort the data by execution_timestamp
-    return processed_df.sort_values(by='execution_timestamp')
-
-def identify_trade_ids(df):
-    """
-    Assign trade_id based on open positions per symbol.
-    
-    Args:
-        df (pandas.DataFrame): Processed DataFrame from process_ibkr_data
-        
-    Returns:
-        pandas.DataFrame: DataFrame with trade_id and position tracking fields added
-    """
-    # Make a copy to avoid modifying the original
-    trades_df = df.copy()
-    
-    # Initialize new columns
-    trades_df['trade_id'] = None
-    trades_df['open_volume'] = 0
-    trades_df['is_entry'] = False
-    trades_df['is_exit'] = False
-    
-    try:
-        # Get current state from database
-        current_trade_id = db.get_max_trade_id()
-        existing_positions = db.get_open_positions()
-        
-        # Initialize positions from database state
-        open_positions = {pos[0]: pos[1] for pos in existing_positions}  # {symbol: current_volume}
-        position_trade_ids = {pos[0]: pos[2] for pos in existing_positions}  # {symbol: current_trade_id}
-        
-        print("\nExisting open positions loaded from database:")
-        for symbol, qty in open_positions.items():
-            print(f"  {symbol}: {qty} (Trade ID: {position_trade_ids[symbol]})")
-            
-    except Exception as e:
-        print(f"Warning: Could not get state from database: {e}")
-        current_trade_id = 0
-        open_positions = {}
-        position_trade_ids = {}
-    
-    # Process each execution
-    for idx, row in trades_df.iterrows():
-        symbol = row['Symbol']
-        quantity = row['Quantity']
-        
-        # Initialize symbol tracking if not exists
-        if symbol not in open_positions:
-            open_positions[symbol] = 0
-            position_trade_ids[symbol] = None
-        
-        # Get previous position value
-        prev_position = open_positions[symbol]
-        
-        # Update position
-        open_positions[symbol] += quantity
-        
-        # Check if we're starting a new position (entry)
-        if prev_position == 0 and open_positions[symbol] != 0:
-            current_trade_id += 1
-            position_trade_ids[symbol] = current_trade_id
-            trades_df.at[idx, 'is_entry'] = True
-        
-        # Assign trade_id from the current position's trade
-        trades_df.at[idx, 'trade_id'] = position_trade_ids[symbol]
-        trades_df.at[idx, 'open_volume'] = open_positions[symbol]
-        
-        # Check if position was closed (exit)
-        if prev_position != 0 and open_positions[symbol] == 0:
-            trades_df.at[idx, 'is_exit'] = True
-            position_trade_ids[symbol] = None
-    
-    return trades_df
+    return processed_df
 
 def insert_executions_to_db(df):
     """
@@ -156,45 +69,39 @@ def insert_executions_to_db(df):
     Returns:
         int: Number of records inserted
     """
-    records_inserted = 0
+    if df.empty:
+        return 0
     
     try:
-        for _, row in df.iterrows():
-            # Convert boolean fields to integers for database storage
-            is_entry_int = 1 if row.get('is_entry', False) else 0
-            is_exit_int = 1 if row.get('is_exit', False) else 0
-            
-            # Prepare execution data as a tuple
-            execution_data = (
-                row.get('ClientAccountID', ''),  # account_id
-                row.get('TradeID', ''),          # execution_external_id 
-                row.get('OrderID', ''),          # order_id
-                row.get('Symbol', ''),           # symbol
-                row.get('Quantity', 0),          # quantity
-                row.get('Price', 0),             # price
-                row.get('NetCashWithBillable', 0), # net_cash_with_billable
-                row.get('execution_timestamp', ''), # execution_timestamp
-                row.get('Commission', 0),        # commission
-                row.get('date', ''),             # date
-                row.get('time_of_day', ''),      # time_of_day
-                row.get('side', ''),             # side
-                row.get('trade_id'),             # trade_id
-                is_entry_int,                    # is_entry
-                is_exit_int,                      # is_exit
-                row.get('OrderType', '')          # order_type
-            )
-            
-            # Insert the execution
-            db.insert_execution(execution_data)
-            records_inserted += 1
+        # Create a copy of the DataFrame and prepare for database insertion
+        executions_df = pd.DataFrame({
+            'account_id': df['clientaccountid'],
+            'execution_external_id': df['tradeid'],
+            'order_id': df['orderid'],
+            'symbol': df['symbol'],
+            'quantity': df['quantity'],
+            'price': df['price'],
+            'net_cash_with_billable': df['netcashwithbillable'],
+            'execution_timestamp': df['execution_timestamp'],
+            'commission': df['commission'],
+            'date': df['date'],
+            'time_of_day': df['time_of_day'],
+            'side': df['side'],
+            'trade_id': df['trade_id'],
+            'is_entry': df['is_entry'].astype(int),
+            'is_exit': df['is_exit'].astype(int),
+            'order_type': df['ordertype']
+        })
+        
+        # Insert the DataFrame into the database
+        records_inserted = db.insert_dataframe(executions_df, 'executions')
         
         print(f"Successfully inserted {records_inserted} records into executions table")
+        return records_inserted
         
     except Exception as e:
-        print(f"Error inserting data into database: {e}")
+        print(f"Error inserting executions into database: {e}")
         raise
-    
-    return records_inserted
 
 def process_account_data(token, query_id, account_type="paper"):
     """

@@ -216,46 +216,34 @@ class TestDatabaseUtils(BaseTestCase):
         self.log_case_result("get_account_map returns correct data", True)
     
     def test_check_balance_exists(self):
-        """Test checking if balance exists"""
-        # Mock fetch_df to simulate record exists
-        self.db_manager.fetch_df = MagicMock(return_value=pd.DataFrame({'1': [1]}))
+        """Test checking if a balance record exists"""
+        # Prepare test data
+        account_id = 1
+        date = '2023-05-15'
+        
+        # Mock record_exists
+        self.db_manager.record_exists = MagicMock(return_value=True)
         
         # Call the method
-        result = self.db_manager.check_balance_exists(1, '2023-05-15')
+        result = self.db_manager.check_balance_exists(account_id, date)
         
         # Verify
         self.assertTrue(result)
-        self.db_manager.fetch_df.assert_called_once()
+        self.db_manager.record_exists.assert_called_once_with(
+            'accounts_balances', {'account_ID': account_id, 'date': date}
+        )
         
-        # Mock fetch_df to simulate record doesn't exist
-        self.db_manager.fetch_df = MagicMock(return_value=pd.DataFrame())
+        # Test when record doesn't exist
+        self.db_manager.record_exists.reset_mock()
+        self.db_manager.record_exists.return_value = False
         
         # Call the method
-        result = self.db_manager.check_balance_exists(1, '2023-05-15')
+        result = self.db_manager.check_balance_exists(account_id, date)
         
         # Verify
         self.assertFalse(result)
         
         self.log_case_result("check_balance_exists works correctly", True)
-    
-    def test_insert_account_balances(self):
-        """Test inserting account balances"""
-        # Mock execute_many
-        self.db_manager.execute_many = MagicMock(return_value=2)
-        
-        # Call the method
-        result = self.db_manager.insert_account_balances(self.fixtures['cash_data'])
-        
-        # Verify
-        self.assertEqual(result, 2)
-        self.db_manager.execute_many.assert_called_once()
-        
-        # Verify SQL contains expected parts
-        sql = self.db_manager.execute_many.call_args[0][0]
-        self.assertIn("INSERT INTO accounts_balances", sql)
-        self.assertIn("VALUES (?, ?, ?, ?)", sql)
-        
-        self.log_case_result("insert_account_balances inserts correctly", True)
     
     def test_get_existing_trade_external_ids(self):
         """Test getting existing trade external IDs"""
@@ -361,39 +349,6 @@ class TestDatabaseUtils(BaseTestCase):
         
         self.log_case_result("get_open_positions returns correct data", True)
     
-    def test_insert_execution(self):
-        """Test inserting execution"""
-        # Create a context manager mock to simulate the self.connection() behavior
-        mock_conn = MagicMock()
-        mock_cursor = MagicMock()
-        mock_cursor.rowcount = 1
-        
-        # Setup the connection context
-        with patch.object(self.db_manager, 'connection') as mock_cm:
-            # When connection is called, return our mock connection
-            mock_cm.return_value.__enter__.return_value = mock_conn
-            mock_conn.cursor.return_value = mock_cursor
-            
-            # Call the method
-            result = self.db_manager.insert_execution(self.fixtures['execution_data'])
-            
-            # Verify
-            self.assertEqual(result, 1)
-            
-            # Verify connection was used correctly
-            mock_cm.assert_called_once()
-            mock_conn.cursor.assert_called_once()
-            
-            # Verify cursor operations
-            mock_cursor.execute.assert_called_once()
-            
-            # Check if query contains correct SQL
-            sql = mock_cursor.execute.call_args[0][0]
-            self.assertIn("INSERT INTO executions", sql)
-            self.assertIn("VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", sql)
-        
-        self.log_case_result("insert_execution inserts correctly", True)
-        
     def test_get_backtest_runs(self):
         """Test getting backtest runs with various filtering options"""
         # Test 1: Test with dataframe return and no filters
@@ -534,6 +489,65 @@ class TestDatabaseUtils(BaseTestCase):
             mock_conn.commit.assert_called_once()
         
         self.log_case_result("save_to_backtest_runs inserts data correctly", True)
+        
+    def test_insert_dataframe(self):
+        """Test inserting a DataFrame into a database table"""
+        # Get test DataFrame
+        test_df = self.fixtures['executions_df']
+        
+        # Create mock connection
+        mock_conn = MagicMock()
+        
+        # Mock pandas to_sql method
+        with patch('pandas.DataFrame.to_sql') as mock_to_sql:
+            # Setup the connection context
+            with patch.object(self.db_manager, 'connection') as mock_cm:
+                # When connection is called, return our mock connection
+                mock_cm.return_value.__enter__.return_value = mock_conn
+                
+                # Call the method
+                result = self.db_manager.insert_dataframe(test_df, 'executions')
+                
+                # Verify the result
+                self.assertEqual(result, len(test_df))
+                
+                # Verify connection was used correctly
+                mock_cm.assert_called_once()
+                
+                # Verify pandas to_sql was called with correct args
+                mock_to_sql.assert_called_once()
+                args, kwargs = mock_to_sql.call_args
+                
+                # Check args
+                self.assertEqual(args[0], 'executions')  # table name
+                self.assertEqual(args[1], mock_conn)     # connection
+                
+                # Check kwargs
+                self.assertEqual(kwargs['if_exists'], 'append')
+                self.assertEqual(kwargs['index'], False)
+                self.assertEqual(kwargs['method'], 'multi')
+        
+        # Test error handling
+        with patch.object(self.db_manager, 'connection') as mock_cm:
+            mock_cm.return_value.__enter__.return_value = mock_conn
+            
+            # Mock pandas to_sql to raise exception
+            with patch('pandas.DataFrame.to_sql', side_effect=Exception("Test error")):
+                # Setup capture to check error message
+                original_stdout = self.capture_stdout()
+                
+                # Call method and verify exception is raised
+                with self.assertRaises(Exception):
+                    self.db_manager.insert_dataframe(test_df, 'executions')
+                
+                # Restore stdout
+                self.restore_stdout(original_stdout)
+                
+                # Verify error message
+                output = self.captured_output.get_value()
+                self.assertIn("Error inserting DataFrame into executions", output)
+        
+        self.log_case_result("insert_dataframe works correctly", True)
 
 
 if __name__ == '__main__':

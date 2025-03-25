@@ -88,14 +88,6 @@ class DatabaseManager:
             'date': date
         })
     
-    def insert_account_balances(self, balances_data):
-        """Insert account balance records"""
-        return self.execute_many("""
-            INSERT INTO accounts_balances 
-            (account_ID, date, cash_balance, record_date) 
-            VALUES (?, ?, ?, ?)
-        """, balances_data)
-    
     def get_existing_trade_external_ids(self):
         """Get set of existing trade_external_ids"""
         with self.connection() as conn:
@@ -122,20 +114,6 @@ class DatabaseManager:
             cursor = conn.cursor()
             cursor.execute(query)
         return cursor.fetchall()
-    
-    def insert_execution(self, execution_data):
-        """Insert a single execution record"""
-        query = """
-            INSERT INTO executions (
-                account_id, execution_external_id, order_id, symbol, quantity, 
-                price, net_cash_with_billable, execution_timestamp, commission,
-                date, time_of_day, side, trade_id, is_entry, is_exit, order_type
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """
-        with self.connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute(query, execution_data)
-            return cursor.rowcount
     
     def save_to_backtest_runs(self, data):
         """
@@ -221,3 +199,33 @@ class DatabaseManager:
             cursor = conn.cursor()
             cursor.execute(query, params)
             return [dict(row) for row in cursor.fetchall()]
+            
+    def insert_dataframe(self, df, table_name, if_exists='append', index=False, **kwargs):
+        """
+        Insert a pandas DataFrame into a database table.
+        
+        Args:
+            df (pandas.DataFrame): DataFrame to insert
+            table_name (str): Name of the target database table
+            if_exists (str): How to behave if the table already exists:
+                             'fail', 'replace', or 'append' (default: 'append')
+            index (bool): Whether to include the DataFrame's index (default: False)
+            **kwargs: Additional arguments to pass to pandas.to_sql
+            
+        Returns:
+            int: Number of records inserted
+        """
+        try:
+            with self.connection() as conn:
+                df.to_sql(
+                    table_name, 
+                    conn, 
+                    if_exists=if_exists,
+                    index=index,
+                    method='multi',
+                    **kwargs
+                )
+                return len(df)
+        except Exception as e:
+            print(f"Error inserting DataFrame into {table_name}: {e}")
+            raise

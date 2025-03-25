@@ -136,7 +136,7 @@ The tests are organized into the following classes:
 
 ### `test_broker_executions.py`
 
-This file tests the functionality in `analytics/executions.py`, which handles trade execution data processing from IBKR and manages trade identification and position tracking.
+This file tests the functionality in `analytics/broker_executions.py`, which handles trade execution data processing from IBKR and manages trade execution processing and database insertion.
 
 #### Test Classes and Organization
 
@@ -144,9 +144,8 @@ The tests are organized into the following classes:
 
 1. **`TestExecutionsImports`**: Tests basic imports and module setup
 2. **`TestProcessIBKRData`**: Tests the IBKR data processing function
-3. **`TestIdentifyTradeIds`**: Tests trade identification and position tracking
-4. **`TestInsertExecutionsToDB`**: Tests database insertion functionality
-5. **`TestProcessAccountData`**: Tests the end-to-end processing workflow
+3. **`TestInsertExecutionsToDB`**: Tests database insertion functionality
+4. **`TestProcessAccountData`**: Tests the end-to-end processing workflow
 
 #### Tested Functions
 
@@ -155,30 +154,13 @@ The tests are organized into the following classes:
   - Tests that already processed executions are filtered out
   - Verifies only new executions proceed to further processing
 
-- **Case: Numeric field conversion**
-  - Tests conversion of string values to appropriate numeric types
-  - Verifies proper data typing for calculations
-
-- **Case: Date/time processing**
-  - Tests conversion of date/time string representations to proper datetime objects
-  - Verifies timezone handling and format consistency
+- **Case: Process datetime fields call**
+  - Tests that the process_datetime_fields utility function is called correctly
+  - Verifies proper parameter passing and integration
 
 - **Case: Trade side determination**
   - Tests correct identification of BUY/SELL based on quantity sign
   - Verifies proper side assignment for position tracking
-
-##### `identify_trade_ids(df)`
-- **Case: New position opening**
-  - Tests assignment of new trade IDs for initial positions
-  - Verifies trade IDs are unique and properly incremented
-
-- **Case: Position closing**
-  - Tests matching of closing executions with existing positions
-  - Verifies correct trade ID assignment for exit executions
-
-- **Case: Multiple symbols handling**
-  - Tests position tracking across different symbols simultaneously
-  - Verifies independent tracking per symbol
 
 ##### `insert_executions_to_db(df)`
 - **Case: Successful insertion**
@@ -459,6 +441,152 @@ The tests are organized into the following classes:
 - **Case: Sell side**
   - Tests calculation of stop loss and take profit levels for sell trades
   - Verifies correct placement of stop above and target below entry price
+
+### `test_process_executions.py`
+
+This file tests the functionality in `backtests/utils/process_executions.py`, which provides utilities for processing execution data, particularly CSV file handling for backtests.
+
+#### Test Classes and Organization
+
+The tests are organized into the following classes:
+
+1. **`TestProcessExecutionsImports`**: Tests basic imports and module setup
+2. **`TestDropColumns`**: Tests the column dropping functionality 
+
+#### Tested Functions
+
+##### `drop_columns(df)`
+- **Case: Dropping existing columns**
+  - Tests removal of specific predefined columns from a DataFrame
+  - Verifies columns like 'strategy', 'status', 'multiplier', etc. are successfully dropped
+  - Ensures other columns remain intact
+  - Confirms proper diagnostic messages are output
+
+- **Case: Handling non-existent columns**
+  - Tests behavior when specified columns don't exist in the DataFrame
+  - Verifies the DataFrame remains unchanged
+  - Ensures proper diagnostic messages are output
+
+##### `process_csv(csv_file)`
+- **Case: Successful processing**
+  - Tests the full processing pipeline that reads a CSV file with columns to drop, verifies that unwanted columns are removed, and confirms the result is a properly formatted DataFrame.
+  - **Case: Processing without columns to drop**: Tests processing a CSV file that doesn't contain any of the predefined columns to drop, ensuring the function handles this case correctly.
+  - **Case: CSV loading failure**: Tests that when CSV loading fails (e.g., file not found), the function returns None and properly logs the error message.
+
+### `test_process_executions_utils.py`
+
+This file tests the functionality in `utils/process_executions_utils.py`, which provides utility functions for processing execution data, particularly date/time field handling and trade identification.
+
+#### Test Classes and Organization
+
+The tests are organized into the following classes:
+
+1. **`TestProcessExecutionsUtilsImports`**: Tests basic imports and module setup
+2. **`TestProcessDatetimeFields`**: Tests the date/time processing functionality
+3. **`TestIdentifyTradeIds`**: Tests trade identification and position tracking functionality
+
+#### Tested Functions
+
+##### `process_datetime_fields(df, datetime_column='Date/Time')`
+- **Case: Successful processing**
+  - Tests successful splitting of date/time values in the specified format (YYYY-MM-DD;HH:MM:SS)
+  - Verifies correct extraction of date and time components into separate columns
+  - Confirms creation of the execution_timestamp field as a copy of the input column
+  - Ensures the original DataFrame is not modified
+
+- **Case: Invalid format handling**
+  - Tests behavior when date/time values are not in the expected format
+  - Verifies graceful fallback where the date field gets the full date/time string
+  - Confirms the time_of_day field is set to an empty string when parsing fails
+  - Ensures proper error messages are logged
+
+- **Case: Missing column handling**
+  - Tests behavior when the specified date/time column doesn't exist in the DataFrame
+  - Verifies the function returns the original DataFrame unchanged
+  - Confirms appropriate warning messages are logged
+
+- **Case: Custom column name**
+  - Tests using a different column name than the default 'Date/Time'
+  - Verifies the function works correctly with any specified column
+  - Confirms the correct column is used for extracting date/time components
+
+##### `identify_trade_ids(df, db_validation=True)`
+- **Case: DB validation mode**
+  - Tests behavior when using database validation (db_validation=True)
+  - Verifies correct handling of current trade IDs and open positions from database
+  - Tests proper assignment of trade IDs and position tracking
+  
+- **Case: Backtest mode**
+  - Tests behavior when skipping database validation (db_validation=False)
+  - Verifies trade IDs are assigned sequentially starting from 1
+  - Tests correct position tracking without database dependency
+
+- **Case: Multiple trades handling**
+  - Tests handling multiple sequential trades for the same symbol
+  - Verifies proper assignment of new trade IDs for each new position
+  - Tests entry and exit identification for consecutive trades
+
+- **Case: Database None value handling**
+  - Tests graceful handling when database returns None values
+  - Verifies appropriate default values are used
+  - Ensures function continues to work correctly with missing database data
+
+### `test_pandas_utils.py`
+
+This file tests the functionality in `utils/pandas_utils.py`, which provides utility functions for pandas DataFrame operations.
+
+#### Test Classes and Organization
+
+The tests are organized into the following classes:
+
+1. **`TestPandasUtilsImports`**: Tests basic imports and module setup
+2. **`TestConvertToNumeric`**: Tests the numeric conversion functionality
+3. **`TestCsvToDataFrame`**: Tests CSV file conversion to pandas DataFrame
+
+#### Tested Functions
+
+##### `convert_to_numeric(df, numeric_fields)`
+- **Case: Basic conversion**
+  - Tests conversion of string columns to numeric types
+  - Verifies proper handling of integer, float, and mixed columns
+  - Confirms non-numeric columns remain unchanged
+  - Ensures numeric type conversion is correctly applied
+
+- **Case: Missing columns**
+  - Tests behavior when specified columns don't exist in the DataFrame
+  - Verifies function gracefully skips non-existent columns
+  - Ensures existing columns are still properly converted
+
+- **Case: Empty DataFrame**
+  - Tests handling of empty DataFrames
+  - Verifies function returns empty DataFrame without errors
+  - Confirms column structure is preserved
+
+- **Case: No fields to convert**
+  - Tests behavior when no fields are specified for conversion
+  - Verifies original DataFrame is returned unchanged
+
+- **Case: All invalid values**
+  - Tests conversion of columns with all non-numeric values
+  - Verifies proper NaN conversion when all values are invalid
+  - Confirms column type is still changed to numeric
+
+- **Case: Already numeric columns**
+  - Tests behavior with columns that are already numeric types
+  - Verifies no changes are made to already-numeric columns
+  - Ensures original values are preserved
+
+##### `csv_to_dataframe(csv_path)`
+- **Case: Valid CSV file**
+  - Tests reading a valid CSV file into a pandas DataFrame
+  - Verifies correct conversion of CSV structure to DataFrame
+  - Ensures column names and data values are properly preserved
+  - Confirms row count and column count match expected values
+
+- **Case: Error handling**
+  - Tests behavior when file doesn't exist or is inaccessible
+  - Verifies function returns None when errors occur
+  - Confirms appropriate error messages are output for debugging
 
 ## Test Framework
 
