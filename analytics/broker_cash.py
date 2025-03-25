@@ -37,7 +37,7 @@ def update_accounts_balances(df):
         current_timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         
         # Create empty DataFrame with the required columns
-        balances_df = pd.DataFrame(columns=['account_ID', 'date', 'cash_balance', 'record_date'])
+        balances_df = pd.DataFrame(columns=['account_id', 'date', 'cash_balance', 'record_date'])
         
         # Process each valid row
         for _, row in df.iterrows():
@@ -46,12 +46,12 @@ def update_accounts_balances(df):
                 continue
                 
             # Find matching account ID
-            matching_accounts = account_map_df[account_map_df['account_external_ID'] == str(row['clientaccountid'])]
+            matching_accounts = account_map_df[account_map_df['account_external_id'] == str(row['clientaccountid'])]
             if matching_accounts.empty:
                 continue
                 
             # Extract and validate data
-            db_account_id = int(matching_accounts['ID'].iloc[0])
+            db_account_id = int(matching_accounts['id'].iloc[0])
             cash_balance = float(row['endingcash'])
             date_value = str(row['todate'])[:10]  # Get only YYYY-MM-DD part
             
@@ -66,7 +66,7 @@ def update_accounts_balances(df):
             
             # Add to DataFrame directly
             new_row = pd.DataFrame({
-                'account_ID': [db_account_id],
+                'account_id': [db_account_id],
                 'date': [date_value],
                 'cash_balance': [cash_balance],
                 'record_date': [current_timestamp]

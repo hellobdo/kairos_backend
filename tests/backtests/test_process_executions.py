@@ -7,6 +7,7 @@ import os
 import tempfile
 import pandas as pd
 from unittest.mock import patch, MagicMock
+import numpy as np
 
 # Import our test utilities from the tests package
 from tests import BaseTestCase, print_summary, MockDatabaseConnection
@@ -572,10 +573,26 @@ class TestInsertExecutionsToDb(BaseTestCase):
         required_columns = [
             'execution_timestamp', 'identifier', 'symbol',
             'side', 'type', 'price', 'quantity', 'trade_cost',
-            'date', 'time_of_day', 'trade_id', 'is_entry', 'is_exit'
+            'date', 'time_of_day', 'trade_id', 'is_entry', 'is_exit', 
+            'net_cash_with_billable'
         ]
         for col in required_columns:
             self.assertIn(col, inserted_df.columns)
+            
+        # Verify that boolean values are correctly converted to integers
+        for i in range(len(df)):
+            # Check is_entry conversion
+            self.assertEqual(inserted_df['is_entry'].iloc[i], 1 if df['is_entry'].iloc[i] else 0)
+            # Check is_exit conversion
+            self.assertEqual(inserted_df['is_exit'].iloc[i], 1 if df['is_exit'].iloc[i] else 0)
+            # Also ensure they are integer type
+            self.assertIsInstance(inserted_df['is_entry'].iloc[i], (int, np.int64))
+            self.assertIsInstance(inserted_df['is_exit'].iloc[i], (int, np.int64))
+        
+        # Verify that net_cash_with_billable was calculated correctly
+        for i in range(len(df)):
+            expected_net_cash = df.iloc[i]['quantity'] * df.iloc[i]['price'] + df.iloc[i]['commission']
+            self.assertEqual(inserted_df.iloc[i]['net_cash_with_billable'], expected_net_cash)
         
         # Verify output message
         output = self.captured_output.get_value()

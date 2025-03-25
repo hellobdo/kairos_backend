@@ -588,6 +588,74 @@ The tests are organized into the following classes:
   - Verifies function returns None when errors occur
   - Confirms appropriate error messages are output for debugging
 
+### `test_analytics/test_process_trades.py`
+
+This file tests the functionality in `analytics/process_trades.py`, which provides utilities for generating trade data from executions and calculating various trade attributes.
+
+#### Test Classes and Organization
+
+The tests are organized into the following classes:
+
+1. **`TestModuleImports`**: Tests basic imports and module setup
+2. **`TestGetNumExecutions`**: Tests the execution count calculation functionality
+3. **`TestGetStartDate`**: Tests the trade start date extraction functionality
+4. **`TestGetStartTime`**: Tests the trade start time extraction functionality
+5. **`TestGetSymbols`**: Tests the symbol extraction functionality
+6. **`TestProcessTrades`**: Tests the end-to-end trade processing workflow
+
+#### Tested Functions
+
+##### `get_num_executions(executions_df)`
+- **Case: Standard executions count**
+  - Tests counting executions grouped by trade_id
+  - Verifies correct counts for each unique trade_id
+  - Ensures the resulting DataFrame has the expected structure
+
+- **Case: Empty DataFrame**
+  - Tests behavior with an empty executions DataFrame
+  - Verifies function returns an empty DataFrame without errors
+
+##### `get_start_date(executions_df)`
+- **Case: Entry execution dates**
+  - Tests extracting the first date for each trade_id where is_entry=1
+  - Verifies correct date extraction for multiple trades
+  - Ensures dates are associated with the correct trade_ids
+
+- **Case: Empty DataFrame**
+  - Tests behavior with an empty executions DataFrame
+  - Verifies function returns None when no entries are available
+
+##### `get_start_time(executions_df)`
+- **Case: Entry execution times**
+  - Tests extracting the first time_of_day for each trade_id where is_entry=1
+  - Verifies correct time extraction for multiple trades
+  - Ensures times are associated with the correct trade_ids
+
+- **Case: Empty DataFrame**
+  - Tests behavior with an empty executions DataFrame
+  - Verifies function returns None when no entries are available
+
+##### `get_symbols(executions_df)`
+- **Case: Symbol extraction**
+  - Tests extracting the first symbol for each trade_id
+  - Verifies correct symbol extraction for multiple trades
+  - Ensures symbols are associated with the correct trade_ids
+
+- **Case: Empty DataFrame**
+  - Tests behavior with an empty executions DataFrame
+  - Verifies function returns an empty Series without errors
+
+##### `process_trades(executions_df)`
+- **Case: Complete trade processing flow**
+  - Tests the integration of all component functions to generate a complete trades DataFrame
+  - Verifies all required columns are present (trade_id, num_executions, symbol, start_date, start_time)
+  - Ensures each trade has the correct values from the constituent functions
+  - Verifies proper column structure and data integrity
+
+- **Case: Empty DataFrame**
+  - Tests behavior with an empty executions DataFrame
+  - Verifies function returns None without errors
+
 ## Test Framework
 
 The tests use Python's `unittest` framework with mocking provided by the `unittest.mock` module. The test results are tracked and displayed using a custom reporting mechanism that shows a summary of all test cases.

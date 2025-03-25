@@ -78,13 +78,13 @@ class DatabaseManager:
         return not result.empty
     
     def get_account_map(self):
-        """Get mapping from account_external_ID to ID"""
-        return self.fetch_df("SELECT ID, account_external_ID FROM accounts")
+        """Get mapping from account_external_id to id"""
+        return self.fetch_df("SELECT id, account_external_id FROM accounts")
     
     def check_balance_exists(self, account_id, date):
         """Check if a balance record exists for account and date"""
         return self.record_exists('accounts_balances', {
-            'account_ID': account_id,
+            'account_id': account_id,
             'date': date
         })
     
@@ -104,11 +104,12 @@ class DatabaseManager:
         return result[0] if result[0] is not None else 0
     
     def get_open_positions(self):
-        """Get current open positions from the trades table"""
+        """Get current open positions from the executions table based on sum of quantities"""
         query = """
-            SELECT symbol, quantity, trade_id 
-            FROM trades 
-            WHERE status = 'open'
+            SELECT symbol, SUM(quantity) as quantity, trade_id 
+            FROM executions 
+            GROUP BY symbol, trade_id
+            HAVING SUM(quantity) != 0
         """
         with self.connection() as conn:
             cursor = conn.cursor()
@@ -229,3 +230,73 @@ class DatabaseManager:
         except Exception as e:
             print(f"Error inserting DataFrame into {table_name}: {e}")
             raise
+
+    def get_backtest_executions(self):
+        """
+        Retrieve all records from the backtest_executions table.
+        
+        Returns:
+            pandas.DataFrame: DataFrame containing all backtest executions
+        """
+        query = "SELECT * FROM backtest_executions ORDER BY execution_timestamp"
+        try:
+            return self.fetch_df(query)
+        except Exception as e:
+            print(f"Error retrieving backtest executions: {e}")
+            return pd.DataFrame()
+            
+    def get_executions(self):
+        """
+        Retrieve all records from the executions table.
+        
+        Returns:
+            pandas.DataFrame: DataFrame containing all broker executions
+        """
+        query = "SELECT * FROM executions ORDER BY execution_timestamp"
+        try:
+            return self.fetch_df(query)
+        except Exception as e:
+            print(f"Error retrieving executions: {e}")
+            return pd.DataFrame()
+            
+    def get_trades(self):
+        """
+        Retrieve all records from the trades table.
+        
+        Returns:
+            pandas.DataFrame: DataFrame containing all broker trades
+        """
+        query = "SELECT * FROM trades ORDER BY entry_timestamp"
+        try:
+            return self.fetch_df(query)
+        except Exception as e:
+            print(f"Error retrieving trades: {e}")
+            return pd.DataFrame()
+            
+    def get_backtest_trades(self):
+        """
+        Retrieve all records from the backtest_trades table.
+        
+        Returns:
+            pandas.DataFrame: DataFrame containing all backtest trades
+        """
+        query = "SELECT * FROM backtest_trades ORDER BY entry_timestamp"
+        try:
+            return self.fetch_df(query)
+        except Exception as e:
+            print(f"Error retrieving backtest trades: {e}")
+            return pd.DataFrame()
+            
+    def get_account_balances(self):
+        """
+        Retrieve all records from the accounts_balances table.
+        
+        Returns:
+            pandas.DataFrame: DataFrame containing all account balance records
+        """
+        query = "SELECT * FROM accounts_balances ORDER BY date"
+        try:
+            return self.fetch_df(query)
+        except Exception as e:
+            print(f"Error retrieving account balances: {e}")
+            return pd.DataFrame()

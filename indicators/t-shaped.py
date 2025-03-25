@@ -10,7 +10,7 @@ A T-shaped candle has:
 
 import numpy as np
 import pandas as pd
-from indicators.helpers.column_utils import normalize_ohlc_columns
+from indicators.helpers.column_utils import normalize_columns
 
 def calculate_indicator(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -24,7 +24,7 @@ def calculate_indicator(df: pd.DataFrame) -> pd.DataFrame:
         DataFrame with is_indicator column added
     """
     # Normalize column names to lowercase
-    df = normalize_ohlc_columns(df)
+    df = normalize_columns(df)
     
     # Calculate absolute difference between open and close
     abs_delta_open_close_perc = (abs(df['close'] - df['open']) / df['open'])

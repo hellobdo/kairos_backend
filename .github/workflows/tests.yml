@@ -14,16 +14,16 @@ on:
       - 'indicators/*.py'
       - 'backtests/utils/backtest_functions.py'
       - 'backtests/utils/process_executions.py'
-      - 'tests/test_broker_cash.py'
-      - 'tests/test_broker_executions.py'
-      - 'tests/test_db_utils.py'
-      - 'tests/test_ibkr_api.py'
-      - 'tests/test_indicators.py'
-      - 'tests/test_column_utils.py'
-      - 'tests/test_backtest_functions.py'
-      - 'tests/test_process_executions.py'
-      - 'tests/test_pandas_utils.py'
-      - 'tests/test_process_executions_utils.py'
+      - 'tests/api/test_ibkr_api.py'
+      - 'tests/analytics/test_broker_cash.py'
+      - 'tests/analytics/test_broker_executions.py'
+      - 'tests/utils/test_db_utils.py'
+      - 'tests/utils/test_pandas_utils.py'
+      - 'tests/utils/test_process_executions_utils.py'
+      - 'tests/indicators/test_column_utils.py'
+      - 'tests/indicators/test_indicators.py'
+      - 'tests/backtests/test_backtest_functions.py'
+      - 'tests/backtests/test_process_executions.py'
   pull_request:
     branches: [ main, master ]
     paths:
@@ -37,16 +37,16 @@ on:
       - 'indicators/*.py'
       - 'backtests/utils/backtest_functions.py'
       - 'backtests/utils/process_executions.py'
-      - 'tests/test_broker_cash.py'
-      - 'tests/test_broker_executions.py'
-      - 'tests/test_db_utils.py'
-      - 'tests/test_ibkr_api.py'
-      - 'tests/test_indicators.py'
-      - 'tests/test_column_utils.py'
-      - 'tests/test_backtest_functions.py'
-      - 'tests/test_process_executions.py'
-      - 'tests/test_pandas_utils.py'
-      - 'tests/test_process_executions_utils.py'
+      - 'tests/api/test_ibkr_api.py'
+      - 'tests/analytics/test_broker_cash.py'
+      - 'tests/analytics/test_broker_executions.py'
+      - 'tests/utils/test_db_utils.py'
+      - 'tests/utils/test_pandas_utils.py'
+      - 'tests/utils/test_process_executions_utils.py'
+      - 'tests/indicators/test_column_utils.py'
+      - 'tests/indicators/test_indicators.py'
+      - 'tests/backtests/test_backtest_functions.py'
+      - 'tests/backtests/test_process_executions.py'
   workflow_dispatch:  # Allow manual triggering
 
 jobs:
@@ -62,7 +62,7 @@ jobs:
         id: set-test-modules
         run: |
           # Explicitly list the test modules
-          TEST_MODULES_JSON='["db_utils", "broker_cash", "ibkr_api", "broker_executions", "indicators", "column_utils", "backtest_functions", "process_executions", "pandas_utils", "process_executions_utils"]'
+          TEST_MODULES_JSON='["api/ibkr_api", "analytics/broker_cash", "analytics/broker_executions", "utils/db_utils", "utils/pandas_utils", "utils/process_executions_utils", "indicators/column_utils", "indicators/indicators", "backtests/backtest_functions", "backtests/process_executions"]'
           
           # Set output for the test job
           echo "test_modules=$TEST_MODULES_JSON" >> $GITHUB_OUTPUT
@@ -105,7 +105,9 @@ jobs:
           # Run each test module
           for module in $TEST_MODULES; do
             echo "::group::Running test module: $module"
-            if python -m tests.test_$module; then
+            # Convert forward slashes to dots for Python module path
+            PYTHON_MODULE=$(echo $module | tr '/' '.')
+            if python -m tests.$PYTHON_MODULE; then
               echo "✅ Test module $module: SUCCESS"
             else
               echo "❌ Test module $module: FAILURE"

@@ -28,8 +28,8 @@ def create_cash_fixtures():
     
     # Sample account mapping data
     fixtures['account_map_df'] = pd.DataFrame({
-        'ID': [1, 2, 3],
-        'account_external_ID': ['U1234567', 'U7654321', 'U9999999']
+        'id': [1, 2, 3],
+        'account_external_id': ['U1234567', 'U7654321', 'U9999999']
     })
     
     # Sample valid cash report data - with lowercase column names
@@ -291,8 +291,8 @@ class TestUpdateAccountsBalances(BaseTestCase):
         # Verify DataFrame structure
         self.assertIsInstance(df_arg, pd.DataFrame)
         self.assertEqual(len(df_arg), 1)
-        self.assertListEqual(list(df_arg.columns), ['account_ID', 'date', 'cash_balance', 'record_date'])
-        self.assertEqual(df_arg['account_ID'].iloc[0], 1)
+        self.assertListEqual(list(df_arg.columns), ['account_id', 'date', 'cash_balance', 'record_date'])
+        self.assertEqual(df_arg['account_id'].iloc[0], 1)
         self.assertEqual(df_arg['date'].iloc[0], '2023-05-15')
         self.assertEqual(df_arg['cash_balance'].iloc[0], 10000.50)
         
