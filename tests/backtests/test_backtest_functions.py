@@ -12,7 +12,7 @@ from unittest.mock import patch, MagicMock
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 # Import our test utilities from the tests package
-from tests.utils.test_utils import BaseTestCase, print_summary
+from tests import BaseTestCase, print_summary
 
 # Import the class to test
 from backtests.utils.backtest_functions import BaseStrategy

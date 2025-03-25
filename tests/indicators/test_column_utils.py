@@ -1,6 +1,6 @@
 import unittest
 import pandas as pd
-from tests.utils.test_utils import BaseTestCase, print_summary
+from tests import BaseTestCase, print_summary
 from indicators.helpers.column_utils import normalize_ohlc_columns
 
 class TestColumnUtils(BaseTestCase):

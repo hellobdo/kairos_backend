@@ -132,24 +132,3 @@ jobs:
           IBKR_QUERY_ID_CASH_LIVE: "dummy_query_live"
           IBKR_QUERY_ID_TRADE_CONFIRMATION_PAPER: "dummy_query_paper"
           IBKR_QUERY_ID_TRADE_CONFIRMATION_LIVE: "dummy_query_live"
-    
-  notify:
-    needs: test
-    runs-on: ubuntu-latest
-    if: failure()  # Only run if any of the test jobs failed
-    steps:
-      - name: Notify on failure
-        uses: actions/github-script@v6
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const { repo, owner } = context.repo;
-            const run_id = context.runId;
-            const run_url = `https://github.com/${owner}/${repo}/actions/runs/${run_id}`;
-            
-            github.rest.issues.create({
-              owner,
-              repo,
-              title: `CI Tests Failed`,
-              body: `One or more tests failed in the CI pipeline.\n\n[View the workflow run](${run_url}) for details.`
-            }); 

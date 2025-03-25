@@ -4,7 +4,7 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 import importlib.util
-from tests.utils.test_utils import BaseTestCase, print_summary
+from tests import BaseTestCase, print_summary
 import inspect
 
 class TestIndicators(BaseTestCase):
