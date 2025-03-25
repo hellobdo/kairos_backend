@@ -1,13 +1,13 @@
 import unittest
 import pandas as pd
-from tests.utils.test_utils import BaseTestCase, print_summary
-from indicators.helpers.column_utils import normalize_ohlc_columns
+from tests import BaseTestCase, print_summary
+from indicators.helpers.column_utils import normalize_columns
 
 class TestColumnUtils(BaseTestCase):
     """Test cases for the column_utils module"""
     
-    def test_normalize_ohlc_columns(self):
-        """Test that normalize_ohlc_columns converts all column names to lowercase"""
+    def test_normalize_columns(self):
+        """Test that normalize_columns converts all column names to lowercase"""
         
         # Test case 1: DataFrame with uppercase columns
         df_upper = pd.DataFrame({
@@ -18,7 +18,7 @@ class TestColumnUtils(BaseTestCase):
             'Volume': [1000, 1100, 1200]
         })
         
-        result_upper = normalize_ohlc_columns(df_upper)
+        result_upper = normalize_columns(df_upper)
         
         # Check that all columns are lowercase
         for col in result_upper.columns:
@@ -36,7 +36,7 @@ class TestColumnUtils(BaseTestCase):
             'VOLUME': [1000, 1100, 1200]
         })
         
-        result_mixed = normalize_ohlc_columns(df_mixed)
+        result_mixed = normalize_columns(df_mixed)
         
         # Check that all columns are lowercase
         for col in result_mixed.columns:
@@ -54,7 +54,7 @@ class TestColumnUtils(BaseTestCase):
             'volume': [1000, 1100, 1200]
         })
         
-        result_lower = normalize_ohlc_columns(df_lower)
+        result_lower = normalize_columns(df_lower)
         
         # Check that all columns are lowercase (should be unchanged)
         for col in result_lower.columns:
@@ -72,7 +72,7 @@ class TestColumnUtils(BaseTestCase):
             'VOL': [1000, 1100, 1200]
         })
         
-        result_arbitrary = normalize_ohlc_columns(df_arbitrary)
+        result_arbitrary = normalize_columns(df_arbitrary)
         
         # Check that all columns are lowercase
         for col in result_arbitrary.columns:
