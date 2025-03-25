@@ -105,7 +105,9 @@ jobs:
           # Run each test module
           for module in $TEST_MODULES; do
             echo "::group::Running test module: $module"
-            if python -m tests.$module; then
+            # Convert forward slashes to dots for Python module path
+            PYTHON_MODULE=$(echo $module | tr '/' '.')
+            if python -m tests.$PYTHON_MODULE; then
               echo "✅ Test module $module: SUCCESS"
             else
               echo "❌ Test module $module: FAILURE"
