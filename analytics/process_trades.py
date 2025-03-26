@@ -114,7 +114,7 @@ class TradeProcessor:
             print(f"Unexpected error processing trades: {str(e)}")
             return None
             
-    def _calculate_risk_reward_ratio(self, stop_loss_amount: float) -> pd.Series:
+    def _calculate_risk_reward_ratio(self, entry_prices: pd.Series = None, exit_prices: pd.Series = None, stop_prices: pd.Series = None) -> pd.Series:
         """
         Calculate risk-reward ratio for each trade
         
@@ -123,16 +123,14 @@ class TradeProcessor:
         
         Parameters:
             stop_loss_amount: The amount to use for stop loss calculation
+            entry_prices: Series with entry prices indexed by trade_id
+            exit_prices: Series with exit prices indexed by trade_id
+            stop_prices: Series with stop prices indexed by trade_id
             
         Returns:
             Series with risk-reward ratios indexed by trade_id
         """
         risk_reward_ratios = {}
-        
-        # Get entry prices, exit prices, and stop prices
-        _, entry_prices, _ = self._get_quantity_and_entry_price()
-        exit_prices = self._get_exit_price()
-        stop_prices = self._get_stop_prices(stop_loss_amount)
         
         # Process each trade
         for trade_id, info in self.trade_directions.items():
@@ -163,19 +161,20 @@ class TradeProcessor:
         
         return pd.Series(risk_reward_ratios)
 
-    def _get_winning_trades(self) -> pd.Series:
+    def _get_winning_trades(self, risk_reward: pd.Series) -> pd.Series:
         """
         Determine if each trade was a winner based on risk-reward ratio
         
         A trade is considered a winner if its risk-reward ratio is greater than 0,
         which means the trade made money regardless of the direction.
         
+        Parameters:
+            risk_reward: Series with risk-reward ratios indexed by trade_id
+            
         Returns:
             Series with 1 for winning trades and 0 for losing trades, indexed by trade_id
         """
-        # Get risk-reward ratios
-        risk_reward = self._calculate_risk_reward_ratio()
-        
+ 
         # A trade is a winner if risk-reward > 0
         winners = {}
         for trade_id, rr in risk_reward.items():
@@ -183,19 +182,20 @@ class TradeProcessor:
             
         return pd.Series(winners)
 
-    def _calculate_perc_return(self) -> pd.Series:
+    def _calculate_perc_return(self, risk_per_trade: pd.Series, risk_reward: pd.Series) -> pd.Series:
         """
         Calculate the percentage return for each trade
         
         Percentage return is calculated as risk_per_trade * risk_reward, which gives
         the actual percentage gain/loss of the trade relative to the account balance.
         
+        Parameters:
+            risk_per_trade: Series with risk per trade values indexed by trade_id
+            risk_reward: Series with risk-reward ratios indexed by trade_id
+            
         Returns:
             Series with percentage returns indexed by trade_id
         """
-        # Get risk per trade and risk reward
-        risk_per_trade = self._get_risk_per_trade()
-        risk_reward = self._calculate_risk_reward_ratio()
         
         # Calculate percentage return
         perc_return = {}
@@ -250,7 +250,7 @@ class TradeProcessor:
         
         return pd.Series(trade_status)
 
-    def _get_exit_type(self, risk_reward_goal: float) -> pd.Series:
+    def _get_exit_type(self, risk_reward: pd.Series, risk_reward_goal: float, status: pd.Series) -> pd.Series:
         """
         Determine the exit type for each trade based on risk-reward ratio
         
@@ -260,16 +260,13 @@ class TradeProcessor:
         - 'other': Trade was exited for other reasons
         
         Parameters:
+            risk_reward: Series with risk-reward ratios indexed by trade_id
             risk_reward_goal: Target risk-reward ratio
+            status: Series with trade status indexed by trade_id
             
         Returns:
             Series with exit types indexed by trade_id
         """
-        # Get risk-reward ratios
-        risk_reward = self._calculate_risk_reward_ratio()
-        
-        # Get trade status
-        status = self._get_trade_status()
         
         # Determine exit type
         exit_types = {}
@@ -280,14 +277,16 @@ class TradeProcessor:
                 continue
                 
             # Skip if risk-reward is None
-            if rr is None:
+            # Use pandas.isna() which handles None, NaN, and other NA values
+            if pd.isna(rr):
                 exit_types[trade_id] = None
                 continue
                 
             # Determine exit type based on risk-reward
             if rr <= -1:
                 exit_types[trade_id] = 'stop_loss'
-            elif rr >= risk_reward_goal:
+            # Handle None risk_reward_goal by treating it as infinity (no take_profit classification)
+            elif risk_reward_goal is not None and rr >= risk_reward_goal:
                 exit_types[trade_id] = 'take_profit'
             else:
                 exit_types[trade_id] = 'other'
@@ -301,70 +300,131 @@ class TradeProcessor:
         Returns:
             Dictionary of Series with aggregated data
         """
-        # Create direction Series for backwards compatibility
-        direction_series = pd.Series({k: v['direction'] for k, v in self.trade_directions.items()})
-        
-        # Get entry information
-        entry_info = self._get_entry_date_time_info()
-        
-        # Get quantity, entry price, and capital required in one call
-        quantity, entry_price, capital_required = self._get_quantity_and_entry_price()
-        
-        # Get exit price
-        exit_price = self._get_exit_price()
-        
-        # Get stop price and risk-reward ratio
-        stop_price = self._get_stop_prices()
-        risk_reward = self._calculate_risk_reward_ratio()
-        
-        # Get risk amount per share
-        risk_amount_per_share = self._get_risk_amount_per_share()
-        
-        # Set default risk-reward goal to None for now
-        risk_reward_goal = None
-        
-        # Get take profit price
-        take_profit_price = self._get_take_profit_price(risk_reward_goal=risk_reward_goal)
-        
-        # Determine winning trades
-        is_winner = self._get_winning_trades()
-        
-        # Get risk per trade and percentage return
-        risk_per_trade = self._get_risk_per_trade()
-        perc_return = self._calculate_perc_return()
-        
-        # Get trade status and exit type
-        status = self._get_trade_status()
-        exit_type = self._get_exit_type(risk_reward_goal=risk_reward_goal)
-        
-        # Return all aggregations
-        return {
-            'num_executions': self._get_num_executions(),
-            'symbol': self._get_symbols(),
-            'direction': direction_series,
-            'quantity': quantity,
-            'entry_price': entry_price,
-            'capital_required': capital_required,
-            'exit_price': exit_price,
-            'stop_price': stop_price,
-            'take_profit_price': take_profit_price,
-            'risk_reward': risk_reward,
-            'risk_amount_per_share': risk_amount_per_share,
-            'is_winner': is_winner,
-            'risk_per_trade': risk_per_trade,
-            'perc_return': perc_return,
-            'status': status,
-            'exit_type': exit_type,
-            'end_date': self._get_end_date(),
-            'end_time': self._get_end_time(),
-            'duration_hours': self._get_duration_hours(),
-            'commission': self._get_commission(),
-            'start_date': entry_info['start_date'],
-            'start_time': entry_info['start_time'],
-            'week': entry_info['week'],
-            'month': entry_info['month'],
-            'year': entry_info['year']
-        }
+        try:
+            # Create direction Series for backwards compatibility
+            direction_series = pd.Series({k: v['direction'] for k, v in self.trade_directions.items()})
+            
+            # 1. Get number of executions
+            num_executions = self._get_num_executions()
+            
+            # 2. Get symbols
+            symbols = self._get_symbols()
+            
+            # 3. Get entry date/time information
+            entry_info = self._get_entry_date_time_info()
+            
+            # 4. Get quantity, entry price, and capital required in one call
+            quantity, entry_price, capital_required = self._get_quantity_and_entry_price()
+            
+            # 5. Get exit price
+            exit_price = self._get_exit_price()
+            
+            # 6. Define stop loss amount (used by multiple methods)
+            stop_loss_amount = 0.02
+
+            # 7. Get stop price 
+            stop_price = self._get_stop_prices(
+                stop_loss_amount=stop_loss_amount, 
+                entry_prices=entry_price
+            )
+            
+            # 8. Calculate risk-reward ratio
+            risk_reward = self._calculate_risk_reward_ratio(
+                entry_prices=entry_price,
+                exit_prices=exit_price,
+                stop_prices=stop_price
+            )
+            
+            # 9. Get risk amount per share
+            risk_amount_per_share = self._get_risk_amount_per_share(
+                entry_prices=entry_price, 
+                stop_prices=stop_price
+            )
+            
+            # 10. Get risk per trade
+            risk_per_trade = self._get_risk_per_trade(
+                risk_amount_per_share=risk_amount_per_share,
+                quantity=quantity,
+                entry_info=entry_info
+            )
+            
+            # 11. Calculate percentage return
+            perc_return = self._calculate_perc_return(
+                risk_per_trade=risk_per_trade,
+                risk_reward=risk_reward
+            )
+            
+            # 12. Get winning trades 
+            is_winner = self._get_winning_trades(
+                risk_reward=risk_reward
+            )
+            
+            # 13. Get trade status
+            status = self._get_trade_status()
+            
+            # 14. Set default risk-reward goal and get take profit price
+            risk_reward_goal = None
+            try:
+                take_profit_price = self._get_take_profit_price(
+                    risk_reward_goal=risk_reward_goal,
+                    entry_prices=entry_price,
+                    risk_amount_per_share=risk_amount_per_share
+                )
+            except Exception as e:
+                print(f"Error calculating take profit prices: {str(e)}")
+                take_profit_price = pd.Series()
+            
+            # 15. Get exit type
+            try:
+                exit_type = self._get_exit_type(
+                    risk_reward=risk_reward,
+                    risk_reward_goal=risk_reward_goal,
+                    status=status
+                )
+            except Exception as e:
+                print(f"Error determining exit types: {str(e)}")
+                exit_type = pd.Series()
+            
+            # 16. Get end date and time
+            end_date, end_time = self._get_end_date_and_time()
+            
+            # 17. Get duration hours
+            duration_hours = self._get_duration_hours()
+            
+            # 18. Get commission
+            commission = self._get_commission()
+            
+            # Return all aggregations
+            return {
+                'num_executions': num_executions,
+                'symbol': symbols,
+                'direction': direction_series,
+                'quantity': quantity,
+                'entry_price': entry_price,
+                'capital_required': capital_required,
+                'exit_price': exit_price,
+                'stop_price': stop_price,
+                'take_profit_price': take_profit_price,
+                'risk_reward': risk_reward,
+                'risk_amount_per_share': risk_amount_per_share,
+                'is_winner': is_winner,
+                'risk_per_trade': risk_per_trade,
+                'perc_return': perc_return,
+                'status': status,
+                'exit_type': exit_type,
+                'end_date': end_date,
+                'end_time': end_time,
+                'duration_hours': duration_hours,
+                'commission': commission,
+                'start_date': entry_info['start_date'],
+                'start_time': entry_info['start_time'],
+                'week': entry_info['week'],
+                'month': entry_info['month'],
+                'year': entry_info['year']
+            }
+        except Exception as e:
+            print(f"Error in _get_all_aggregations: {str(e)}")
+            return {}
         
     def _build_trades_dataframe(self, aggs: Dict[str, Union[pd.Series, pd.DataFrame]]) -> pd.DataFrame:
         """
@@ -392,9 +452,16 @@ class TradeProcessor:
         
     def _get_entry_date_time_info(self) -> pd.DataFrame:
         """Get comprehensive entry information"""
+        # If no entries, return empty DataFrame
+        if self.entry_execs.empty:
+            return pd.DataFrame()
+            
+        # Sort by execution_timestamp to ensure chronological order
+        sorted_entries = self.entry_execs.sort_values('execution_timestamp')
+        
         # Group by trade_id and get first values for date and time
-        start_dates = self.entry_execs.groupby('trade_id')['date'].first()
-        start_times = self.entry_execs.groupby('trade_id')['time_of_day'].first()
+        start_dates = sorted_entries.groupby('trade_id')['date'].first()
+        start_times = sorted_entries.groupby('trade_id')['time_of_day'].first()
         
         # Convert string dates to datetime objects
         date_objects = pd.to_datetime(start_dates)
@@ -408,18 +475,27 @@ class TradeProcessor:
             'year': date_objects.dt.year
         })
     
-    def _get_end_date(self) -> pd.Series:
-        """Get the end date for each trade_id"""
-        if self.exit_execs.empty:
-            return pd.Series(index=self.trade_directions.keys())
-        return self.exit_execs.groupby('trade_id')['date'].last()
+    def _get_end_date_and_time(self) -> Tuple[pd.Series, pd.Series]:
+        """
+        Get the end date and time for each trade_id based on exit executions
         
-    def _get_end_time(self) -> pd.Series:
-        """Get the end time for each trade_id"""
+        Returns:
+            Tuple containing (end_date_series, end_time_series)
+        """
+        # If no exits, return empty Series
         if self.exit_execs.empty:
-            return pd.Series(index=self.trade_directions.keys())
-        return self.exit_execs.groupby('trade_id')['time_of_day'].last()
+            # Return None for both date and time
+            return None, None
         
+        # Sort by execution_timestamp to ensure chronological order
+        sorted_exits = self.exit_execs.sort_values('execution_timestamp')
+        
+        # Group by trade_id and get last values for date and time
+        end_dates = sorted_exits.groupby('trade_id')['date'].last()
+        end_times = sorted_exits.groupby('trade_id')['time_of_day'].last()
+        
+        return end_dates, end_times
+    
     def _get_duration_hours(self) -> pd.Series:
         """Get the duration in hours for each trade_id"""
         # Get entry timestamps
@@ -560,32 +636,33 @@ class TradeProcessor:
             return self.executions_df.groupby('trade_id')['commission'].sum()
         return pd.Series(index=self.trade_directions.keys())
 
-    def _get_stop_prices(self, stop_loss_amount: float = 0.02) -> pd.Series:
+    def _get_stop_prices(self, stop_loss_amount, entry_prices: pd.Series) -> pd.Series:
         """
         Calculate stop prices for all trades based on entry price and direction
         
         Parameters:
-            stop_loss_amount: The amount to use for stop loss calculation (default: 0.02 or 2%)
+            stop_loss_amount: The amount to use for stop loss calculation
+            entry_prices: Series with entry prices indexed by trade_id
             
         Returns:
             Series with stop prices indexed by trade_id
         """
         stop_prices = {}
         
-        # Get entry prices
-        _, entry_prices, _ = self._get_quantity_and_entry_price()
+        # Check if stop_loss_amount is valid
+        valid_stop_loss = stop_loss_amount > 0
         
         # Calculate stop price for each trade
         for trade_id, info in self.trade_directions.items():
             direction = info['direction']
             entry_price = entry_prices.get(trade_id)
             
-            # Skip if entry_price is None
-            if entry_price is None:
+            # Group all conditions that result in None
+            if not valid_stop_loss or entry_price is None or (direction == 'bullish' and stop_loss_amount >= entry_price):
                 stop_prices[trade_id] = None
                 continue
                 
-            # Calculate stop based on direction
+            # Calculate stop price based on direction
             if direction == 'bullish':
                 # For bullish trades, stop is below entry
                 stop_prices[trade_id] = entry_price - stop_loss_amount
@@ -595,7 +672,7 @@ class TradeProcessor:
         
         return pd.Series(stop_prices)
 
-    def _get_risk_per_trade(self, risk_per_trade: Optional[float] = None) -> pd.Series:
+    def _get_risk_per_trade(self, risk_per_trade: Optional[float], risk_amount_per_share: pd.Series, quantity: pd.Series, entry_info: pd.DataFrame) -> pd.Series:
         """
         Calculate the risk per trade as a percentage of account balance
         
@@ -604,6 +681,9 @@ class TradeProcessor:
         
         Parameters:
             risk_per_trade: Optional fixed percentage to use for all trades (overrides calculations)
+            risk_amount_per_share: Series with risk amount per share indexed by trade_id
+            quantity: Series with quantity values indexed by trade_id
+            entry_info: DataFrame with entry information including start_date
             
         Returns:
             Series with risk percentage per trade indexed by trade_id
@@ -613,12 +693,9 @@ class TradeProcessor:
             return pd.Series({trade_id: risk_per_trade for trade_id in self.trade_directions.keys()})
             
         try:
-            # Get account balances, risk amount per share, quantity, and entry info
+            # Get account balances
             account_balances = db.get_account_balances()
-            risk_amount_per_share = self._get_risk_amount_per_share()
-            quantity, _, _ = self._get_quantity_and_entry_price()
-            entry_info = self._get_entry_date_time_info()
-            
+        
             # Initialize dictionary to store risk values for each trade
             risk_per_trade_dict = {}
             
@@ -658,19 +735,20 @@ class TradeProcessor:
             # Return None for all trades if calculation fails
             return pd.Series({trade_id: None for trade_id in self.trade_directions.keys()})
 
-    def _get_risk_amount_per_share(self) -> pd.Series:
+    def _get_risk_amount_per_share(self, entry_prices: pd.Series, stop_prices: pd.Series) -> pd.Series:
         """
         Calculate the risk amount per share for each trade
         
         Risk amount per share is the absolute difference between entry price and stop price,
         representing the dollar amount at risk per share regardless of trade direction.
         
+        Parameters:
+            entry_prices: Series with entry prices indexed by trade_id
+            stop_prices: Series with stop prices indexed by trade_id
+        
         Returns:
             Series with risk amount per share indexed by trade_id
         """
-        # Get entry prices and stop prices
-        _, entry_prices, _ = self._get_quantity_and_entry_price()
-        stop_prices = self._get_stop_prices()
         
         # Calculate risk amount per share
         risk_amount_per_share = {}
@@ -688,7 +766,7 @@ class TradeProcessor:
         
         return pd.Series(risk_amount_per_share)
 
-    def _get_take_profit_price(self, risk_reward_goal: Optional[float] = None) -> pd.Series:
+    def _get_take_profit_price(self, risk_reward_goal: Optional[float], entry_prices: pd.Series, risk_amount_per_share: pd.Series) -> pd.Series:
         """
         Calculate the take profit price for each trade based on a target risk-reward ratio
         
@@ -698,6 +776,8 @@ class TradeProcessor:
         Parameters:
             risk_reward_goal: Target risk-reward ratio (e.g., 2.0 means aiming for 2:1 reward to risk)
                               If None, returns None for all trades
+            entry_prices: Series with entry prices indexed by trade_id
+            risk_amount_per_share: Series with risk amount per share indexed by trade_id
                               
         Returns:
             Series with take profit prices indexed by trade_id
@@ -705,10 +785,6 @@ class TradeProcessor:
         # If no risk_reward_goal provided, return None for all trades
         if risk_reward_goal is None:
             return pd.Series({trade_id: None for trade_id in self.trade_directions.keys()})
-            
-        # Get entry prices and risk amount per share
-        _, entry_prices, _ = self._get_quantity_and_entry_price()
-        risk_amount_per_share = self._get_risk_amount_per_share()
         
         # Calculate take profit prices
         take_profit_prices = {}
