@@ -747,5 +747,9 @@ def process_trades(executions_df: pd.DataFrame) -> Optional[pd.DataFrame]:
     Returns:
         DataFrame with trade information aggregated from executions or None if processing fails
     """
-    processor = TradeProcessor(executions_df)
-    return processor.process_trades()
+    try:
+        processor = TradeProcessor(executions_df)
+        return processor.process_trades()
+    except Exception as e:
+        print(f"Error processing trades: {str(e)}")
+        return None
