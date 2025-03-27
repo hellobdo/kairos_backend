@@ -5077,6 +5077,309 @@ class TestGetExitPrice(BaseTestCase):
         self.log_case_result("Correctly handles mixed scenarios", True)
 
 
+class TestGetQuantityAndEntryPrice(BaseTestCase):
+    """Test cases for the _get_quantity_and_entry_price method of TradeProcessor."""
+
+    def setUp(self):
+        """Set up test fixtures before each test."""
+        super().setUp()
+        
+        # Create sample executions data with different trade scenarios
+        self.executions_df = pd.DataFrame({
+            'trade_id': ['trade1', 'trade1', 'trade2', 'trade3', 'trade3', 'trade4', 'trade5', 'trade6', 'trade7', 'trade8'],
+            'execution_id': ['exec1', 'exec2', 'exec3', 'exec4', 'exec5', 'exec6', 'exec7', 'exec8', 'exec9', 'exec10'],
+            'price': [100.00, 105.00, 200.00, 300.00, 305.00, 150.00, 250.00, 180.00, 90.00, 400.00],
+            'quantity': [100, -50, -200, 150, 150, 0, 250, -80, 0.5, 1000000],
+            'execution_timestamp': [
+                pd.Timestamp('2023-01-01 10:00:00'), pd.Timestamp('2023-01-01 11:00:00'),
+                pd.Timestamp('2023-01-02 10:00:00'), pd.Timestamp('2023-01-03 10:00:00'),
+                pd.Timestamp('2023-01-03 11:00:00'), pd.Timestamp('2023-01-04 10:00:00'),
+                pd.Timestamp('2023-01-05 10:00:00'), pd.Timestamp('2023-01-06 10:00:00'),
+                pd.Timestamp('2023-01-07 10:00:00'), pd.Timestamp('2023-01-08 10:00:00')
+            ]
+        })
+        
+        # Create a processor
+        self.processor = TradeProcessor(self.executions_df)
+        
+        # Set up trade directions dictionary for various test scenarios
+        self.processor.trade_directions = {
+            'trade1': {'direction': 'bullish', 'initial_quantity': 100},    # Bullish with single entry
+            'trade2': {'direction': 'bearish', 'initial_quantity': -200},   # Bearish with single entry
+            'trade3': {'direction': 'bullish', 'initial_quantity': 150},    # Bullish with multiple entries
+            'trade4': {'direction': 'bullish', 'initial_quantity': 0},      # Zero quantity entry
+            'trade5': {'direction': 'bullish', 'initial_quantity': 250},    # Entry with no exit
+            'trade6': {'direction': 'bullish', 'initial_quantity': 200},    # Entry missing in executions
+            'trade7': {'direction': 'bullish', 'initial_quantity': 0.5},    # Tiny quantity
+            'trade8': {'direction': 'bullish', 'initial_quantity': 1000000} # Very large quantity
+        }
+        
+        # For testing with mocked methods
+        self.original_get_direction = self.processor._get_direction_executions
+        self.original_calculate_vwap = self.processor._calculate_vwap
+    
+    def tearDown(self):
+        """Tear down test fixtures after each test."""
+        # Restore original methods if they were mocked
+        if hasattr(self, 'original_get_direction'):
+            self.processor._get_direction_executions = self.original_get_direction
+        if hasattr(self, 'original_calculate_vwap'):
+            self.processor._calculate_vwap = self.original_calculate_vwap
+        super().tearDown()
+    
+    def test_basic_functionality(self):
+        """Test basic calculation of quantity, entry price, and capital required."""
+        # Mock _get_direction_executions to return controlled data
+        def mock_get_direction(trade_id):
+            if trade_id == 'trade1':
+                # Bullish trade with one entry execution
+                entry = self.executions_df[self.executions_df['trade_id'] == 'trade1'].iloc[[0]]
+                exit_exec = self.executions_df[self.executions_df['trade_id'] == 'trade1'].iloc[[1]]
+                return entry, exit_exec
+            else:
+                return pd.DataFrame(columns=self.executions_df.columns), pd.DataFrame(columns=self.executions_df.columns)
+        
+        self.processor._get_direction_executions = mock_get_direction
+        
+        # Call the method
+        quantity, entry_price, capital_required = self.processor._get_quantity_and_entry_price()
+        
+        # Verify results for trade1
+        self.assertEqual(quantity['trade1'], 100)
+        self.assertEqual(entry_price['trade1'], 100.00)
+        self.assertEqual(capital_required['trade1'], 10000.00)  # 100 x 100.00
+        
+        self.log_case_result("Correctly calculates basic quantity, entry price, and capital required", True)
+    
+    def test_multiple_entry_executions(self):
+        """Test with a trade having multiple entry executions at different prices."""
+        # Mock _get_direction_executions for trade3 which has multiple entries
+        def mock_get_direction(trade_id):
+            if trade_id == 'trade3':
+                # Return both entry executions for trade3
+                entries = self.executions_df[self.executions_df['trade_id'] == 'trade3']
+                return entries, pd.DataFrame(columns=self.executions_df.columns)
+            else:
+                return pd.DataFrame(columns=self.executions_df.columns), pd.DataFrame(columns=self.executions_df.columns)
+        
+        self.processor._get_direction_executions = mock_get_direction
+        
+        # Call the method
+        quantity, entry_price, capital_required = self.processor._get_quantity_and_entry_price()
+        
+        # Verify VWAP calculation for trade3
+        # Entries: 150 at 300.00, 150 at 305.00
+        # Total quantity: 300
+        # VWAP = (150*300 + 150*305) / 300 = 90750/300 = 302.50
+        self.assertEqual(quantity['trade3'], 300)
+        self.assertEqual(entry_price['trade3'], 302.50)
+        self.assertEqual(capital_required['trade3'], 90750.00)  # 300 x 302.50
+        
+        self.log_case_result("Correctly calculates for multiple entry executions", True)
+    
+    def test_empty_entry_executions(self):
+        """Test behavior when a trade has no entry executions."""
+        # Mock _get_direction_executions to always return empty entry executions
+        def mock_get_direction(trade_id):
+            return pd.DataFrame(columns=self.executions_df.columns), pd.DataFrame(columns=self.executions_df.columns)
+        
+        self.processor._get_direction_executions = mock_get_direction
+        
+        # Call the method
+        quantity, entry_price, capital_required = self.processor._get_quantity_and_entry_price()
+        
+        # Verify all trades have default values
+        for trade_id in self.processor.trade_directions:
+            self.assertEqual(quantity[trade_id], 0)
+            self.assertIsNone(entry_price[trade_id])
+            self.assertEqual(capital_required[trade_id], 0)
+        
+        self.log_case_result("Returns appropriate defaults for trades with no entry executions", True)
+    
+    def test_different_direction_trades(self):
+        """Test that the function correctly processes both bullish and bearish trades."""
+        # Create a realistic implementation of _get_direction_executions
+        def realistic_get_direction(trade_id):
+            if trade_id == 'trade1':  # Bullish
+                entry = self.executions_df[self.executions_df['trade_id'] == 'trade1'].iloc[[0]]
+                return entry, pd.DataFrame(columns=self.executions_df.columns)
+            elif trade_id == 'trade2':  # Bearish
+                entry = self.executions_df[self.executions_df['trade_id'] == 'trade2'].iloc[[0]]
+                return entry, pd.DataFrame(columns=self.executions_df.columns)
+            else:
+                return pd.DataFrame(columns=self.executions_df.columns), pd.DataFrame(columns=self.executions_df.columns)
+        
+        self.processor._get_direction_executions = realistic_get_direction
+        
+        # Call the method
+        quantity, entry_price, capital_required = self.processor._get_quantity_and_entry_price()
+        
+        # Verify results for bullish trade (trade1)
+        self.assertEqual(quantity['trade1'], 100)
+        self.assertEqual(entry_price['trade1'], 100.00)
+        
+        # Verify results for bearish trade (trade2)
+        self.assertEqual(quantity['trade2'], 200)  # Abs value of -200
+        self.assertEqual(entry_price['trade2'], 200.00)
+        
+        self.log_case_result("Correctly processes both bullish and bearish trades", True)
+    
+    def test_return_type_verification(self):
+        """Test that the function returns a tuple of three pandas Series with correct structure."""
+        # Call the method
+        result = self.processor._get_quantity_and_entry_price()
+        
+        # Verify return type is a tuple of three pandas Series
+        self.assertIsInstance(result, tuple)
+        self.assertEqual(len(result), 3)
+        self.assertIsInstance(result[0], pd.Series)  # quantity
+        self.assertIsInstance(result[1], pd.Series)  # entry_price
+        self.assertIsInstance(result[2], pd.Series)  # capital_required
+        
+        # Verify Series have trade_ids as index
+        for series in result:
+            self.assertEqual(set(series.index), set(self.processor.trade_directions.keys()))
+        
+        self.log_case_result("Returns tuple of three pandas Series with correct structure", True)
+    
+    def test_zero_quantity_entry(self):
+        """Test handling of entries with zero quantity."""
+        # Mock _get_direction_executions for trade4 which has zero quantity
+        def mock_get_direction(trade_id):
+            if trade_id == 'trade4':
+                # Return zero quantity entry
+                entry = self.executions_df[self.executions_df['trade_id'] == 'trade4']
+                return entry, pd.DataFrame(columns=self.executions_df.columns)
+            else:
+                return pd.DataFrame(columns=self.executions_df.columns), pd.DataFrame(columns=self.executions_df.columns)
+        
+        self.processor._get_direction_executions = mock_get_direction
+        
+        # Call the method
+        quantity, entry_price, capital_required = self.processor._get_quantity_and_entry_price()
+        
+        # Verify trade4 has 0 quantity (zero quantity should be excluded)
+        self.assertEqual(quantity['trade4'], 0)
+        self.assertIsNone(entry_price['trade4'])
+        self.assertEqual(capital_required['trade4'], 0)
+        
+        self.log_case_result("Correctly handles zero quantity entries", True)
+    
+    def test_integration_with_get_direction_executions(self):
+        """Test integration with the _get_direction_executions method."""
+        # We'll just use the real _get_direction_executions method
+        # But we need to track calls to verify it's being called correctly
+        call_count = 0
+        
+        def track_calls(trade_id):
+            nonlocal call_count
+            call_count += 1
+            return self.original_get_direction(trade_id)
+        
+        self.processor._get_direction_executions = track_calls
+        
+        # Call the method
+        self.processor._get_quantity_and_entry_price()
+        
+        # Verify _get_direction_executions was called for each trade in trade_directions
+        self.assertEqual(call_count, len(self.processor.trade_directions))
+        
+        self.log_case_result("Correctly integrates with _get_direction_executions method", True)
+    
+    def test_capital_required_calculation(self):
+        """Test that capital required is correctly calculated as quantity × entry price."""
+        # Mock _get_direction_executions and _calculate_vwap to return controlled values
+        def mock_get_direction(trade_id):
+            if trade_id == 'trade1':
+                entry = self.executions_df[self.executions_df['trade_id'] == 'trade1'].iloc[[0]]
+                return entry, pd.DataFrame(columns=self.executions_df.columns)
+            elif trade_id == 'trade5':
+                entry = self.executions_df[self.executions_df['trade_id'] == 'trade5']
+                return entry, pd.DataFrame(columns=self.executions_df.columns)
+            else:
+                return pd.DataFrame(columns=self.executions_df.columns), pd.DataFrame(columns=self.executions_df.columns)
+        
+        self.processor._get_direction_executions = mock_get_direction
+        
+        # Call the method
+        quantity, entry_price, capital_required = self.processor._get_quantity_and_entry_price()
+        
+        # Verify capital required calculation
+        self.assertEqual(capital_required['trade1'], quantity['trade1'] * entry_price['trade1'])
+        self.assertEqual(capital_required['trade5'], quantity['trade5'] * entry_price['trade5'])
+        
+        # Also test with a None entry price
+        entry_price['trade6'] = None
+        capital_expected = 0  # Should be 0 when entry price is None
+        self.assertEqual(capital_required['trade6'], capital_expected)
+        
+        self.log_case_result("Correctly calculates capital required", True)
+    
+    def test_edge_cases(self):
+        """Test the function with edge cases like very small or large quantities."""
+        # Mock _get_direction_executions for trades with edge case quantities
+        def mock_get_direction(trade_id):
+            if trade_id == 'trade7':  # Tiny quantity
+                entry = self.executions_df[self.executions_df['trade_id'] == 'trade7']
+                return entry, pd.DataFrame(columns=self.executions_df.columns)
+            elif trade_id == 'trade8':  # Very large quantity
+                entry = self.executions_df[self.executions_df['trade_id'] == 'trade8']
+                return entry, pd.DataFrame(columns=self.executions_df.columns)
+            else:
+                return pd.DataFrame(columns=self.executions_df.columns), pd.DataFrame(columns=self.executions_df.columns)
+        
+        self.processor._get_direction_executions = mock_get_direction
+        
+        # Call the method
+        quantity, entry_price, capital_required = self.processor._get_quantity_and_entry_price()
+        
+        # Verify tiny quantity
+        self.assertEqual(quantity['trade7'], 0.5)
+        self.assertEqual(entry_price['trade7'], 90.00)
+        self.assertEqual(capital_required['trade7'], 0.5 * 90.00)
+        
+        # Verify very large quantity
+        self.assertEqual(quantity['trade8'], 1000000)
+        self.assertEqual(entry_price['trade8'], 400.00)
+        self.assertEqual(capital_required['trade8'], 1000000 * 400.00)
+        
+        self.log_case_result("Correctly handles edge cases with very small or large quantities", True)
+    
+    def test_data_type_handling(self):
+        """Test that the function handles different data types correctly."""
+        # Mock _get_direction_executions to return entries with different data types
+        def mock_get_direction(trade_id):
+            if trade_id == 'trade1':
+                # Integer quantity
+                entry = self.executions_df[self.executions_df['trade_id'] == 'trade1'].iloc[[0]]
+                return entry, pd.DataFrame(columns=self.executions_df.columns)
+            elif trade_id == 'trade7':
+                # Float quantity
+                entry = self.executions_df[self.executions_df['trade_id'] == 'trade7']
+                return entry, pd.DataFrame(columns=self.executions_df.columns)
+            else:
+                return pd.DataFrame(columns=self.executions_df.columns), pd.DataFrame(columns=self.executions_df.columns)
+        
+        self.processor._get_direction_executions = mock_get_direction
+        
+        # Call the method
+        quantity, entry_price, capital_required = self.processor._get_quantity_and_entry_price()
+        
+        # Verify integer quantity
+        self.assertEqual(quantity['trade1'], 100)
+        
+        # Verify float quantity
+        self.assertEqual(quantity['trade7'], 0.5)
+        
+        # Verify all returned values are float or None
+        for trade_id in self.processor.trade_directions:
+            if entry_price[trade_id] is not None:
+                self.assertIsInstance(entry_price[trade_id], float)
+            self.assertIsInstance(capital_required[trade_id], float)
+        
+        self.log_case_result("Correctly handles different data types", True)
+
+
 if __name__ == '__main__':
     unittest.main(exit=False)  # Run tests without exiting
     print_summary()  # Print detailed summary of test results
