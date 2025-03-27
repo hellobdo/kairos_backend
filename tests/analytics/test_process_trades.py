@@ -5819,6 +5819,189 @@ class TestGetRiskPerTrade(BaseTestCase):
         
         self.log_case_result("Returns correct type with proper index", True)
 
+class TestGetStopPrices(BaseTestCase):
+    """Test cases for TradeProcessor._get_stop_prices method"""
+    
+    def setUp(self):
+        """Set up test environment before each test method"""
+        # Call super to set up test tracking attributes
+        super().setUp()
+        
+        # Create a sample executions DataFrame
+        self.executions_df = pd.DataFrame({
+            'trade_id': ['trade1', 'trade2', 'trade3', 'trade4'],
+            'quantity': [100, -50, 200, -75],
+            'price': [150.0, 160.0, 200.0, 90.0],
+            'symbol': ['AAPL', 'MSFT', 'TSLA', 'META'],
+            'date': ['2023-01-01'] * 4,
+            'time_of_day': ['09:30:00'] * 4,
+            'execution_timestamp': pd.to_datetime(['2023-01-01 09:30:00'] * 4),
+            'is_entry': [1, 1, 1, 1]
+        })
+        
+        # Initialize processor and set trade directions
+        self.processor = TradeProcessor(self.executions_df)
+        self.processor.trade_directions = {
+            'trade1': {'direction': 'bullish'},
+            'trade2': {'direction': 'bearish'},
+            'trade3': {'direction': 'bullish'},
+            'trade4': {'direction': 'bearish'}
+        }
+        
+        # Create sample entry prices
+        self.entry_prices = pd.Series({
+            'trade1': 100.0,
+            'trade2': 200.0,
+            'trade3': 150.0,
+            'trade4': 80.0
+        })
+        
+        # Set class_name attribute for BaseTestCase tracking
+        self.class_name = "TestGetStopPrices"
+    
+    def test_basic_functionality(self):
+        """Test basic stop price calculation for bullish and bearish trades"""
+        # Set stop_loss_amount
+        stop_loss_amount = 10.0
+        
+        # Call the method
+        result = self.processor._get_stop_prices(stop_loss_amount, self.entry_prices)
+        
+        # Expected results:
+        # Bullish trades: entry - stop_loss
+        # Bearish trades: entry + stop_loss
+        expected = {
+            'trade1': 100.0 - 10.0,  # Bullish: 90.0
+            'trade2': 200.0 + 10.0,  # Bearish: 210.0
+            'trade3': 150.0 - 10.0,  # Bullish: 140.0
+            'trade4': 80.0 + 10.0    # Bearish: 90.0
+        }
+        
+        # Verify results
+        for trade_id, expected_stop in expected.items():
+            self.assertEqual(result[trade_id], expected_stop)
+        
+        self.log_case_result("Correctly calculates stop prices for bullish and bearish trades", True)
+    
+    def test_invalid_stop_loss_amount(self):
+        """Test handling of invalid stop_loss_amount values"""
+        # Test with zero stop_loss_amount
+        zero_result = self.processor._get_stop_prices(0, self.entry_prices)
+        
+        # Test with negative stop_loss_amount
+        negative_result = self.processor._get_stop_prices(-5.0, self.entry_prices)
+        
+        # Both should return None for all trades
+        for trade_id in self.processor.trade_directions.keys():
+            self.assertIsNone(zero_result[trade_id])
+            self.assertIsNone(negative_result[trade_id])
+        
+        self.log_case_result("Correctly handles invalid stop_loss_amount", True)
+    
+    def test_missing_entry_prices(self):
+        """Test behavior when entry prices are missing"""
+        # Create entry prices with missing values
+        entry_prices_with_missing = self.entry_prices.copy()
+        entry_prices_with_missing['trade1'] = None  # Set trade1's entry price to None
+        
+        # Set stop_loss_amount
+        stop_loss_amount = 10.0
+        
+        # Call the method
+        result = self.processor._get_stop_prices(stop_loss_amount, entry_prices_with_missing)
+        
+        # Verify trade1 has NaN stop price due to missing entry
+        self.assertTrue(pd.isna(result['trade1']))
+        
+        # Verify other trades still have valid stop prices
+        self.assertEqual(result['trade2'], 210.0)
+        self.assertEqual(result['trade3'], 140.0)
+        self.assertEqual(result['trade4'], 90.0)
+        
+        self.log_case_result("Correctly handles missing entry prices", True)
+    
+    def test_bullish_stop_edge_case(self):
+        """Test handling of bullish trades where stop_loss_amount >= entry_price"""
+        # Create a bullish trade with very low entry price
+        entry_prices_edge = pd.Series({
+            'low_price_trade': 5.0  # Bullish trade with low entry price
+        })
+        
+        # Add the low price trade to trade_directions
+        original_directions = self.processor.trade_directions.copy()
+        self.processor.trade_directions['low_price_trade'] = {'direction': 'bullish'}
+        
+        # Test with stop_loss_amount equal to entry_price
+        equal_result = self.processor._get_stop_prices(5.0, entry_prices_edge)
+        
+        # Test with stop_loss_amount greater than entry_price
+        greater_result = self.processor._get_stop_prices(10.0, entry_prices_edge)
+        
+        # Both should return None for the low price trade
+        self.assertIsNone(equal_result['low_price_trade'])
+        self.assertIsNone(greater_result['low_price_trade'])
+        
+        # Restore original trade_directions
+        self.processor.trade_directions = original_directions
+        
+        self.log_case_result("Correctly handles bullish stop price edge cases", True)
+    
+    def test_multiple_trades(self):
+        """Test with a mix of different trades"""
+        # Set up a variety of trades with different scenarios
+        mixed_entry_prices = pd.Series({
+            'trade1': 100.0,         # Normal bullish
+            'trade2': 200.0,         # Normal bearish
+            'trade3': None,          # Missing entry price
+            'trade4': 5.0,           # Low-price bullish (for edge case testing)
+            'trade5': 300.0          # Normal bullish
+        })
+        
+        # Update trade directions
+        original_directions = self.processor.trade_directions.copy()
+        self.processor.trade_directions = {
+            'trade1': {'direction': 'bullish'},
+            'trade2': {'direction': 'bearish'},
+            'trade3': {'direction': 'bullish'},
+            'trade4': {'direction': 'bullish'},
+            'trade5': {'direction': 'bullish'}
+        }
+        
+        # Set stop_loss_amount
+        stop_loss_amount = 10.0
+        
+        # Call the method
+        result = self.processor._get_stop_prices(stop_loss_amount, mixed_entry_prices)
+        
+        # Expected results
+        self.assertEqual(result['trade1'], 90.0)          # 100.0 - 10.0
+        self.assertEqual(result['trade2'], 210.0)         # 200.0 + 10.0
+        self.assertTrue(pd.isna(result['trade3']))        # Missing entry price -> NaN
+        self.assertTrue(pd.isna(result['trade4']))        # stop_loss_amount > entry_price -> NaN (not None)
+        self.assertEqual(result['trade5'], 290.0)         # 300.0 - 10.0
+        
+        # Restore original trade_directions
+        self.processor.trade_directions = original_directions
+        
+        self.log_case_result("Correctly processes multiple trades with different scenarios", True)
+    
+    def test_return_type_and_structure(self):
+        """Test that the method returns a pandas Series with correct structure"""
+        # Set stop_loss_amount
+        stop_loss_amount = 10.0
+        
+        # Call the method
+        result = self.processor._get_stop_prices(stop_loss_amount, self.entry_prices)
+        
+        # Verify return type is pandas Series
+        self.assertIsInstance(result, pd.Series)
+        
+        # Verify Series index contains all trade IDs
+        self.assertEqual(set(result.index), set(self.processor.trade_directions.keys()))
+        
+        self.log_case_result("Returns pandas Series with correct structure", True)
+
+
 if __name__ == '__main__':
     unittest.main(exit=False)  # Run tests without exiting
     print_summary()  # Print detailed summary of test results
