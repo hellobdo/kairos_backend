@@ -4410,6 +4410,192 @@ class TestGetDurationHours(BaseTestCase):
         self.log_case_result("Returns a pandas Series with correct structure", True)
 
 
+class TestGetEndDateAndTime(BaseTestCase):
+    """Test cases for the _get_end_date_and_time method of TradeProcessor."""
+
+    def setUp(self):
+        """Set up test fixtures before each test."""
+        super().setUp()
+        
+        # Create sample timestamps for various scenarios
+        self.timestamps = [
+            pd.Timestamp('2023-01-01 10:00:00'),  # trade1 entry
+            pd.Timestamp('2023-01-01 14:30:00'),  # trade1 first exit
+            pd.Timestamp('2023-01-01 16:45:00'),  # trade1 second exit
+            pd.Timestamp('2023-01-02 09:00:00'),  # trade2 entry
+            pd.Timestamp('2023-01-03 15:30:00'),  # trade2 exit
+            pd.Timestamp('2023-01-04 11:15:00'),  # trade3 entry
+            pd.Timestamp('2023-01-05 10:00:00'),  # trade4 entry
+            pd.Timestamp('2023-01-05 14:00:00'),  # trade4 first exit
+            pd.Timestamp('2023-01-06 09:30:00'),  # trade4 second exit (out of order)
+        ]
+        
+        # Extract dates and times for test data
+        dates = [ts.strftime('%Y-%m-%d') for ts in self.timestamps]
+        times = [ts.strftime('%H:%M:%S') for ts in self.timestamps]
+        
+        # Create entry executions DataFrame
+        self.entry_execs = pd.DataFrame({
+            'trade_id': ['trade1', 'trade2', 'trade3', 'trade4'],
+            'execution_id': ['exec1', 'exec4', 'exec6', 'exec7'],
+            'execution_timestamp': [self.timestamps[0], self.timestamps[3], self.timestamps[5], self.timestamps[6]],
+            'date': [dates[0], dates[3], dates[5], dates[6]],
+            'time_of_day': [times[0], times[3], times[5], times[6]],
+            'quantity': [100, 200, 300, 400],
+            'is_entry': [1, 1, 1, 1],
+            'is_exit': [0, 0, 0, 0]
+        })
+        
+        # Create exit executions DataFrame (note: intentionally not in chronological order)
+        self.exit_execs = pd.DataFrame({
+            'trade_id': ['trade1', 'trade1', 'trade2', 'trade4', 'trade4'],
+            'execution_id': ['exec2', 'exec3', 'exec5', 'exec9', 'exec8'],
+            'execution_timestamp': [self.timestamps[1], self.timestamps[2], self.timestamps[4], 
+                                   self.timestamps[8], self.timestamps[7]],  # trade4 exits not in order
+            'date': [dates[1], dates[2], dates[4], dates[8], dates[7]],
+            'time_of_day': [times[1], times[2], times[4], times[8], times[7]],
+            'quantity': [-50, -50, -200, -200, -200],
+            'is_entry': [0, 0, 0, 0, 0],
+            'is_exit': [1, 1, 1, 1, 1]
+        })
+        
+        # Create a processor and set entry_execs and exit_execs
+        self.processor = TradeProcessor(pd.DataFrame())  # Empty main DataFrame, we'll use separate entry/exit
+        self.processor.entry_execs = self.entry_execs
+        self.processor.exit_execs = self.exit_execs
+
+    def test_basic_functionality(self):
+        """Test basic functionality for trades with exit executions."""
+        # Get end date and time
+        end_dates, end_times = self.processor._get_end_date_and_time()
+        
+        # Verify end dates for trades with exits
+        self.assertEqual(end_dates['trade1'], '2023-01-01')  # Last exit for trade1
+        self.assertEqual(end_dates['trade2'], '2023-01-03')  # Last exit for trade2
+        self.assertEqual(end_dates['trade4'], '2023-01-06')  # Last exit for trade4
+        
+        # Verify end times for trades with exits
+        self.assertEqual(end_times['trade1'], '16:45:00')  # Last exit for trade1
+        self.assertEqual(end_times['trade2'], '15:30:00')  # Last exit for trade2
+        self.assertEqual(end_times['trade4'], '09:30:00')  # Last exit for trade4
+        
+        self.log_case_result("Correctly returns end date and time for trades with exits", True)
+
+    def test_no_exit_executions(self):
+        """Test behavior when there are no exit executions at all."""
+        # Save original exit_execs
+        original_exit_execs = self.processor.exit_execs
+        
+        # Set exit_execs to empty DataFrame
+        self.processor.exit_execs = pd.DataFrame(columns=self.exit_execs.columns)
+        
+        # Get end date and time
+        end_dates, end_times = self.processor._get_end_date_and_time()
+        
+        # Verify both Series have the entry trade_ids as index
+        self.assertEqual(set(end_dates.index), set(self.entry_execs['trade_id']))
+        self.assertEqual(set(end_times.index), set(self.entry_execs['trade_id']))
+        
+        # Verify all values are NaN
+        self.assertTrue(end_dates.isna().all())
+        self.assertTrue(end_times.isna().all())
+        
+        # Restore original exit_execs
+        self.processor.exit_execs = original_exit_execs
+        
+        self.log_case_result("Returns empty Series with proper index when no exits exist", True)
+
+    def test_chronological_ordering(self):
+        """Test that the method correctly sorts by timestamp and returns the last execution."""
+        # Note: Our exit_execs for trade4 are intentionally not in chronological order
+        
+        # Get end date and time
+        end_dates, end_times = self.processor._get_end_date_and_time()
+        
+        # Verify that the last chronological exit is returned for trade4, not the last in the DataFrame
+        self.assertEqual(end_dates['trade4'], '2023-01-06')  # Chronologically last date
+        self.assertEqual(end_times['trade4'], '09:30:00')  # Chronologically last time
+        
+        self.log_case_result("Correctly sorts by timestamp before determining last exit", True)
+
+    def test_multiple_exit_executions(self):
+        """Test with trades having multiple exit executions."""
+        # Note: trade1 and trade4 have multiple exit executions
+        
+        # Get end date and time
+        end_dates, end_times = self.processor._get_end_date_and_time()
+        
+        # Verify results for trade1
+        self.assertEqual(end_dates['trade1'], '2023-01-01')  # Last exit date
+        self.assertEqual(end_times['trade1'], '16:45:00')  # Last exit time
+        
+        # Verify results for trade4
+        self.assertEqual(end_dates['trade4'], '2023-01-06')  # Last exit date
+        self.assertEqual(end_times['trade4'], '09:30:00')  # Last exit time
+        
+        self.log_case_result("Correctly handles trades with multiple exit executions", True)
+
+    def test_mixed_scenarios(self):
+        """Test with some trades having exit executions and some without."""
+        # Note: trade3 has no exit execution
+        
+        # Get end date and time
+        end_dates, end_times = self.processor._get_end_date_and_time()
+        
+        # Verify trades with exits have values
+        self.assertIn('trade1', end_dates)
+        self.assertFalse(pd.isna(end_dates['trade1']))
+        self.assertIn('trade2', end_dates)
+        self.assertFalse(pd.isna(end_dates['trade2']))
+        self.assertIn('trade4', end_dates)
+        self.assertFalse(pd.isna(end_dates['trade4']))
+        
+        # Verify trade without exit is not included in the result
+        # Note: The _get_end_date_and_time implementation only includes trades with exit executions
+        self.assertNotIn('trade3', end_dates)
+        self.assertNotIn('trade3', end_times)
+        
+        self.log_case_result("Correctly handles mixed scenarios of trades with and without exits", True)
+
+    def test_return_type(self):
+        """Test that the return value is a tuple of two pandas Series with correct structure."""
+        # Get end date and time
+        result = self.processor._get_end_date_and_time()
+        
+        # Verify return type is a tuple of two pandas Series
+        self.assertIsInstance(result, tuple)
+        self.assertEqual(len(result), 2)
+        self.assertIsInstance(result[0], pd.Series)  # end_dates
+        self.assertIsInstance(result[1], pd.Series)  # end_times
+        
+        # Verify Series have trade_ids as index, but only for trades with exit executions
+        exit_trade_ids = set(self.exit_execs['trade_id'])
+        self.assertEqual(set(result[0].index), exit_trade_ids)
+        self.assertEqual(set(result[1].index), exit_trade_ids)
+        
+        self.log_case_result("Returns tuple of two pandas Series with correct structure", True)
+
+    def test_empty_dataframe_edge_case(self):
+        """Test with completely empty entry_execs and exit_execs DataFrames."""
+        # Create a new processor with empty DataFrames
+        empty_processor = TradeProcessor(pd.DataFrame())
+        empty_processor.entry_execs = pd.DataFrame(columns=self.entry_execs.columns)
+        empty_processor.exit_execs = pd.DataFrame(columns=self.exit_execs.columns)
+        
+        # Get end date and time
+        end_dates, end_times = empty_processor._get_end_date_and_time()
+        
+        # Verify both Series are empty
+        self.assertEqual(len(end_dates), 0)
+        self.assertEqual(len(end_times), 0)
+        
+        # Verify both are still pandas Series
+        self.assertIsInstance(end_dates, pd.Series)
+        self.assertIsInstance(end_times, pd.Series)
+        
+        self.log_case_result("Correctly handles completely empty DataFrames", True)
+
+
 if __name__ == '__main__':
     unittest.main(exit=False)  # Run tests without exiting
     print_summary()  # Print detailed summary of test results
