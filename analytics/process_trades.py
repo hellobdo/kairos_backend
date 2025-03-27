@@ -67,30 +67,43 @@ class TradeProcessor:
         Returns:
             True if analysis succeeded, False otherwise
         """
-        # Process each trade's entry execution
-        for trade_id, group in self.entry_execs.groupby('trade_id'):
-            # Get the initial entry execution's quantity to determine direction
-            # We look at the first entry execution (by timestamp) to determine direction
-            entry_execution = group.sort_values('execution_timestamp').iloc[0]
-            initial_quantity = entry_execution['quantity']
+        try:
+            # Handle empty entry_execs case
+            if self.entry_execs.empty:
+                return True
+
+            # Process each trade's entry execution
+            for trade_id, group in self.entry_execs.groupby('trade_id'):
+                try:
+                    # Get the initial entry execution's quantity to determine direction
+                    # We look at the first entry execution (by timestamp) to determine direction
+                    entry_execution = group.sort_values('execution_timestamp').iloc[0]
+                    initial_quantity = entry_execution['quantity']
+                    
+                    # Determine direction based on the INITIAL entry quantity
+                    if initial_quantity > 0:
+                        direction = 'bullish'
+                    elif initial_quantity < 0:
+                        direction = 'bearish'
+                    else:
+                        print(f"Trade {trade_id} has zero quantity entry which is invalid")
+                        return False
+                        
+                    # Store results for this trade
+                    # Convert numpy numeric types to Python native types
+                    self.trade_directions[trade_id] = {
+                        'direction': direction,
+                        'initial_quantity': float(initial_quantity),
+                        'abs_initial_quantity': float(abs(initial_quantity))
+                    }
+                except (KeyError, IndexError) as e:
+                    print(f"Error analyzing trade {trade_id}: {str(e)}")
+                    return False
             
-            # Determine direction based on the INITIAL entry quantity
-            if initial_quantity > 0:
-                direction = 'bullish'
-            elif initial_quantity < 0:
-                direction = 'bearish'
-            else:
-                print(f"Trade {trade_id} has zero quantity entry which is invalid")
-                return False
-                
-            # Store results for this trade
-            self.trade_directions[trade_id] = {
-                'direction': direction,
-                'initial_quantity': initial_quantity,
-                'abs_initial_quantity': abs(initial_quantity)
-            }
-        
-        return True
+            return True
+        except Exception as e:
+            print(f"Error in _analyze_trade_directions: {str(e)}")
+            return False
     
     def process_trades(self) -> Optional[pd.DataFrame]:
         """
@@ -343,6 +356,7 @@ class TradeProcessor:
             
             # 10. Get risk per trade
             risk_per_trade = self._get_risk_per_trade(
+                risk_per_trade=None,
                 risk_amount_per_share=risk_amount_per_share,
                 quantity=quantity,
                 entry_info=entry_info
@@ -512,6 +526,9 @@ class TradeProcessor:
         durations = {}
         for trade_id in entry_times.index:
             if trade_id in exit_times.index:
+                # Check if exit time is earlier than or equal to entry time
+                if exit_times[trade_id] < entry_times[trade_id]:
+                    raise ValueError(f"Exit time for trade {trade_id} is earlier than or equal to entry time")
                 durations[trade_id] = (exit_times[trade_id] - entry_times[trade_id]).total_seconds() / 3600
         
         return pd.Series(durations)

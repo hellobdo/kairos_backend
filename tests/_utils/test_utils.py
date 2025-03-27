@@ -3,10 +3,11 @@ import sys
 import pandas as pd
 from unittest.mock import patch, MagicMock
 import io
+from collections import OrderedDict
 
 # Dictionary to track test results for summary
 # Structure: {class_name: {"methods": {method_name: {"cases": [], "passed": bool}}, "passed": bool}}
-test_results = {}
+test_results = OrderedDict()
 # Global flag to indicate if any test has failed or had an error
 has_test_failures = False
 
@@ -111,10 +112,6 @@ class BaseTestCase(unittest.TestCase):
 
 def print_summary():
     """Print a summary of all test results"""
-    print("\n" + "="*50)
-    print("TEST SUMMARY")
-    print("="*50)
-    
     # Print detailed test results by test class and method
     for class_name, class_result in test_results.items():
         class_symbol = "✓" if class_result["passed"] else "✗"
@@ -130,8 +127,10 @@ def print_summary():
                 case_symbol = "✓" if case["passed"] else "✗"
                 print(f"    [{case_symbol}] {case['name']}")
     
-    # Print summary statistics
+    # Print summary header
     print("\n" + "="*50)
+    print("TEST SUMMARY")
+    print("="*50)
     
     # Count classes, methods, cases
     class_count = len(test_results)
@@ -153,8 +152,13 @@ def print_summary():
                 if case["passed"]:
                     case_pass_count += 1
     
+    # Print class-level summary only
+    for class_name, class_result in test_results.items():
+        class_symbol = "✓" if class_result["passed"] else "✗"
+        print(f"[{class_symbol}] {class_name}")
+    
     # Print statistics
-    print(f"TEST CLASSES: {class_pass_count}/{class_count} passed")
+    print(f"\nTEST CLASSES: {class_pass_count}/{class_count} passed")
     print(f"TEST METHODS: {method_pass_count}/{method_count} passed")
     print(f"TEST CASES: {case_pass_count}/{case_count} passed")
     
