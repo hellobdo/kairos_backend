@@ -496,10 +496,9 @@ class TradeProcessor:
         Returns:
             Tuple containing (end_date_series, end_time_series)
         """
-        # If no exits, return empty Series
+        # If no exits, return empty Series with appropriate indexes
         if self.exit_execs.empty:
-            # Return None for both date and time
-            return None, None
+            return pd.Series(index=self.entry_execs['trade_id']), pd.Series(index=self.entry_execs['trade_id'])
         
         # Sort by execution_timestamp to ensure chronological order
         sorted_exits = self.exit_execs.sort_values('execution_timestamp')

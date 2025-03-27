@@ -1830,9 +1830,21 @@ class TestGetAllAggregations(BaseTestCase):
         # Call the method
         result = processor._get_all_aggregations()
         
-        # Verify that the result contains most keys, but end_date and end_time are None
-        self.assertIsNone(result['end_date'])
-        self.assertIsNone(result['end_time'])
+        # Verify that the result contains most keys, but end_date and end_time are empty Series
+        # This is the updated behavior - returning empty Series instead of None
+        self.assertIn('end_date', result)
+        self.assertIn('end_time', result)
+        self.assertTrue(isinstance(result['end_date'], pd.Series), "end_date should be a Series")
+        self.assertTrue(isinstance(result['end_time'], pd.Series), "end_time should be a Series")
+        
+        # Check that the Series have entries for each trade ID
+        expected_trade_ids = list(processor.trade_directions.keys())
+        self.assertEqual(set(result['end_date'].index), set(expected_trade_ids))
+        self.assertEqual(set(result['end_time'].index), set(expected_trade_ids))
+        
+        # Check that all values are NaN
+        self.assertTrue(result['end_date'].isna().all())
+        self.assertTrue(result['end_time'].isna().all())
         
         # Other keys should still be present
         self.assertIn('num_executions', result)
@@ -2544,6 +2556,341 @@ class TestGetNumExecutions(BaseTestCase):
 
         # Log test result
         self.log_case_result("Correctly handles non-standard trade_id values", True)
+
+
+class TestProcessTrades(BaseTestCase):
+    """Test cases for the process_trades method of TradeProcessor"""
+
+    def setUp(self):
+        """Set up test fixtures before each test."""
+        # Call parent setUp to set up test tracking attributes
+        super().setUp()
+        
+        # Create a sample executions DataFrame for testing
+        timestamps = [
+            pd.Timestamp('2023-01-01 10:00:00'),  # trade1 entry
+            pd.Timestamp('2023-01-01 14:30:00'),  # trade1 exit
+            pd.Timestamp('2023-02-02 09:15:00'),  # trade2 entry
+            pd.Timestamp('2023-02-02 16:45:00'),  # trade2 exit
+            pd.Timestamp('2023-03-03 11:30:00'),  # trade3 entry
+            pd.Timestamp('2023-04-04 09:00:00'),  # trade4 entry
+            pd.Timestamp('2023-04-04 12:30:00'),  # trade4 exit
+        ]
+        
+        # Create dates and times from timestamps
+        dates = [ts.strftime('%Y-%m-%d') for ts in timestamps]
+        times = [ts.strftime('%H:%M:%S') for ts in timestamps]
+        
+        self.valid_executions_df = pd.DataFrame({
+            'trade_id': ['trade1', 'trade1', 'trade2', 'trade2', 'trade3', 'trade4', 'trade4'],
+            'execution_id': ['exec1', 'exec2', 'exec3', 'exec4', 'exec5', 'exec6', 'exec7'],
+            'symbol': ['AAPL', 'AAPL', 'MSFT', 'MSFT', 'GOOG', 'AMZN', 'AMZN'],
+            'date': dates,
+            'time_of_day': times,
+            'is_entry': [1, 0, 1, 0, 1, 1, 0],  # 1 for entries, 0 for exits
+            'is_exit': [0, 1, 0, 1, 0, 0, 1],   # 0 for entries, 1 for exits
+            'quantity': [100, -100, -200, 200, 300, 400, -400],  # positive for buys, negative for sells
+            'execution_timestamp': timestamps,
+            'price': [10.0, 11.0, 20.0, 21.0, 30.0, 40.0, 41.0],
+            'commission': [1.0, 1.0, 2.0, 2.0, 3.0, 4.0, 4.0]
+        })
+        
+        # Create an invalid DataFrame (missing required columns)
+        self.invalid_executions_df = self.valid_executions_df.drop(columns=['is_entry', 'is_exit'])
+        
+        # Create an empty DataFrame
+        self.empty_executions_df = pd.DataFrame(columns=self.valid_executions_df.columns)
+        
+        # Set up mock for db.get_account_balances() 
+        self.account_balances_patcher = patch('utils.db_utils.DatabaseManager.get_account_balances')
+        self.mock_get_account_balances = self.account_balances_patcher.start()
+        
+        # Set up mock account balances return value
+        self.mock_get_account_balances.return_value = pd.DataFrame({
+            'date': ['2023-01-01', '2023-02-02', '2023-03-03', '2023-04-04'],
+            'cash_balance': [10000.0, 10500.0, 11000.0, 12000.0]
+        })
+
+    def tearDown(self):
+        """Clean up after each test"""
+        super().tearDown()
+        self.account_balances_patcher.stop()
+
+    def test_basic_functionality(self):
+        """Test that valid inputs produce a non-None DataFrame with expected columns."""
+        # Create processor with valid data
+        processor = TradeProcessor(self.valid_executions_df)
+        
+        # Process trades
+        result_df = processor.process_trades()
+        
+        # Verify the result
+        self.assertIsNotNone(result_df)
+        self.assertIsInstance(result_df, pd.DataFrame)
+        
+        # Check that the result has expected columns
+        expected_columns = [
+            'trade_id', 'num_executions', 'symbol', 'direction', 'quantity', 
+            'entry_price', 'capital_required', 'exit_price', 'risk_reward',
+            'risk_per_trade', 'commission', 'status'
+        ]
+        
+        for col in expected_columns:
+            self.assertIn(col, result_df.columns)
+        
+        # Check that all trades are present
+        expected_trade_ids = ['trade1', 'trade2', 'trade3', 'trade4']
+        self.assertListEqual(sorted(result_df['trade_id'].tolist()), sorted(expected_trade_ids))
+        
+        # Log test result
+        self.log_case_result("Basic functionality with valid data works correctly", True)
+
+    def test_validation_failure(self):
+        """Test that invalid data causes validate() to return False and process_trades() to return None."""
+        # Create processor with invalid data (missing required columns)
+        processor = TradeProcessor(self.invalid_executions_df)
+        
+        # Process trades (should return None due to validation failure)
+        result_df = processor.process_trades()
+        
+        # Verify the result
+        self.assertIsNone(result_df)
+        
+        # Log test result
+        self.log_case_result("Returns None when validation fails", True)
+
+    def test_preprocessing_failure(self):
+        """Test that issues in preprocessing cause preprocess() to return False and process_trades() to return None."""
+        # Create a processor with valid structure but no entry executions
+        no_entry_df = self.valid_executions_df.copy()
+        no_entry_df['is_entry'] = 0  # Set all is_entry to 0
+        
+        processor = TradeProcessor(no_entry_df)
+        
+        # Mock the preprocess method to return False
+        with patch.object(TradeProcessor, 'preprocess', return_value=False):
+            # Process trades (should return None due to preprocessing failure)
+            result_df = processor.process_trades()
+            
+            # Verify the result
+            self.assertIsNone(result_df)
+        
+        # Log test result
+        self.log_case_result("Returns None when preprocessing fails", True)
+
+    def test_exception_handling(self):
+        """Test that exceptions in _get_all_aggregations() or _build_trades_dataframe() are caught."""
+        # Create processor with valid data
+        processor = TradeProcessor(self.valid_executions_df)
+        
+        # Test exception in _get_all_aggregations
+        with patch.object(TradeProcessor, '_get_all_aggregations', side_effect=Exception("Test exception")):
+            # Process trades (should return None due to exception)
+            result_df = processor.process_trades()
+            
+            # Verify the result
+            self.assertIsNone(result_df)
+        
+        # Test exception in _build_trades_dataframe
+        with patch.object(TradeProcessor, '_build_trades_dataframe', side_effect=Exception("Test exception")):
+            # Process trades (should return None due to exception)
+            result_df = processor.process_trades()
+            
+            # Verify the result
+            self.assertIsNone(result_df)
+        
+        # Log test result
+        self.log_case_result("Catches exceptions and returns None", True)
+
+    def test_empty_dataframe(self):
+        """Test that an empty input DataFrame returns None."""
+        # Create processor with empty data
+        processor = TradeProcessor(self.empty_executions_df)
+        
+        # Process trades (should return None due to empty data)
+        result_df = processor.process_trades()
+        
+        # Verify the result
+        self.assertIsNone(result_df)
+        
+        # Log test result
+        self.log_case_result("Returns None for empty input DataFrame", True)
+
+    def test_single_execution_trade(self):
+        """Test processing a trade with only a single execution (entry only)."""
+        # Create DataFrame with single execution
+        single_exec_df = self.valid_executions_df.iloc[[0]].copy()  # Only the first row (entry for trade1)
+        
+        # Create processor with single execution data
+        processor = TradeProcessor(single_exec_df)
+        
+        # Manually initialize trade directions - needed since we normally need entry executions processed
+        processor.trade_directions = {'trade1': {'direction': 'bullish', 'initial_quantity': 100.0, 'abs_initial_quantity': 100.0}}
+        
+        # Process trades
+        result_df = processor.process_trades()
+        
+        # Verify the result
+        self.assertIsNotNone(result_df)
+        self.assertEqual(len(result_df), 1)
+        self.assertEqual(result_df.iloc[0]['trade_id'], 'trade1')
+        self.assertEqual(result_df.iloc[0]['status'], 'open')  # Should be open since there's no exit
+        
+        # Log test result
+        self.log_case_result("Correctly processes single execution trade", True)
+
+    def test_multiple_entries_exits(self):
+        """Test processing a trade with multiple entry and exit executions."""
+        # Create DataFrame with multiple entries/exits for the same trade
+        timestamps = [
+            pd.Timestamp('2023-05-01 09:00:00'),  # First entry
+            pd.Timestamp('2023-05-01 10:30:00'),  # Second entry
+            pd.Timestamp('2023-05-01 14:00:00'),  # First exit
+            pd.Timestamp('2023-05-01 15:30:00'),  # Second exit
+        ]
+        
+        # Create dates and times from timestamps
+        dates = [ts.strftime('%Y-%m-%d') for ts in timestamps]
+        times = [ts.strftime('%H:%M:%S') for ts in timestamps]
+        
+        multi_exec_df = pd.DataFrame({
+            'trade_id': ['multi1', 'multi1', 'multi1', 'multi1'],
+            'execution_id': ['mexec1', 'mexec2', 'mexec3', 'mexec4'],
+            'symbol': ['TSLA', 'TSLA', 'TSLA', 'TSLA'],
+            'date': dates,
+            'time_of_day': times,
+            'is_entry': [1, 1, 0, 0],  # 1 for entries, 0 for exits
+            'is_exit': [0, 0, 1, 1],   # 0 for entries, 1 for exits
+            'quantity': [50, 50, -50, -50],  # positive for buys, negative for sells
+            'execution_timestamp': timestamps,
+            'price': [100.0, 101.0, 102.0, 103.0],
+            'commission': [5.0, 5.0, 5.0, 5.0]
+        })
+        
+        # Add account balance for this date
+        self.mock_get_account_balances.return_value = pd.concat([
+            self.mock_get_account_balances.return_value,
+            pd.DataFrame({'date': ['2023-05-01'], 'cash_balance': [12500.0]})
+        ])
+        
+        # Create processor with multiple execution data
+        processor = TradeProcessor(multi_exec_df)
+        
+        # Manually initialize trade directions
+        processor.trade_directions = {'multi1': {'direction': 'bullish', 'initial_quantity': 50.0, 'abs_initial_quantity': 50.0}}
+        
+        # Process trades
+        result_df = processor.process_trades()
+        
+        # Verify the result
+        self.assertIsNotNone(result_df)
+        self.assertEqual(len(result_df), 1)
+        self.assertEqual(result_df.iloc[0]['trade_id'], 'multi1')
+        self.assertEqual(result_df.iloc[0]['quantity'], 100)  # Sum of entry quantities
+        
+        # Calculate expected VWAP for entries and exits
+        expected_entry_vwap = (50*100.0 + 50*101.0) / 100  # (qty1*price1 + qty2*price2) / total_qty
+        expected_exit_vwap = (50*102.0 + 50*103.0) / 100  # (qty1*price1 + qty2*price2) / total_qty
+        
+        # Check that the entry and exit prices are correct VWAPs
+        self.assertAlmostEqual(result_df.iloc[0]['entry_price'], expected_entry_vwap)
+        self.assertAlmostEqual(result_df.iloc[0]['exit_price'], expected_exit_vwap)
+        
+        # Log test result
+        self.log_case_result("Correctly processes trades with multiple entries and exits", True)
+
+    def test_trades_spanning_multiple_days(self):
+        """Test processing trades that span multiple days."""
+        # Create DataFrame with trades spanning multiple days
+        timestamps = [
+            pd.Timestamp('2023-06-01 10:00:00'),  # span1 entry
+            pd.Timestamp('2023-06-05 14:30:00'),  # span1 exit (4 days later)
+        ]
+        
+        # Create dates and times from timestamps
+        dates = [ts.strftime('%Y-%m-%d') for ts in timestamps]
+        times = [ts.strftime('%H:%M:%S') for ts in timestamps]
+        
+        span_df = pd.DataFrame({
+            'trade_id': ['span1', 'span1'],
+            'execution_id': ['sexec1', 'sexec2'],
+            'symbol': ['META', 'META'],
+            'date': dates,
+            'time_of_day': times,
+            'is_entry': [1, 0],  # 1 for entries, 0 for exits
+            'is_exit': [0, 1],   # 0 for entries, 1 for exits
+            'quantity': [200, -200],  # positive for buys, negative for sells
+            'execution_timestamp': timestamps,
+            'price': [300.0, 310.0],
+            'commission': [10.0, 10.0]
+        })
+        
+        # Add account balance for these dates
+        self.mock_get_account_balances.return_value = pd.concat([
+            self.mock_get_account_balances.return_value,
+            pd.DataFrame({'date': ['2023-06-01', '2023-06-05'], 'cash_balance': [13000.0, 13500.0]})
+        ])
+        
+        # Create processor with span data
+        processor = TradeProcessor(span_df)
+        
+        # Manually initialize trade directions
+        processor.trade_directions = {'span1': {'direction': 'bullish', 'initial_quantity': 200.0, 'abs_initial_quantity': 200.0}}
+        
+        # Process trades
+        result_df = processor.process_trades()
+        
+        # Verify the result
+        self.assertIsNotNone(result_df)
+        self.assertEqual(result_df.iloc[0]['trade_id'], 'span1')
+        
+        # Calculate expected duration directly from timestamps
+        # This matches exactly what _get_duration_hours does internally
+        expected_duration = (timestamps[1] - timestamps[0]).total_seconds() / 3600
+        
+        # Check the duration hours
+        self.assertAlmostEqual(result_df.iloc[0]['duration_hours'], expected_duration, delta=0.01)
+        
+        # Check that start and end dates are correct
+        self.assertEqual(result_df.iloc[0]['start_date'], '2023-06-01')
+        self.assertEqual(result_df.iloc[0]['end_date'], '2023-06-05')
+        
+        # Log test result
+        self.log_case_result("Correctly processes trades spanning multiple days", True)
+
+    def test_integration_with_other_methods(self):
+        """Test the integration of process_trades with all dependent methods."""
+        # Create processor with valid data
+        processor = TradeProcessor(self.valid_executions_df)
+        
+        # We need to let the real preprocess method run to initialize trade directions properly
+        # but we still want to verify it was called
+        original_preprocess = processor.preprocess
+        
+        def wrapped_preprocess():
+            result = original_preprocess()
+            return result
+            
+        # Set up mocks to verify method calls
+        with patch.object(TradeProcessor, 'validate', return_value=True) as mock_validate, \
+             patch.object(TradeProcessor, 'preprocess', side_effect=wrapped_preprocess) as mock_preprocess, \
+             patch.object(TradeProcessor, '_get_all_aggregations', wraps=processor._get_all_aggregations) as mock_get_aggs, \
+             patch.object(TradeProcessor, '_build_trades_dataframe', wraps=processor._build_trades_dataframe) as mock_build_df:
+            
+            # Process trades
+            result_df = processor.process_trades()
+            
+            # Verify that all methods were called
+            mock_validate.assert_called_once()
+            mock_preprocess.assert_called_once()
+            mock_get_aggs.assert_called_once()
+            mock_build_df.assert_called_once()
+        
+        # Verify the result
+        self.assertIsNotNone(result_df)
+        
+        # Log test result
+        self.log_case_result("Correctly integrates with all dependent methods", True)
 
 
 # If running the tests directly, print summary
