@@ -5379,6 +5379,191 @@ class TestGetQuantityAndEntryPrice(BaseTestCase):
         
         self.log_case_result("Correctly handles different data types", True)
 
+class TestGetRiskAmountPerShare(BaseTestCase):
+    """Test cases for TradeProcessor._get_risk_amount_per_share method"""
+    
+    def setUp(self):
+        """Set up test environment before each test method"""
+        # Call super to set up test tracking attributes
+        super().setUp()
+        
+        # Create a sample executions DataFrame
+        self.executions_df = pd.DataFrame({
+            'trade_id': ['trade1', 'trade2', 'trade3', 'trade4'],
+            'quantity': [100, -50, 200, -75],
+            'price': [150.0, 160.0, 200.0, 90.0],
+            'symbol': ['AAPL', 'MSFT', 'TSLA', 'META'],
+            'date': ['2023-01-01'] * 4,
+            'time_of_day': ['09:30:00'] * 4,
+            'execution_timestamp': pd.to_datetime(['2023-01-01 09:30:00'] * 4),
+            'is_entry': [1, 1, 1, 1]
+        })
+        
+        # Initialize processor and set trade directions
+        self.processor = TradeProcessor(self.executions_df)
+        self.processor.trade_directions = {
+            'trade1': {'direction': 'bullish'},
+            'trade2': {'direction': 'bearish'},
+            'trade3': {'direction': 'bullish'},
+            'trade4': {'direction': 'bearish'}
+        }
+        
+        # Set class_name attribute for BaseTestCase tracking
+        self.class_name = "TestGetRiskAmountPerShare"
+    
+    def test_basic_calculation(self):
+        """Test basic risk amount per share calculation"""
+        # Create test data
+        entry_prices = pd.Series({
+            'trade1': 100.0,
+            'trade2': 200.0,
+            'trade3': 150.0,
+            'trade4': 80.0
+        })
+        
+        stop_prices = pd.Series({
+            'trade1': 90.0,   # Bullish trade - stop below entry
+            'trade2': 210.0,  # Bearish trade - stop above entry
+            'trade3': 140.0,  # Bullish trade - stop below entry
+            'trade4': 90.0    # Bearish trade - stop above entry
+        })
+        
+        # Expected results (absolute difference between entry and stop)
+        expected_results = pd.Series({
+            'trade1': 10.0,
+            'trade2': 10.0,
+            'trade3': 10.0,
+            'trade4': 10.0
+        })
+        
+        # Call the method
+        result = self.processor._get_risk_amount_per_share(entry_prices, stop_prices)
+        
+        # Verify results
+        pd.testing.assert_series_equal(result, expected_results)
+        
+        self.log_case_result("Correctly calculates basic risk amount per share", True)
+    
+    def test_missing_values(self):
+        """Test risk calculation with missing values"""
+        # Create test data with some missing values
+        entry_prices = pd.Series({
+            'trade1': 100.0,
+            'trade2': None,
+            'trade3': 150.0,
+            'trade4': 80.0
+        })
+        
+        stop_prices = pd.Series({
+            'trade1': 90.0,
+            'trade2': 210.0,
+            'trade3': None,
+            'trade4': 90.0
+        })
+        
+        # Expected results
+        expected_results = pd.Series({
+            'trade1': 10.0,
+            'trade2': None,
+            'trade3': None,
+            'trade4': 10.0
+        })
+        
+        # Call the method
+        result = self.processor._get_risk_amount_per_share(entry_prices, stop_prices)
+        
+        # Verify results
+        pd.testing.assert_series_equal(result, expected_results)
+        
+        self.log_case_result("Correctly handles missing values", True)
+    
+    def test_zero_risk(self):
+        """Test with zero risk (entry price equals stop price)"""
+        # Create test data with some zero risk
+        entry_prices = pd.Series({
+            'trade1': 100.0,
+            'trade2': 200.0,
+            'trade3': 150.0,
+            'trade4': 90.0
+        })
+        
+        stop_prices = pd.Series({
+            'trade1': 100.0,  # Same as entry - zero risk
+            'trade2': 200.0,  # Same as entry - zero risk
+            'trade3': 140.0,
+            'trade4': 95.0
+        })
+        
+        # Expected results
+        expected_results = pd.Series({
+            'trade1': 0.0,
+            'trade2': 0.0,
+            'trade3': 10.0,
+            'trade4': 5.0
+        })
+        
+        # Call the method
+        result = self.processor._get_risk_amount_per_share(entry_prices, stop_prices)
+        
+        # Verify results
+        pd.testing.assert_series_equal(result, expected_results)
+        
+        self.log_case_result("Correctly handles zero risk", True)
+    
+    def test_inverted_stops(self):
+        """Test with inverted stops (stop below entry for bearish, above for bullish)"""
+        # Create test data with inverted stops
+        entry_prices = pd.Series({
+            'trade1': 100.0,  # Bullish
+            'trade2': 200.0,  # Bearish
+            'trade3': 150.0,  # Add the other trade IDs but we'll focus on trade1 and trade2
+            'trade4': 80.0
+        })
+        
+        stop_prices = pd.Series({
+            'trade1': 110.0,  # Inverted: stop above entry for bullish
+            'trade2': 190.0,  # Inverted: stop below entry for bearish
+            'trade3': 140.0,  # Normal stops for the other trades
+            'trade4': 90.0
+        })
+        
+        # Call the method
+        result = self.processor._get_risk_amount_per_share(entry_prices, stop_prices)
+        
+        # Verify results for the inverted stops
+        self.assertEqual(result['trade1'], 10.0)
+        self.assertEqual(result['trade2'], 10.0)
+        
+        self.log_case_result("Correctly handles inverted stops", True)
+    
+    def test_return_type(self):
+        """Test that the method returns a pandas Series with the correct index"""
+        # Create test data for all trades
+        entry_prices = pd.Series({
+            'trade1': 100.0,
+            'trade2': 200.0,
+            'trade3': 150.0,
+            'trade4': 80.0
+        })
+        
+        stop_prices = pd.Series({
+            'trade1': 90.0,
+            'trade2': 210.0,
+            'trade3': 140.0,
+            'trade4': 90.0
+        })
+        
+        # Call the method
+        result = self.processor._get_risk_amount_per_share(entry_prices, stop_prices)
+        
+        # Verify result type and index
+        self.assertIsInstance(result, pd.Series)
+        
+        # Verify that all trade IDs are in the result
+        all_trade_ids = set(['trade1', 'trade2', 'trade3', 'trade4'])
+        self.assertEqual(set(result.index), all_trade_ids)
+        
+        self.log_case_result("Returns correct type with proper index", True)
 
 if __name__ == '__main__':
     unittest.main(exit=False)  # Run tests without exiting
