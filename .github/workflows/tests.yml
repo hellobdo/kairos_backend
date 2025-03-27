@@ -7,6 +7,7 @@ on:
       - 'api/ibkr.py'
       - 'analytics/broker_cash.py'
       - 'analytics/broker_executions.py'
+      - 'analytics/process_trades.py'
       - 'utils/db_utils.py'
       - 'utils/pandas_utils.py'
       - 'utils/process_executions_utils.py'
@@ -17,6 +18,7 @@ on:
       - 'tests/api/test_ibkr_api.py'
       - 'tests/analytics/test_broker_cash.py'
       - 'tests/analytics/test_broker_executions.py'
+      - 'tests/analytics/test_process_trades.py'
       - 'tests/utils/test_db_utils.py'
       - 'tests/utils/test_pandas_utils.py'
       - 'tests/utils/test_process_executions_utils.py'
@@ -30,6 +32,7 @@ on:
       - 'api/ibkr.py'
       - 'analytics/broker_executions.py'
       - 'analytics/broker_cash.py'
+      - 'analytics/process_trades.py'
       - 'utils/db_utils.py'
       - 'utils/pandas_utils.py'
       - 'utils/process_executions_utils.py'
@@ -40,6 +43,7 @@ on:
       - 'tests/api/test_ibkr_api.py'
       - 'tests/analytics/test_broker_cash.py'
       - 'tests/analytics/test_broker_executions.py'
+      - 'tests/analytics/test_process_trades.py'
       - 'tests/utils/test_db_utils.py'
       - 'tests/utils/test_pandas_utils.py'
       - 'tests/utils/test_process_executions_utils.py'
@@ -62,7 +66,7 @@ jobs:
         id: set-test-modules
         run: |
           # Explicitly list the test modules
-          TEST_MODULES_JSON='["api.test_ibkr_api", "analytics.test_broker_cash", "analytics.test_broker_executions", "utils.test_db_utils", "utils.test_pandas_utils", "utils.test_process_executions_utils", "indicators.test_column_utils", "indicators.test_indicators", "backtests.test_backtest_functions", "backtests.test_process_executions"]'
+          TEST_MODULES_JSON='["api.test_ibkr_api", "analytics.test_broker_cash", "analytics.test_broker_executions", "analytics.test_process_trades", "utils.test_db_utils", "utils.test_pandas_utils", "utils.test_process_executions_utils", "indicators.test_column_utils", "indicators.test_indicators", "backtests.test_backtest_functions", "backtests.test_process_executions"]'
           
           # Set output for the test job
           echo "test_modules=$TEST_MODULES_JSON" >> $GITHUB_OUTPUT
