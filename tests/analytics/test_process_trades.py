@@ -6001,6 +6001,119 @@ class TestGetStopPrices(BaseTestCase):
         
         self.log_case_result("Returns pandas Series with correct structure", True)
 
+class TestGetSymbols(BaseTestCase):
+    """Test cases for TradeProcessor._get_symbols method"""
+    
+    def setUp(self):
+        """Set up common test data for each test case"""
+        # Call the parent setUp to initialize BaseTestCase attributes
+        super().setUp()
+        
+        # Create a sample executions DataFrame
+        executions_df = pd.DataFrame({
+            'trade_id': ['trade1', 'trade1', 'trade2', 'trade3', 'trade3', 'trade3', 'trade4'],
+            'symbol': ['AAPL', 'AAPL', 'MSFT', 'TSLA', 'TSLA', 'TSLA', 'GOOG'],
+            'price': [150.0, 152.0, 250.0, 800.0, 810.0, 820.0, 2000.0],
+            'quantity': [10, 5, 20, 5, 3, 2, 1]
+        })
+        
+        # Initialize the TradeProcessor with the executions DataFrame
+        self.processor = TradeProcessor(executions_df)
+        
+        # Initialize case_results for this test class
+        self.case_results = {}
+        
+    def test_basic_functionality(self):
+        """Test that the method returns the first symbol for each trade_id"""
+        # Call the method
+        result = self.processor._get_symbols()
+        
+        # Check the result is a pandas Series
+        self.assertIsInstance(result, pd.Series)
+        
+        # Check that it returns the first symbol for each trade_id
+        self.assertEqual(result['trade1'], 'AAPL')
+        self.assertEqual(result['trade2'], 'MSFT')
+        self.assertEqual(result['trade3'], 'TSLA')
+        self.assertEqual(result['trade4'], 'GOOG')
+        
+        # Check that the index of the Series consists of the trade_ids
+        self.assertTrue(set(result.index) == {'trade1', 'trade2', 'trade3', 'trade4'})
+        
+        self.log_case_result("Correctly returns first symbol for each trade", True)
+        
+    def test_empty_dataframe(self):
+        """Test behavior with an empty DataFrame"""
+        # Set up an empty DataFrame
+        empty_df = pd.DataFrame(columns=['trade_id', 'symbol', 'price', 'quantity'])
+        self.processor = TradeProcessor(empty_df)
+        
+        # Call the method
+        result = self.processor._get_symbols()
+        
+        # Check that the result is an empty Series
+        self.assertIsInstance(result, pd.Series)
+        self.assertEqual(len(result), 0)
+        
+        self.log_case_result("Handles empty DataFrame correctly", True)
+        
+    def test_missing_symbols(self):
+        """Test behavior when some trades have missing symbols"""
+        # Create a DataFrame with some missing symbol values
+        df_with_missing = pd.DataFrame({
+            'trade_id': ['trade1', 'trade1', 'trade2', 'trade3', 'trade4'],
+            'symbol': ['AAPL', 'AAPL', None, 'TSLA', np.nan],
+            'price': [150.0, 152.0, 250.0, 800.0, 2000.0],
+            'quantity': [10, 5, 20, 5, 1]
+        })
+        self.processor = TradeProcessor(df_with_missing)
+        
+        # Call the method
+        result = self.processor._get_symbols()
+        
+        # Check the results
+        self.assertEqual(result['trade1'], 'AAPL')
+        self.assertTrue(pd.isna(result['trade2']))  # First value is None
+        self.assertEqual(result['trade3'], 'TSLA')
+        self.assertTrue(pd.isna(result['trade4']))  # First value is NaN
+        
+        self.log_case_result("Handles missing symbols correctly", True)
+        
+    def test_multiple_symbols_per_trade(self):
+        """Test that only the first symbol is taken when a trade has different symbols"""
+        # Create a DataFrame with a trade having different symbols
+        df_multiple_symbols = pd.DataFrame({
+            'trade_id': ['trade1', 'trade1', 'trade1'],
+            'symbol': ['AAPL', 'MSFT', 'GOOG'],  # Different symbols for the same trade
+            'price': [150.0, 250.0, 2000.0],
+            'quantity': [10, 20, 1]
+        })
+        self.processor = TradeProcessor(df_multiple_symbols)
+        
+        # Call the method
+        result = self.processor._get_symbols()
+        
+        # Check that only the first symbol is taken
+        self.assertEqual(result['trade1'], 'AAPL')
+        self.assertEqual(len(result), 1)  # Only one trade
+        
+        self.log_case_result("Correctly takes first symbol when multiple exist", True)
+        
+    def test_return_type_and_structure(self):
+        """Test the return type and structure of the method"""
+        # Call the method
+        result = self.processor._get_symbols()
+        
+        # Check that the result is a pandas Series
+        self.assertIsInstance(result, pd.Series)
+        
+        # Check that the Series is indexed by trade_id
+        self.assertEqual(result.index.name, 'trade_id')
+        
+        # Check that the values are strings (symbols)
+        self.assertTrue(all(isinstance(x, str) for x in result.dropna()))
+        
+        self.log_case_result("Returns correct type and structure", True)
 
 if __name__ == '__main__':
     unittest.main(exit=False)  # Run tests without exiting
