@@ -3602,7 +3602,211 @@ class TestProcessTradesFunction(BaseTestCase):
         self.log_case_result("Handles nonstandard but valid inputs correctly", True)
 
 
-# If running the tests directly, print summary
-if __name__ == '__main__':
+class TestCalculateVWAP(BaseTestCase):
+    """Test cases for the _calculate_vwap method of TradeProcessor."""
+
+    def setUp(self):
+        """Set up test fixtures before each test."""
+        # Call parent setUp to set up test tracking attributes
+        super().setUp()
+        
+        # Create a basic TradeProcessor instance 
+        executions_df = pd.DataFrame({
+            'trade_id': ['trade1', 'trade1', 'trade2', 'trade2'],
+            'execution_id': ['exec1', 'exec2', 'exec3', 'exec4'],
+            'quantity': [100, -100, 200, -200], 
+            'price': [10.0, 11.0, 20.0, 21.0],
+            'symbol': ['AAPL', 'AAPL', 'MSFT', 'MSFT'],
+            'is_entry': [1, 0, 1, 0],
+            'is_exit': [0, 1, 0, 1],
+            'execution_timestamp': pd.to_datetime(['2023-01-01', '2023-01-02', '2023-01-03', '2023-01-04'])
+        })
+        
+        self.processor = TradeProcessor(executions_df)
+
+    def test_basic_calculation(self):
+        """Test basic VWAP calculation with positive quantities."""
+        # Create test data with positive quantities
+        executions = pd.DataFrame({
+            'quantity': [100, 200, 300],
+            'price': [10.0, 20.0, 30.0]
+        })
+        
+        # Expected calculation: (10*100 + 20*200 + 30*300) / (100 + 200 + 300)
+        # = (1000 + 4000 + 9000) / 600 = 14000 / 600 = 23.33333...
+        expected_vwap = 23.333333333333332  # Exact floating point value
+        
+        # Calculate VWAP
+        result = self.processor._calculate_vwap(executions)
+        
+        # Verify result
+        self.assertAlmostEqual(result, expected_vwap)
+        
+        self.log_case_result("Correctly calculates VWAP with positive quantities", True)
+
+    def test_negative_quantities(self):
+        """Test VWAP calculation with negative quantities."""
+        # Create test data with negative quantities
+        executions = pd.DataFrame({
+            'quantity': [-100, -200, -300],
+            'price': [10.0, 20.0, 30.0]
+        })
+        
+        # Expected calculation: (10*|-100| + 20*|-200| + 30*|-300|) / (|-100| + |-200| + |-300|)
+        # = (1000 + 4000 + 9000) / 600 = 14000 / 600 = 23.33333...
+        expected_vwap = 23.333333333333332  # Exact floating point value
+        
+        # Calculate VWAP
+        result = self.processor._calculate_vwap(executions)
+        
+        # Verify result
+        self.assertAlmostEqual(result, expected_vwap)
+        
+        self.log_case_result("Correctly calculates VWAP with negative quantities", True)
+
+    def test_mixed_quantities(self):
+        """Test VWAP calculation with both positive and negative quantities."""
+        # Create test data with mixed quantities
+        executions = pd.DataFrame({
+            'quantity': [100, -200, 300],
+            'price': [10.0, 20.0, 30.0]
+        })
+        
+        # Expected calculation: (10*|100| + 20*|-200| + 30*|300|) / (|100| + |-200| + |300|)
+        # = (1000 + 4000 + 9000) / 600 = 14000 / 600 = 23.33333...
+        expected_vwap = 23.333333333333332  # Exact floating point value
+        
+        # Calculate VWAP
+        result = self.processor._calculate_vwap(executions)
+        
+        # Verify result
+        self.assertAlmostEqual(result, expected_vwap)
+        
+        self.log_case_result("Correctly calculates VWAP with mixed quantities", True)
+
+    def test_empty_dataframe(self):
+        """Test that an empty DataFrame returns None."""
+        # Create an empty DataFrame
+        empty_df = pd.DataFrame(columns=['quantity', 'price'])
+        
+        # Calculate VWAP
+        result = self.processor._calculate_vwap(empty_df)
+        
+        # Verify result
+        self.assertIsNone(result)
+        
+        self.log_case_result("Correctly returns None for empty DataFrame", True)
+
+    def test_zero_quantities(self):
+        """Test that DataFrame with all zero quantities returns None."""
+        # Create test data with zero quantities
+        executions = pd.DataFrame({
+            'quantity': [0, 0, 0],
+            'price': [10.0, 20.0, 30.0]
+        })
+        
+        # Calculate VWAP
+        result = self.processor._calculate_vwap(executions)
+        
+        # Verify result
+        self.assertIsNone(result)
+        
+        self.log_case_result("Correctly returns None for zero quantities", True)
+
+    def test_mixed_with_zero_quantities(self):
+        """Test VWAP calculation with some zero quantities mixed with non-zero quantities."""
+        # Create test data with mixed zero and non-zero quantities
+        executions = pd.DataFrame({
+            'quantity': [100, 0, 300],
+            'price': [10.0, 20.0, 30.0]
+        })
+        
+        # Expected calculation: (10*|100| + 30*|300|) / (|100| + |300|)
+        # = (1000 + 9000) / 400 = 10000 / 400 = 25.0
+        expected_vwap = 25.0
+        
+        # Calculate VWAP
+        result = self.processor._calculate_vwap(executions)
+        
+        # Verify result
+        self.assertAlmostEqual(result, expected_vwap)
+        
+        self.log_case_result("Correctly handles mixed zero and non-zero quantities", True)
+
+    def test_precision(self):
+        """Test VWAP calculation precision with floating point numbers."""
+        # Create test data with fractional prices and quantities
+        executions = pd.DataFrame({
+            'quantity': [123.45, 678.90, 246.80],
+            'price': [10.123, 20.456, 30.789]
+        })
+        
+        # Calculate manually
+        numerator = (10.123 * 123.45) + (20.456 * 678.90) + (30.789 * 246.80)
+        denominator = 123.45 + 678.90 + 246.80
+        expected_vwap = numerator / denominator
+        
+        # Calculate VWAP
+        result = self.processor._calculate_vwap(executions)
+        
+        # Verify result with high precision
+        self.assertAlmostEqual(result, expected_vwap, places=10)
+        
+        self.log_case_result("Maintains precision with floating point numbers", True)
+
+    def test_large_values(self):
+        """Test VWAP calculation with large values to ensure no overflow."""
+        # Create test data with large values
+        executions = pd.DataFrame({
+            'quantity': [1000000, 2000000, 3000000],
+            'price': [1000.0, 2000.0, 3000.0]
+        })
+        
+        # Expected calculation: (1000*1000000 + 2000*2000000 + 3000*3000000) / (1000000 + 2000000 + 3000000)
+        # = (1000000000 + 4000000000 + 9000000000) / 6000000 = 14000000000 / 6000000 = 2333.33333...
+        expected_vwap = 2333.3333333333335  # Exact floating point value
+        
+        # Calculate VWAP
+        result = self.processor._calculate_vwap(executions)
+        
+        # Verify result
+        self.assertAlmostEqual(result, expected_vwap)
+        
+        self.log_case_result("Correctly handles large values without overflow", True)
+
+    def test_return_type(self):
+        """Test that the return type is float when a valid VWAP is calculated."""
+        # Create test data
+        executions = pd.DataFrame({
+            'quantity': [100, 200, 300],
+            'price': [10.0, 20.0, 30.0]
+        })
+        
+        # Calculate VWAP
+        result = self.processor._calculate_vwap(executions)
+        
+        # Verify return type
+        self.assertIsInstance(result, float)
+        
+        self.log_case_result("Returns a float type for valid VWAP calculation", True)
+
+    def test_integration(self):
+        """Test integration with real execution data in TradeProcessor."""
+        # Use the processor's executions_df directly
+        result = self.processor._calculate_vwap(self.processor.executions_df)
+        
+        # Expected calculation for the processor's executions_df:
+        # (10*|100| + 11*|-100| + 20*|200| + 21*|-200|) / (|100| + |-100| + |200| + |-200|)
+        # = (1000 + 1100 + 4000 + 4200) / 600 = 10300 / 600 = 17.16666...
+        expected_vwap = 17.166666666666668
+        
+        # Verify result
+        self.assertAlmostEqual(result, expected_vwap)
+        
+        self.log_case_result("Correctly calculates VWAP from processor's execution data", True)
+
+
+if __name__ == "__main__":
+    # Run the tests and print a summary
     unittest.main(exit=False)  # Run tests without exiting
     print_summary()  # Print detailed summary of test results
