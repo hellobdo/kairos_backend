@@ -6382,7 +6382,173 @@ class TestGetTakeProfitPrice(BaseTestCase):
         
         self.log_case_result("Correctly raises ValueError for invalid direction", True)
 
-
+class TestGetWinningTrades(BaseTestCase):
+    """Test cases for TradeProcessor._get_winning_trades method"""
+    
+    def setUp(self):
+        """Set up common test data for each test case"""
+        # Call the parent setUp to initialize BaseTestCase attributes
+        super().setUp()
+        
+        # Create a sample executions DataFrame
+        executions_df = pd.DataFrame({
+            'trade_id': ['trade1', 'trade2', 'trade3', 'trade4', 'trade5'],
+            'symbol': ['AAPL', 'MSFT', 'TSLA', 'GOOG', 'AMZN'],
+            'price': [150.0, 250.0, 800.0, 2000.0, 3000.0],
+            'quantity': [10, -20, 5, -1, 15]
+        })
+        
+        # Initialize the TradeProcessor with the executions DataFrame
+        self.processor = TradeProcessor(executions_df)
+        
+        # Initialize case_results for this test class
+        self.case_results = {}
+    
+    def test_positive_risk_reward(self):
+        """Test winning trades with positive risk-reward values"""
+        # Create sample risk-reward data with positive values
+        risk_reward = pd.Series({
+            'trade1': 1.5,   # Clearly positive
+            'trade2': 0.1,   # Just above zero
+            'trade3': 3.0,   # Larger positive
+            'trade4': 0.001  # Very small positive
+        })
+        
+        # Call the method
+        result = self.processor._get_winning_trades(risk_reward)
+        
+        # Check that all trades are identified as winners (value = 1)
+        self.assertEqual(result['trade1'], 1)
+        self.assertEqual(result['trade2'], 1)
+        self.assertEqual(result['trade3'], 1)
+        self.assertEqual(result['trade4'], 1)
+        
+        self.log_case_result("Correctly identifies trades with positive risk-reward as winners", True)
+    
+    def test_negative_risk_reward(self):
+        """Test losing trades with negative risk-reward values"""
+        # Create sample risk-reward data with negative values
+        risk_reward = pd.Series({
+            'trade1': -1.5,   # Clearly negative
+            'trade2': -0.1,   # Just below zero
+            'trade3': -3.0,   # Larger negative
+            'trade4': -0.001  # Very small negative
+        })
+        
+        # Call the method
+        result = self.processor._get_winning_trades(risk_reward)
+        
+        # Check that all trades are identified as losers (value = 0)
+        self.assertEqual(result['trade1'], 0)
+        self.assertEqual(result['trade2'], 0)
+        self.assertEqual(result['trade3'], 0)
+        self.assertEqual(result['trade4'], 0)
+        
+        self.log_case_result("Correctly identifies trades with negative risk-reward as losers", True)
+    
+    def test_zero_risk_reward(self):
+        """Test trades with zero risk-reward values"""
+        # Create sample risk-reward data with zero values
+        risk_reward = pd.Series({
+            'trade1': 0.0,
+            'trade2': 0.0,
+            'trade3': 0.0
+        })
+        
+        # Call the method
+        result = self.processor._get_winning_trades(risk_reward)
+        
+        # Check that all trades are identified as losers (value = 0)
+        self.assertEqual(result['trade1'], 0)
+        self.assertEqual(result['trade2'], 0)
+        self.assertEqual(result['trade3'], 0)
+        
+        self.log_case_result("Correctly identifies trades with zero risk-reward as losers", True)
+    
+    def test_missing_values(self):
+        """Test behavior with missing values"""
+        # Create sample risk-reward data with None values
+        risk_reward = pd.Series({
+            'trade1': 1.5,     # Winner
+            'trade2': None,    # None value
+            'trade3': -1.0,    # Loser
+            'trade4': np.nan   # NaN value
+        })
+        
+        # Call the method
+        result = self.processor._get_winning_trades(risk_reward)
+        
+        # Check results
+        self.assertEqual(result['trade1'], 1)  # Winner
+        self.assertEqual(result['trade2'], 0)  # None treated as loser
+        self.assertEqual(result['trade3'], 0)  # Loser
+        self.assertEqual(result['trade4'], 0)  # NaN treated as loser
+        
+        self.log_case_result("Correctly handles missing values as losers", True)
+    
+    def test_mixed_scenario(self):
+        """Test with a mix of winning and losing trades"""
+        # Create sample risk-reward data with mixed values
+        risk_reward = pd.Series({
+            'trade1': 1.5,     # Winner
+            'trade2': -0.5,    # Loser
+            'trade3': 0.0,     # Loser (zero)
+            'trade4': 2.0,     # Winner
+            'trade5': None     # Loser (None)
+        })
+        
+        # Call the method
+        result = self.processor._get_winning_trades(risk_reward)
+        
+        # Check results
+        self.assertEqual(result['trade1'], 1)  # Winner
+        self.assertEqual(result['trade2'], 0)  # Loser
+        self.assertEqual(result['trade3'], 0)  # Loser (zero)
+        self.assertEqual(result['trade4'], 1)  # Winner
+        self.assertEqual(result['trade5'], 0)  # Loser (None)
+        
+        self.log_case_result("Correctly handles mixed winning and losing trades", True)
+    
+    def test_return_type_and_structure(self):
+        """Test the return type and structure of the method"""
+        # Create sample risk-reward data
+        risk_reward = pd.Series({
+            'trade1': 1.5,
+            'trade2': -0.5,
+            'trade3': 0.0,
+            'trade4': 2.0,
+            'trade5': None
+        })
+        
+        # Call the method
+        result = self.processor._get_winning_trades(risk_reward)
+        
+        # Check that the result is a pandas Series
+        self.assertIsInstance(result, pd.Series)
+        
+        # Check that all trade_ids are preserved
+        self.assertEqual(set(result.index), set(risk_reward.index))
+        
+        # Check that values are integers (0 or 1)
+        for value in result:
+            self.assertIn(value, [0, 1])
+            self.assertIsInstance(value, int)
+        
+        self.log_case_result("Returns correct type and structure", True)
+    
+    def test_empty_input(self):
+        """Test behavior with empty input"""
+        # Create an empty Series
+        empty_risk_reward = pd.Series({})
+        
+        # Call the method
+        result = self.processor._get_winning_trades(empty_risk_reward)
+        
+        # Check that the result is an empty Series
+        self.assertIsInstance(result, pd.Series)
+        self.assertEqual(len(result), 0)
+        
+        self.log_case_result("Correctly handles empty input", True)
 
 if __name__ == '__main__':
     unittest.main(exit=False)  # Run tests without exiting
