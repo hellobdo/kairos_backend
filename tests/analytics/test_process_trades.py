@@ -4793,6 +4793,290 @@ class TestGetEntryDateTimeInfo(BaseTestCase):
         self.log_case_result("Integrates correctly with TradeProcessor preprocessing", True)
 
 
+class TestGetExitPrice(BaseTestCase):
+    """Test cases for the _get_exit_price method of TradeProcessor."""
+
+    def setUp(self):
+        """Set up test fixtures before each test."""
+        super().setUp()
+        
+        # Create sample executions data
+        self.executions_df = pd.DataFrame({
+            'trade_id': ['trade1', 'trade1', 'trade2', 'trade3', 'trade4', 'trade4', 'trade5', 'trade6', 'trade6', 'trade7'],
+            'execution_id': ['exec1', 'exec2', 'exec3', 'exec4', 'exec5', 'exec6', 'exec7', 'exec8', 'exec9', 'exec10'],
+            'price': [100.00, 105.00, 200.00, 300.00, 150.00, 155.00, 250.00, 180.00, 175.00, 90.00],
+            'quantity': [100, -50, -200, 300, -75, -75, 250, -80, -120, -90],
+            'execution_timestamp': [
+                pd.Timestamp('2023-01-01 10:00:00'), pd.Timestamp('2023-01-01 11:00:00'),
+                pd.Timestamp('2023-01-02 10:00:00'), pd.Timestamp('2023-01-03 10:00:00'),
+                pd.Timestamp('2023-01-04 10:00:00'), pd.Timestamp('2023-01-04 11:00:00'),
+                pd.Timestamp('2023-01-05 10:00:00'), pd.Timestamp('2023-01-06 10:00:00'),
+                pd.Timestamp('2023-01-06 11:00:00'), pd.Timestamp('2023-01-07 10:00:00')
+            ]
+        })
+        
+        # Create a processor
+        self.processor = TradeProcessor(self.executions_df)
+        
+        # Set up trade directions dictionary
+        self.processor.trade_directions = {
+            'trade1': {'direction': 'bullish', 'quantity': 100},   # Bullish: entry +, exit -
+            'trade2': {'direction': 'bearish', 'quantity': 200},   # Bearish: entry -, exit +
+            'trade3': {'direction': 'bearish', 'quantity': 300},   # Bearish with no exits
+            'trade4': {'direction': 'bullish', 'quantity': 150},   # Bullish with multiple exits
+            'trade5': {'direction': 'bullish', 'quantity': 250},   # Bullish with no exits
+            'trade6': {'direction': 'bullish', 'quantity': 200},   # Bullish with multiple exits, different prices
+            'trade7': {'direction': 'bullish', 'quantity': 90}     # Bullish with single exit
+        }
+        
+        # For testing with mocked _get_direction_executions and _calculate_vwap
+        self.original_get_direction = self.processor._get_direction_executions
+        self.original_calculate_vwap = self.processor._calculate_vwap
+    
+    def tearDown(self):
+        """Tear down test fixtures after each test."""
+        # Restore original methods if they were mocked
+        if hasattr(self, 'original_get_direction'):
+            self.processor._get_direction_executions = self.original_get_direction
+        if hasattr(self, 'original_calculate_vwap'):
+            self.processor._calculate_vwap = self.original_calculate_vwap
+        super().tearDown()
+    
+    def test_basic_functionality(self):
+        """Test basic exit price calculation for trades with exit executions."""
+        # Mock _get_direction_executions to return controlled data
+        def mock_get_direction(trade_id):
+            if trade_id == 'trade1':
+                # Bullish trade with one exit
+                entry = self.executions_df[self.executions_df['trade_id'] == 'trade1'].iloc[[0]]
+                exit_exec = self.executions_df[self.executions_df['trade_id'] == 'trade1'].iloc[[1]]
+                return entry, exit_exec
+            elif trade_id == 'trade2':
+                # Bearish trade (should return None since our mock doesn't have positive quantity exits)
+                entry = self.executions_df[self.executions_df['trade_id'] == 'trade2']
+                exit_exec = pd.DataFrame(columns=self.executions_df.columns)
+                return entry, exit_exec
+            else:
+                return pd.DataFrame(columns=self.executions_df.columns), pd.DataFrame(columns=self.executions_df.columns)
+        
+        self.processor._get_direction_executions = mock_get_direction
+        
+        # Get exit prices
+        exit_prices = self.processor._get_exit_price()
+        
+        # Verify exit price for trade1 (should be 105.00)
+        self.assertEqual(exit_prices['trade1'], 105.00)
+        
+        # Verify exit price for trade2 (should be NaN since our mock returns empty exit executions)
+        self.assertTrue(pd.isna(exit_prices['trade2']))
+        
+        self.log_case_result("Correctly calculates basic exit prices", True)
+    
+    def test_no_exit_executions(self):
+        """Test behavior when a trade has no exit executions."""
+        # Mock _get_direction_executions to always return empty exit executions
+        def mock_get_direction(trade_id):
+            entry = self.executions_df[self.executions_df['trade_id'] == trade_id].iloc[[0]] if trade_id in self.executions_df['trade_id'].values else pd.DataFrame(columns=self.executions_df.columns)
+            exit_exec = pd.DataFrame(columns=self.executions_df.columns)
+            return entry, exit_exec
+        
+        self.processor._get_direction_executions = mock_get_direction
+        
+        # Get exit prices
+        exit_prices = self.processor._get_exit_price()
+        
+        # Verify all trades have None for exit price
+        for trade_id in self.processor.trade_directions:
+            self.assertIsNone(exit_prices[trade_id])
+        
+        self.log_case_result("Returns None for trades with no exit executions", True)
+    
+    def test_multiple_exit_executions(self):
+        """Test with trades having multiple exit executions with different prices."""
+        # Mock _get_direction_executions for trade4 which has multiple exits
+        def mock_get_direction(trade_id):
+            if trade_id == 'trade4':
+                # Bullish trade with two exits at different prices
+                entry = self.executions_df[self.executions_df['trade_id'] == 'trade4'].iloc[[0]]
+                exits = self.executions_df[(self.executions_df['trade_id'] == 'trade4') & (self.executions_df['quantity'] < 0)]
+                return entry, exits
+            else:
+                return pd.DataFrame(columns=self.executions_df.columns), pd.DataFrame(columns=self.executions_df.columns)
+        
+        self.processor._get_direction_executions = mock_get_direction
+        
+        # Get exit prices
+        exit_prices = self.processor._get_exit_price()
+        
+        # Verify VWAP calculation for trade4
+        # Exit quantities: -75 at 150.00, -75 at 155.00
+        # VWAP = (75*150 + 75*155) / (75+75) = 22875/150 = 152.50
+        self.assertEqual(exit_prices['trade4'], 152.50)
+        
+        self.log_case_result("Correctly calculates VWAP for multiple exit executions", True)
+    
+    def test_direction_specific_calculation(self):
+        """Test that exit price calculation respects trade direction."""
+        # Create a realistic implementation of _get_direction_executions
+        def realistic_get_direction(trade_id):
+            info = self.processor.trade_directions[trade_id]
+            is_bullish = info['direction'] == 'bullish'
+            
+            trade_execs = self.executions_df[self.executions_df['trade_id'] == trade_id]
+            
+            if is_bullish:
+                entry_executions = trade_execs[trade_execs['quantity'] > 0]
+                exit_executions = trade_execs[trade_execs['quantity'] < 0]
+            else:
+                entry_executions = trade_execs[trade_execs['quantity'] < 0]
+                exit_executions = trade_execs[trade_execs['quantity'] > 0]
+                
+            return entry_executions, exit_executions
+        
+        self.processor._get_direction_executions = realistic_get_direction
+        
+        # Get exit prices
+        exit_prices = self.processor._get_exit_price()
+        
+        # Verify bullish trades use negative quantities for exits
+        self.assertIsNotNone(exit_prices['trade1'])  # Should have exit
+        
+        # Verify bearish trade uses positive quantities for exits
+        self.assertIsNotNone(exit_prices['trade3'])  # Should have exit
+        
+        self.log_case_result("Respects trade direction when determining exit executions", True)
+    
+    def test_return_type_verification(self):
+        """Test that the function returns a pandas Series with trade_ids as index."""
+        # Get exit prices
+        exit_prices = self.processor._get_exit_price()
+        
+        # Verify return type is a pandas Series
+        self.assertIsInstance(exit_prices, pd.Series)
+        
+        # Verify index contains all trade_ids from trade_directions
+        self.assertEqual(set(exit_prices.index), set(self.processor.trade_directions.keys()))
+        
+        self.log_case_result("Returns a pandas Series with correct structure", True)
+    
+    def test_edge_cases(self):
+        """Test edge cases like zero quantity exits."""
+        # Add a trade with zero quantity exit
+        self.executions_df = pd.concat([
+            self.executions_df,
+            pd.DataFrame({
+                'trade_id': ['trade8', 'trade8'],
+                'execution_id': ['exec11', 'exec12'],
+                'price': [120.00, 125.00],
+                'quantity': [100, 0],  # Entry and zero quantity exit
+                'execution_timestamp': [
+                    pd.Timestamp('2023-01-08 10:00:00'), 
+                    pd.Timestamp('2023-01-08 11:00:00')
+                ]
+            })
+        ])
+        
+        # Update processor with new data
+        self.processor = TradeProcessor(self.executions_df)
+        self.processor.trade_directions = self.processor.trade_directions.copy()
+        self.processor.trade_directions['trade8'] = {'direction': 'bullish', 'quantity': 100}
+        
+        # Create a realistic implementation of _get_direction_executions
+        def realistic_get_direction(trade_id):
+            info = self.processor.trade_directions[trade_id]
+            is_bullish = info['direction'] == 'bullish'
+            
+            trade_execs = self.executions_df[self.executions_df['trade_id'] == trade_id]
+            
+            if is_bullish:
+                entry_executions = trade_execs[trade_execs['quantity'] > 0]
+                exit_executions = trade_execs[trade_execs['quantity'] < 0]
+            else:
+                entry_executions = trade_execs[trade_execs['quantity'] < 0]
+                exit_executions = trade_execs[trade_execs['quantity'] > 0]
+                
+            return entry_executions, exit_executions
+        
+        self.processor._get_direction_executions = realistic_get_direction
+        
+        # Get exit prices
+        exit_prices = self.processor._get_exit_price()
+        
+        # Verify trade8 has None for exit price (zero quantity exits should be excluded)
+        self.assertIsNone(exit_prices['trade8'])
+        
+        self.log_case_result("Correctly handles edge cases like zero quantity exits", True)
+    
+    def test_integration_with_helpers(self):
+        """Test integration with _get_direction_executions and _calculate_vwap."""
+        # Use the actual methods, not mocks
+        # We'll track calls to verify they're being called correctly
+        get_direction_calls = []
+        calculate_vwap_calls = []
+        
+        def track_get_direction(trade_id):
+            get_direction_calls.append(trade_id)
+            return self.original_get_direction(trade_id)
+        
+        def track_calculate_vwap(executions):
+            calculate_vwap_calls.append(len(executions) if not executions.empty else 0)
+            return self.original_calculate_vwap(executions)
+        
+        self.processor._get_direction_executions = track_get_direction
+        self.processor._calculate_vwap = track_calculate_vwap
+        
+        # Get exit prices
+        exit_prices = self.processor._get_exit_price()
+        
+        # Verify _get_direction_executions was called for each trade in trade_directions
+        self.assertEqual(len(get_direction_calls), len(self.processor.trade_directions))
+        for trade_id in self.processor.trade_directions:
+            self.assertIn(trade_id, get_direction_calls)
+        
+        # Verify _calculate_vwap was called for each trade
+        self.assertEqual(len(calculate_vwap_calls), len(self.processor.trade_directions))
+        
+        self.log_case_result("Correctly integrates with helper methods", True)
+    
+    def test_mixed_scenarios(self):
+        """Test with a mix of trades - some with exits, some without, some with multiple exits."""
+        # Create a realistic implementation of _get_direction_executions
+        def realistic_get_direction(trade_id):
+            info = self.processor.trade_directions[trade_id]
+            is_bullish = info['direction'] == 'bullish'
+            
+            trade_execs = self.executions_df[self.executions_df['trade_id'] == trade_id]
+            
+            if is_bullish:
+                entry_executions = trade_execs[trade_execs['quantity'] > 0]
+                exit_executions = trade_execs[trade_execs['quantity'] < 0]
+            else:
+                entry_executions = trade_execs[trade_execs['quantity'] < 0]
+                exit_executions = trade_execs[trade_execs['quantity'] > 0]
+                
+            return entry_executions, exit_executions
+        
+        self.processor._get_direction_executions = realistic_get_direction
+        
+        # Get exit prices
+        exit_prices = self.processor._get_exit_price()
+        
+        # Verify trades with exits have non-None prices
+        self.assertIsNotNone(exit_prices['trade1'])  # Bullish with exit
+        self.assertIsNotNone(exit_prices['trade6'])  # Bullish with multiple exits
+        self.assertIsNotNone(exit_prices['trade7'])  # Bullish with single exit
+        
+        # Verify VWAP calculation for trade6 with multiple exits at different prices
+        # Exit quantities: -80 at 180.00, -120 at 175.00
+        # VWAP = (80*180 + 120*175) / (80+120) = 35400/200 = 177.00
+        self.assertEqual(exit_prices['trade6'], 177.00)
+        
+        # Verify trades without exits have NaN prices
+        self.assertTrue(pd.isna(exit_prices['trade5']))  # Bullish with no exit
+        
+        self.log_case_result("Correctly handles mixed scenarios", True)
+
+
 if __name__ == '__main__':
     unittest.main(exit=False)  # Run tests without exiting
     print_summary()  # Print detailed summary of test results
