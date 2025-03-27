@@ -3976,7 +3976,208 @@ class TestGetCommission(BaseTestCase):
         self.log_case_result("Always returns pandas Series with proper structure", True)
 
 
-if __name__ == "__main__":
-    # Run the tests and print a summary
+class TestGetDirectionExecutions(BaseTestCase):
+    """Test cases for the _get_direction_executions method of TradeProcessor."""
+
+    def setUp(self):
+        """Set up test fixtures before each test."""
+        super().setUp()
+        
+        # Create a sample executions DataFrame with both bullish and bearish trades
+        self.executions_df = pd.DataFrame({
+            'trade_id': ['bullish_trade', 'bullish_trade', 'bullish_trade', 
+                         'bearish_trade', 'bearish_trade', 'bearish_trade',
+                         'mixed_order_trade', 'mixed_order_trade', 'mixed_order_trade',
+                         'entry_only_trade', 'multi_entry_exit_trade', 'multi_entry_exit_trade',
+                         'multi_entry_exit_trade', 'multi_entry_exit_trade', 'zero_qty_trade'],
+            'execution_id': list(range(1, 16)),
+            'quantity': [100, 50, -150,              # bullish trade: 2 entries, 1 exit
+                         -100, -50, 150,             # bearish trade: 2 entries, 1 exit
+                         -75, 50, -25,               # mixed order: entry-exit-entry
+                         200,                        # entry only trade: only entry
+                         150, 100, -75, -75,         # multi: multiple entries/exits (2 entries, 2 exits)
+                         0],                         # zero quantity
+            'price': [10.0, 11.0, 12.0, 20.0, 21.0, 19.0, 30.0, 35.0, 25.0, 40.0, 50.0, 51.0, 52.0, 53.0, 60.0],
+            'symbol': ['AAPL'] * 15,
+            'is_entry': [1, 1, 0, 1, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0, 0],
+            'is_exit': [0, 0, 1, 0, 0, 1, 0, 1, 0, 0, 0, 0, 1, 1, 1],
+            'execution_timestamp': pd.to_datetime([
+                '2023-01-01 10:00:00', '2023-01-01 11:00:00', '2023-01-01 14:00:00',
+                '2023-01-02 10:00:00', '2023-01-02 11:00:00', '2023-01-02 14:00:00',
+                '2023-01-03 14:00:00', '2023-01-03 10:00:00', '2023-01-03 12:00:00',  # Intentionally out of order
+                '2023-01-04 10:00:00',
+                '2023-01-05 09:00:00', '2023-01-05 10:00:00', '2023-01-05 11:00:00', '2023-01-05 12:00:00',
+                '2023-01-06 10:00:00'
+            ])
+        })
+        
+        # Initialize processor
+        self.processor = TradeProcessor(self.executions_df)
+        
+        # Set up trade directions manually
+        self.processor.trade_directions = {
+            'bullish_trade': {'direction': 'bullish', 'initial_quantity': 100.0, 'abs_initial_quantity': 100.0},
+            'bearish_trade': {'direction': 'bearish', 'initial_quantity': -100.0, 'abs_initial_quantity': 100.0},
+            'mixed_order_trade': {'direction': 'bearish', 'initial_quantity': -75.0, 'abs_initial_quantity': 75.0},
+            'entry_only_trade': {'direction': 'bullish', 'initial_quantity': 200.0, 'abs_initial_quantity': 200.0},
+            'multi_entry_exit_trade': {'direction': 'bullish', 'initial_quantity': 150.0, 'abs_initial_quantity': 150.0},
+            'zero_qty_trade': {'direction': 'bullish', 'initial_quantity': 0.0, 'abs_initial_quantity': 0.0}
+        }
+
+    def test_bullish_trade_direction(self):
+        """Test filtering executions for a bullish trade."""
+        # Get entry and exit executions for bullish trade
+        entry_execs, exit_execs = self.processor._get_direction_executions('bullish_trade')
+        
+        # Verify entry executions
+        self.assertEqual(len(entry_execs), 2)
+        self.assertTrue(all(entry_execs['quantity'] > 0))
+        self.assertEqual(entry_execs['quantity'].sum(), 150)  # Total entry quantity
+        
+        # Verify exit executions
+        self.assertEqual(len(exit_execs), 1)
+        self.assertTrue(all(exit_execs['quantity'] < 0))
+        self.assertEqual(exit_execs['quantity'].sum(), -150)  # Total exit quantity
+        
+        self.log_case_result("Correctly identifies bullish trade entry and exit executions", True)
+    
+    def test_bearish_trade_direction(self):
+        """Test filtering executions for a bearish trade."""
+        # Get entry and exit executions for bearish trade
+        entry_execs, exit_execs = self.processor._get_direction_executions('bearish_trade')
+        
+        # Verify entry executions
+        self.assertEqual(len(entry_execs), 2)
+        self.assertTrue(all(entry_execs['quantity'] < 0))
+        self.assertEqual(entry_execs['quantity'].sum(), -150)  # Total entry quantity
+        
+        # Verify exit executions
+        self.assertEqual(len(exit_execs), 1)
+        self.assertTrue(all(exit_execs['quantity'] > 0))
+        self.assertEqual(exit_execs['quantity'].sum(), 150)  # Total exit quantity
+        
+        self.log_case_result("Correctly identifies bearish trade entry and exit executions", True)
+    
+    def test_mixed_execution_order(self):
+        """Test that filtering works regardless of execution timestamp order."""
+        # Get entry and exit executions for mixed order trade (execution timestamps not in chronological order)
+        entry_execs, exit_execs = self.processor._get_direction_executions('mixed_order_trade')
+        
+        # Verify entry executions (should be 2 entries with negative quantities)
+        self.assertEqual(len(entry_execs), 2)
+        self.assertTrue(all(entry_execs['quantity'] < 0))
+        self.assertEqual(entry_execs['quantity'].sum(), -100)  # Total entry quantity: -75 + -25
+        
+        # Verify exit executions (should be 1 exit with positive quantity)
+        self.assertEqual(len(exit_execs), 1)
+        self.assertTrue(all(exit_execs['quantity'] > 0))
+        self.assertEqual(exit_execs['quantity'].sum(), 50)  # Total exit quantity
+        
+        self.log_case_result("Correctly filters executions regardless of timestamp order", True)
+    
+    def test_multiple_entries_exits(self):
+        """Test filtering with multiple entry and exit executions."""
+        # Get entry and exit executions for trade with multiple entries and exits
+        entry_execs, exit_execs = self.processor._get_direction_executions('multi_entry_exit_trade')
+        
+        # Verify entry executions
+        self.assertEqual(len(entry_execs), 2)
+        self.assertTrue(all(entry_execs['quantity'] > 0))
+        self.assertEqual(entry_execs['quantity'].sum(), 250)  # Total entry quantity: 150 + 100
+        
+        # Verify exit executions
+        self.assertEqual(len(exit_execs), 2)
+        self.assertTrue(all(exit_execs['quantity'] < 0))
+        self.assertEqual(exit_execs['quantity'].sum(), -150)  # Total exit quantity: -75 + -75
+        
+        self.log_case_result("Correctly handles multiple entry and exit executions", True)
+    
+    def test_only_entry_executions(self):
+        """Test filtering for a trade with only entry executions (no exits)."""
+        # Get entry and exit executions for trade with only entries
+        entry_execs, exit_execs = self.processor._get_direction_executions('entry_only_trade')
+        
+        # Verify entry executions
+        self.assertEqual(len(entry_execs), 1)
+        self.assertTrue(all(entry_execs['quantity'] > 0))
+        self.assertEqual(entry_execs['quantity'].sum(), 200)  # Total entry quantity
+        
+        # Verify exit executions (should be empty)
+        self.assertEqual(len(exit_execs), 0)
+        self.assertTrue(exit_execs.empty)
+        
+        self.log_case_result("Correctly handles trade with only entry executions", True)
+    
+    def test_zero_quantity(self):
+        """Test handling of executions with zero quantity."""
+        # Add a zero quantity execution (should be excluded from both entry and exit)
+        trade_execs = self.executions_df[self.executions_df['trade_id'] == 'zero_qty_trade']
+        self.assertEqual(len(trade_execs), 1)
+        self.assertEqual(trade_execs['quantity'].iloc[0], 0)
+        
+        # Get entry and exit executions
+        entry_execs, exit_execs = self.processor._get_direction_executions('zero_qty_trade')
+        
+        # Verify both entry and exit executions are empty (zero quantity excluded from both)
+        self.assertEqual(len(entry_execs), 0)
+        self.assertEqual(len(exit_execs), 0)
+        
+        self.log_case_result("Correctly excludes zero quantity executions", True)
+    
+    def test_empty_executions_dataframe(self):
+        """Test with an empty executions DataFrame."""
+        # Create a processor with empty executions DataFrame
+        empty_df = pd.DataFrame(columns=self.executions_df.columns)
+        processor = TradeProcessor(empty_df)
+        processor.trade_directions = {'test_trade': {'direction': 'bullish'}}
+        
+        # Get entry and exit executions
+        entry_execs, exit_execs = processor._get_direction_executions('test_trade')
+        
+        # Verify both entry and exit executions are empty
+        self.assertEqual(len(entry_execs), 0)
+        self.assertEqual(len(exit_execs), 0)
+        
+        self.log_case_result("Correctly handles empty executions DataFrame", True)
+    
+    def test_return_type(self):
+        """Test that the return value is a tuple of two DataFrames."""
+        # Get entry and exit executions
+        result = self.processor._get_direction_executions('bullish_trade')
+        
+        # Verify return type
+        self.assertIsInstance(result, tuple)
+        self.assertEqual(len(result), 2)
+        self.assertIsInstance(result[0], pd.DataFrame)  # entry_execs
+        self.assertIsInstance(result[1], pd.DataFrame)  # exit_execs
+        
+        self.log_case_result("Returns correct tuple of DataFrames", True)
+    
+    def test_integration(self):
+        """Test integration with the TradeProcessor class."""
+        # Create a new processor with our test data
+        processor = TradeProcessor(self.executions_df)
+        
+        # Run preprocess to populate entry_execs, exit_execs, and trade_directions
+        processor.preprocess()
+        
+        # Get entry and exit executions for a bullish trade
+        entry_execs, exit_execs = processor._get_direction_executions('bullish_trade')
+        
+        # Verify results match expected behavior from preprocess
+        self.assertTrue(all(entry_execs['quantity'] > 0))
+        self.assertTrue(all(exit_execs['quantity'] < 0))
+        
+        # Get entry and exit executions for a bearish trade
+        entry_execs, exit_execs = processor._get_direction_executions('bearish_trade')
+        
+        # Verify results match expected behavior from preprocess
+        self.assertTrue(all(entry_execs['quantity'] < 0))
+        self.assertTrue(all(exit_execs['quantity'] > 0))
+        
+        self.log_case_result("Integrates correctly with TradeProcessor class", True)
+
+
+if __name__ == '__main__':
     unittest.main(exit=False)  # Run tests without exiting
     print_summary()  # Print detailed summary of test results
