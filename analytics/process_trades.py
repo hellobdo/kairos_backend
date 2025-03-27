@@ -156,15 +156,14 @@ class TradeProcessor:
             if entry_price is None or exit_price is None or stop_price is None:
                 risk_reward_ratios[trade_id] = None
                 continue
+
             
             if direction == 'bullish':
-                # For bullish trades
-                reward = exit_price - entry_price
                 risk = entry_price - stop_price
+                reward = exit_price - entry_price
             else:
-                # For bearish trades
-                reward = entry_price - exit_price
                 risk = stop_price - entry_price
+                reward = entry_price - exit_price
             
             # Calculate R:R ratio, handling division by zero
             if risk <= 0:

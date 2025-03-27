@@ -3079,6 +3079,529 @@ class TestProcessTradesFunction(BaseTestCase):
         self.log_case_result("Handles nonstandard but valid inputs correctly", True)
 
 
+class TestCalculateRiskRewardRatio(BaseTestCase):
+    """Test cases for the _calculate_risk_reward_ratio method of TradeProcessor."""
+
+    def setUp(self):
+        """Set up test fixtures before each test."""
+        # Call parent setUp to set up test tracking attributes
+        super().setUp()
+        
+        # Create a basic executions DataFrame
+        self.executions_df = pd.DataFrame({
+            'trade_id': ['trade1', 'trade2', 'trade3', 'trade4'],
+            'execution_id': ['exec1', 'exec2', 'exec3', 'exec4'],
+            'quantity': [100, -50, 200, -100],  # positive for bullish, negative for bearish
+            'price': [10.0, 20.0, 30.0, 40.0],
+            'symbol': ['AAPL', 'MSFT', 'GOOGL', 'AMZN'],
+            'is_entry': [1, 1, 1, 1],
+            'is_exit': [0, 0, 0, 0],
+            'execution_timestamp': pd.to_datetime(['2023-01-01', '2023-01-02', '2023-01-03', '2023-01-04'])
+        })
+        
+        # Initialize processor
+        self.processor = TradeProcessor(self.executions_df)
+        
+        # Set up trade directions manually
+        self.processor.trade_directions = {
+            'trade1': {'direction': 'bullish', 'initial_quantity': 100.0, 'abs_initial_quantity': 100.0},
+            'trade2': {'direction': 'bearish', 'initial_quantity': -50.0, 'abs_initial_quantity': 50.0},
+            'trade3': {'direction': 'bullish', 'initial_quantity': 200.0, 'abs_initial_quantity': 200.0},
+            'trade4': {'direction': 'bearish', 'initial_quantity': -100.0, 'abs_initial_quantity': 100.0}
+        }
+
+    def test_basic_calculation(self):
+        """Test basic risk-reward calculation for bullish and bearish trades."""
+        # Set up test data
+        entry_prices = pd.Series({
+            'trade1': 100.0,  # bullish trade entry
+            'trade2': 200.0   # bearish trade entry
+        })
+        
+        exit_prices = pd.Series({
+            'trade1': 120.0,  # bullish trade exit (profit)
+            'trade2': 180.0   # bearish trade exit (profit)
+        })
+        
+        stop_prices = pd.Series({
+            'trade1': 90.0,   # bullish trade stop (below entry)
+            'trade2': 210.0   # bearish trade stop (above entry)
+        })
+        
+        # Calculate risk-reward ratios
+        result = self.processor._calculate_risk_reward_ratio(
+            entry_prices=entry_prices,
+            exit_prices=exit_prices,
+            stop_prices=stop_prices
+        )
+        
+        # Expected calculations:
+        # Bullish trade1: (120 - 100) / (100 - 90) = 20 / 10 = 2.0
+        # Bearish trade2: (200 - 180) / (210 - 200) = 20 / 10 = 2.0
+        
+        # Verify results
+        self.assertAlmostEqual(result['trade1'], 2.0)
+        self.assertAlmostEqual(result['trade2'], 2.0)
+        
+        # Log test result
+        self.log_case_result("Correctly calculates basic risk-reward ratios", True)
+
+    def test_profit_loss_scenarios(self):
+        """Test calculation for both profitable and losing trades."""
+        # Set up test data for both profitable and losing trades
+        entry_prices = pd.Series({
+            'trade1': 100.0,  # bullish trade entry
+            'trade2': 200.0,  # bearish trade entry
+            'trade3': 300.0,  # bullish trade entry
+            'trade4': 400.0   # bearish trade entry
+        })
+        
+        exit_prices = pd.Series({
+            'trade1': 120.0,  # bullish trade exit (profit)
+            'trade2': 180.0,  # bearish trade exit (profit)
+            'trade3': 290.0,  # bullish trade exit (loss)
+            'trade4': 410.0   # bearish trade exit (loss)
+        })
+        
+        stop_prices = pd.Series({
+            'trade1': 90.0,   # bullish trade stop (below entry)
+            'trade2': 210.0,  # bearish trade stop (above entry)
+            'trade3': 290.0,  # bullish trade stop (below entry)
+            'trade4': 410.0   # bearish trade stop (above entry)
+        })
+        
+        # Calculate risk-reward ratios
+        result = self.processor._calculate_risk_reward_ratio(
+            entry_prices=entry_prices,
+            exit_prices=exit_prices,
+            stop_prices=stop_prices
+        )
+        
+        # Expected calculations:
+        # Profitable bullish trade1: (120 - 100) / (100 - 90) = 20 / 10 = 2.0
+        # Profitable bearish trade2: (200 - 180) / (210 - 200) = 20 / 10 = 2.0
+        # Losing bullish trade3: (290 - 300) / (300 - 290) = -10 / 10 = -1.0
+        # Losing bearish trade4: (400 - 410) / (410 - 400) = -10 / 10 = -1.0
+        
+        # Verify results
+        self.assertGreater(result['trade1'], 0)  # Profitable bullish trade
+        self.assertGreater(result['trade2'], 0)  # Profitable bearish trade
+        self.assertLess(result['trade3'], 0)     # Losing bullish trade
+        self.assertLess(result['trade4'], 0)     # Losing bearish trade
+        
+        # Verify exact values
+        self.assertAlmostEqual(result['trade1'], 2.0)
+        self.assertAlmostEqual(result['trade2'], 2.0)
+        self.assertAlmostEqual(result['trade3'], -1.0)
+        self.assertAlmostEqual(result['trade4'], -1.0)
+        
+        # Log test result
+        self.log_case_result("Correctly identifies profitable and losing trades", True)
+
+    def test_edge_cases(self):
+        """Test edge cases like zero/negative risk and missing values."""
+        # Set up test data with edge cases
+        entry_prices = pd.Series({
+            'trade1': 100.0,    # Normal entry
+            'trade2': 200.0,    # Entry equals stop (zero risk)
+            'trade3': 300.0,    # Stop above entry for bullish (negative risk)
+            'trade4': None      # Missing entry price
+        })
+        
+        exit_prices = pd.Series({
+            'trade1': 120.0,    # Normal exit
+            'trade2': 220.0,    # Normal exit
+            'trade3': None,     # Missing exit price
+            'trade4': 420.0     # Normal exit
+        })
+        
+        stop_prices = pd.Series({
+            'trade1': 90.0,     # Normal stop
+            'trade2': 200.0,    # Stop equals entry (zero risk)
+            'trade3': 310.0,    # Stop above entry for bullish (negative risk)
+            'trade4': 380.0     # Normal stop
+        })
+        
+        # Calculate risk-reward ratios
+        result = self.processor._calculate_risk_reward_ratio(
+            entry_prices=entry_prices,
+            exit_prices=exit_prices,
+            stop_prices=stop_prices
+        )
+        
+        # Expected results:
+        # Normal case: Already tested in other methods
+        # Zero risk: Should return NaN (risk <= 0)
+        # Negative risk: Should return NaN (risk <= 0)
+        # Missing values: Should return NaN
+        
+        # Verify results
+        self.assertAlmostEqual(result['trade1'], 2.0)     # Normal case still works
+        self.assertTrue(pd.isna(result['trade2']))        # Zero risk returns NaN
+        self.assertTrue(pd.isna(result['trade3']))        # Missing exit price returns NaN
+        self.assertTrue(pd.isna(result['trade4']))        # Missing entry price returns NaN
+        
+        # Log test result
+        self.log_case_result("Correctly handles edge cases", True)
+
+    def test_direction_specific_calculation(self):
+        """Test that calculations differ correctly based on trade direction."""
+        # We'll use different values for each direction to ensure proper setup
+        entry_prices = pd.Series({
+            'trade1': 100.0,  # bullish trade entry
+            'trade2': 100.0   # bearish trade entry
+        })
+        
+        exit_prices = pd.Series({
+            'trade1': 120.0,  # bullish exit (price went up - profit)
+            'trade2': 80.0    # bearish exit (price went down - profit)
+        })
+        
+        stop_prices = pd.Series({
+            'trade1': 90.0,   # bullish stop (below entry)
+            'trade2': 110.0   # bearish stop (above entry)
+        })
+        
+        # Override trade directions to isolate the direction impact
+        original_directions = self.processor.trade_directions.copy()
+        self.processor.trade_directions = {
+            'trade1': {'direction': 'bullish', 'initial_quantity': 100.0, 'abs_initial_quantity': 100.0},
+            'trade2': {'direction': 'bearish', 'initial_quantity': -100.0, 'abs_initial_quantity': 100.0}
+        }
+        
+        # Calculate risk-reward ratios
+        result = self.processor._calculate_risk_reward_ratio(
+            entry_prices=entry_prices,
+            exit_prices=exit_prices,
+            stop_prices=stop_prices
+        )
+        
+        # Expected calculations:
+        # Bullish trade1: (120 - 100) / (100 - 90) = 20 / 10 = 2.0
+        # Bearish trade2: (100 - 80) / (110 - 100) = 20 / 10 = 2.0
+        
+        # Verify results - they should be the same value but calculated differently
+        self.assertAlmostEqual(result['trade1'], 2.0)
+        self.assertAlmostEqual(result['trade2'], 2.0)
+        
+        # Restore original trade directions
+        self.processor.trade_directions = original_directions
+        
+        # Log test result
+        self.log_case_result("Correctly applies direction-specific calculations", True)
+
+    def test_type_verification(self):
+        """Ensure the method returns a pandas Series with the correct index."""
+        # Set up minimal test data
+        entry_prices = pd.Series({'trade1': 100.0})
+        exit_prices = pd.Series({'trade1': 120.0})
+        stop_prices = pd.Series({'trade1': 90.0})
+        
+        # Calculate risk-reward ratios
+        result = self.processor._calculate_risk_reward_ratio(
+            entry_prices=entry_prices,
+            exit_prices=exit_prices,
+            stop_prices=stop_prices
+        )
+        
+        # Verify result type
+        self.assertIsInstance(result, pd.Series)
+        
+        # Verify index
+        self.assertEqual(set(result.index), set(self.processor.trade_directions.keys()))
+        
+        # Log test result
+        self.log_case_result("Returns a pandas Series with the correct index", True)
+
+    def test_multiple_trades(self):
+        """Verify it correctly processes multiple trades in one call."""
+        # Set up test data for multiple trades
+        entry_prices = pd.Series({
+            'trade1': 100.0,
+            'trade2': 200.0,
+            'trade3': 300.0,
+            'trade4': 400.0
+        })
+        
+        exit_prices = pd.Series({
+            'trade1': 120.0,
+            'trade2': 180.0,
+            'trade3': 330.0,
+            'trade4': 380.0
+        })
+        
+        stop_prices = pd.Series({
+            'trade1': 90.0,
+            'trade2': 210.0,
+            'trade3': 290.0,
+            'trade4': 410.0
+        })
+        
+        # Calculate risk-reward ratios
+        result = self.processor._calculate_risk_reward_ratio(
+            entry_prices=entry_prices,
+            exit_prices=exit_prices,
+            stop_prices=stop_prices
+        )
+        
+        # Expected calculations:
+        # Bullish trade1: (120 - 100) / (100 - 90) = 20 / 10 = 2.0
+        # Bearish trade2: (200 - 180) / (210 - 200) = 20 / 10 = 2.0
+        # Bullish trade3: (330 - 300) / (300 - 290) = 30 / 10 = 3.0
+        # Bearish trade4: (400 - 380) / (410 - 400) = 20 / 10 = 2.0
+        
+        # Verify all trades are processed
+        self.assertEqual(len(result), 4)
+        
+        # Verify each calculation is correct
+        self.assertAlmostEqual(result['trade1'], 2.0)
+        self.assertAlmostEqual(result['trade2'], 2.0)
+        self.assertAlmostEqual(result['trade3'], 3.0)
+        self.assertAlmostEqual(result['trade4'], 2.0)
+        
+        # Log test result
+        self.log_case_result("Correctly processes multiple trades in one call", True)
+
+    def test_integration(self):
+        """Test integration with other processor methods."""
+        # Create a more realistic processor with real executions
+        timestamps = [
+            pd.Timestamp('2023-01-01 10:00:00'),  # trade1 entry
+            pd.Timestamp('2023-01-01 14:30:00'),  # trade1 exit
+            pd.Timestamp('2023-01-02 09:15:00'),  # trade2 entry
+            pd.Timestamp('2023-01-02 16:45:00'),  # trade2 exit
+        ]
+        
+        executions_df = pd.DataFrame({
+            'trade_id': ['trade1', 'trade1', 'trade2', 'trade2'],
+            'execution_id': ['exec1', 'exec2', 'exec3', 'exec4'],
+            'symbol': ['AAPL', 'AAPL', 'MSFT', 'MSFT'],
+            'date': [ts.strftime('%Y-%m-%d') for ts in timestamps],
+            'time_of_day': [ts.strftime('%H:%M:%S') for ts in timestamps],
+            'is_entry': [1, 0, 1, 0],
+            'is_exit': [0, 1, 0, 1],
+            'quantity': [100, -100, -200, 200],  # positive for buys, negative for sells
+            'execution_timestamp': timestamps,
+            'price': [100.0, 120.0, 200.0, 180.0]
+        })
+        
+        processor = TradeProcessor(executions_df)
+        
+        # Initialize required state
+        processor.preprocess()
+        
+        # Directly get entry and exit prices from relevant methods
+        entry_prices, _, _ = processor._get_quantity_and_entry_price()
+        exit_prices = processor._get_exit_price()
+        
+        # For stop prices, we'll use the _get_stop_prices method with a fixed stop_loss_amount
+        stop_prices = processor._get_stop_prices(stop_loss_amount=10.0, entry_prices=entry_prices)
+        
+        # Calculate risk-reward ratios
+        result = processor._calculate_risk_reward_ratio(
+            entry_prices=entry_prices,
+            exit_prices=exit_prices,
+            stop_prices=stop_prices
+        )
+        
+        # Expected calculations:
+        # Bullish trade1: (120 - 100) / (100 - 90) = 20 / 10 = 2.0
+        # Bearish trade2: (200 - 180) / (210 - 200) = 20 / 10 = 2.0
+        
+        # Verify results
+        self.assertAlmostEqual(result['trade1'], 2.0)
+        self.assertAlmostEqual(result['trade2'], 2.0)
+        
+        # Log test result
+        self.log_case_result("Correctly integrates with other processor methods", True)
+
+
+class TestProcessTradesFunction(BaseTestCase):
+    """Test cases for the standalone process_trades wrapper function."""
+
+    def setUp(self):
+        """Set up test fixtures before each test."""
+        # Call parent setUp to set up test tracking attributes
+        super().setUp()
+        
+        # Create a sample executions DataFrame for testing
+        timestamps = [
+            pd.Timestamp('2023-01-01 10:00:00'),  # trade1 entry
+            pd.Timestamp('2023-01-01 14:30:00'),  # trade1 exit
+            pd.Timestamp('2023-02-02 09:15:00'),  # trade2 entry
+            pd.Timestamp('2023-02-02 16:45:00'),  # trade2 exit
+        ]
+        
+        # Create dates and times from timestamps
+        dates = [ts.strftime('%Y-%m-%d') for ts in timestamps]
+        times = [ts.strftime('%H:%M:%S') for ts in timestamps]
+        
+        self.valid_executions_df = pd.DataFrame({
+            'trade_id': ['trade1', 'trade1', 'trade2', 'trade2'],
+            'execution_id': ['exec1', 'exec2', 'exec3', 'exec4'],
+            'symbol': ['AAPL', 'AAPL', 'MSFT', 'MSFT'],
+            'date': dates,
+            'time_of_day': times,
+            'is_entry': [1, 0, 1, 0],  # 1 for entries, 0 for exits
+            'is_exit': [0, 1, 0, 1],   # 0 for entries, 1 for exits
+            'quantity': [100, -100, -200, 200],  # positive for buys, negative for sells
+            'execution_timestamp': timestamps,
+            'price': [10.0, 11.0, 20.0, 21.0],
+            'commission': [1.0, 1.0, 2.0, 2.0]
+        })
+        
+        # Create an invalid DataFrame (missing required columns)
+        self.invalid_executions_df = self.valid_executions_df.drop(columns=['is_entry', 'is_exit'])
+        
+        # Create an empty DataFrame
+        self.empty_executions_df = pd.DataFrame(columns=self.valid_executions_df.columns)
+        
+        # Set up mock for db.get_account_balances() 
+        self.account_balances_patcher = patch('utils.db_utils.DatabaseManager.get_account_balances')
+        self.mock_get_account_balances = self.account_balances_patcher.start()
+        
+        # Set up mock account balances return value
+        self.mock_get_account_balances.return_value = pd.DataFrame({
+            'date': ['2023-01-01', '2023-02-02'],
+            'cash_balance': [10000.0, 10500.0]
+        })
+
+    def tearDown(self):
+        """Clean up after each test"""
+        super().tearDown()
+        self.account_balances_patcher.stop()
+
+    def test_basic_functionality(self):
+        """Test that valid input correctly passes through to the underlying class method."""
+        # Use the wrapper function
+        from analytics.process_trades import process_trades
+        
+        # Process trades with valid data
+        result_df = process_trades(self.valid_executions_df)
+        
+        # Verify the result
+        self.assertIsNotNone(result_df)
+        self.assertIsInstance(result_df, pd.DataFrame)
+        
+        # Check that expected trades are present
+        trade_ids = result_df['trade_id'].tolist()
+        self.assertEqual(set(trade_ids), {'trade1', 'trade2'})
+        
+        # Log test result
+        self.log_case_result("Successfully processes valid execution data", True)
+
+    def test_exception_handling(self):
+        """Test that exceptions are properly caught and result in None being returned."""
+        from analytics.process_trades import process_trades
+        
+        # Create a mock TradeProcessor that raises an exception
+        with patch('analytics.process_trades.TradeProcessor') as mock_processor_class:
+            # Make the constructor raise an exception
+            mock_processor_class.side_effect = Exception("Test constructor exception")
+            
+            # Call process_trades with valid data
+            with patch('sys.stdout', new=StringIO()) as fake_out:
+                result_df = process_trades(self.valid_executions_df)
+                
+                # Verify error message was printed
+                self.assertIn("Error processing trades", fake_out.getvalue())
+                
+                # Verify the result is None
+                self.assertIsNone(result_df)
+        
+        # Test exception from process_trades method
+        with patch('analytics.process_trades.TradeProcessor') as mock_processor_class:
+            # Make the process_trades method raise an exception
+            mock_processor_instance = MagicMock()
+            mock_processor_instance.process_trades.side_effect = Exception("Test method exception")
+            mock_processor_class.return_value = mock_processor_instance
+            
+            # Call process_trades with valid data
+            with patch('sys.stdout', new=StringIO()) as fake_out:
+                result_df = process_trades(self.valid_executions_df)
+                
+                # Verify error message was printed
+                self.assertIn("Error processing trades", fake_out.getvalue())
+                
+                # Verify the result is None
+                self.assertIsNone(result_df)
+        
+        # Log test result
+        self.log_case_result("Properly handles exceptions and returns None", True)
+
+    def test_input_validation(self):
+        """Test that different types of inputs are handled correctly."""
+        from analytics.process_trades import process_trades
+        
+        # Test with empty DataFrame
+        result_df = process_trades(self.empty_executions_df)
+        self.assertIsNone(result_df)
+        
+        # Test with invalid DataFrame (missing required columns)
+        result_df = process_trades(self.invalid_executions_df)
+        self.assertIsNone(result_df)
+        
+        # Log test result
+        self.log_case_result("Correctly handles different input types", True)
+
+    def test_end_to_end(self):
+        """Test that the function correctly processes trade data and returns expected results."""
+        from analytics.process_trades import process_trades
+        
+        # Process trades with valid data
+        result_df = process_trades(self.valid_executions_df)
+        
+        # Verify the result contains expected columns and data
+        self.assertIsNotNone(result_df)
+        
+        expected_columns = [
+            'trade_id', 'num_executions', 'symbol', 'direction', 'quantity', 
+            'entry_price', 'exit_price', 'status'
+        ]
+        
+        for col in expected_columns:
+            self.assertIn(col, result_df.columns)
+        
+        # Check some specific values
+        trade1_row = result_df[result_df['trade_id'] == 'trade1'].iloc[0]
+        trade2_row = result_df[result_df['trade_id'] == 'trade2'].iloc[0]
+        
+        # Check trade1 values
+        self.assertEqual(trade1_row['symbol'], 'AAPL')
+        self.assertEqual(trade1_row['num_executions'], 2)
+        self.assertEqual(trade1_row['direction'], 'bullish')
+        self.assertEqual(trade1_row['status'], 'closed')
+        
+        # Check trade2 values
+        self.assertEqual(trade2_row['symbol'], 'MSFT')
+        self.assertEqual(trade2_row['num_executions'], 2)
+        self.assertEqual(trade2_row['direction'], 'bearish')
+        self.assertEqual(trade2_row['status'], 'closed')
+        
+        # Log test result
+        self.log_case_result("Correctly processes trade data end-to-end", True)
+
+    def test_nonstandard_inputs(self):
+        """Test the function with nonstandard but valid inputs."""
+        from analytics.process_trades import process_trades
+        
+        # Test with a DataFrame that has extra columns
+        extra_columns_df = self.valid_executions_df.copy()
+        extra_columns_df['extra_column'] = 'test_value'
+        
+        result_df = process_trades(extra_columns_df)
+        self.assertIsNotNone(result_df)
+        
+        # Test with a DataFrame that has only one row per trade (just entries)
+        entries_only_df = self.valid_executions_df[self.valid_executions_df['is_entry'] == 1].copy()
+        
+        result_df = process_trades(entries_only_df)
+        self.assertIsNotNone(result_df)
+        
+        # Log test result
+        self.log_case_result("Handles nonstandard but valid inputs correctly", True)
+
+
 # If running the tests directly, print summary
 if __name__ == '__main__':
     unittest.main(exit=False)  # Run tests without exiting
