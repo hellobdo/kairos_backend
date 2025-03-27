@@ -4596,6 +4596,203 @@ class TestGetEndDateAndTime(BaseTestCase):
         self.log_case_result("Correctly handles completely empty DataFrames", True)
 
 
+class TestGetEntryDateTimeInfo(BaseTestCase):
+    """Test cases for the _get_entry_date_time_info method of TradeProcessor."""
+
+    def setUp(self):
+        """Set up test fixtures before each test."""
+        super().setUp()
+        
+        # Create sample timestamps for various scenarios
+        self.timestamps = [
+            pd.Timestamp('2023-01-01 10:00:00'),  # trade1 first entry
+            pd.Timestamp('2023-01-01 14:30:00'),  # trade1 second entry (should be ignored)
+            pd.Timestamp('2023-02-15 09:00:00'),  # trade2 entry
+            pd.Timestamp('2023-03-20 11:15:00'),  # trade3 entry
+            pd.Timestamp('2023-12-31 10:00:00'),  # trade4 first entry (out of order)
+            pd.Timestamp('2023-12-30 14:00:00'),  # trade4 second entry
+        ]
+        
+        # Extract dates and times for test data
+        dates = [ts.strftime('%Y-%m-%d') for ts in self.timestamps]
+        times = [ts.strftime('%H:%M:%S') for ts in self.timestamps]
+        
+        # Create entry executions DataFrame
+        self.entry_execs = pd.DataFrame({
+            'trade_id': ['trade1', 'trade1', 'trade2', 'trade3', 'trade4', 'trade4'],
+            'execution_id': ['exec1', 'exec2', 'exec3', 'exec4', 'exec6', 'exec5'],
+            'execution_timestamp': self.timestamps,
+            'date': dates,
+            'time_of_day': times,
+            'quantity': [100, 50, 200, 300, 250, 150],
+            'is_entry': [1, 1, 1, 1, 1, 1],
+            'is_exit': [0, 0, 0, 0, 0, 0]
+        })
+        
+        # Create a processor and set entry_execs
+        self.processor = TradeProcessor(pd.DataFrame())  # Empty main DataFrame, we'll use separate entry/exit
+        self.processor.entry_execs = self.entry_execs
+    
+    def test_basic_functionality(self):
+        """Test basic functionality extracting date and time information."""
+        # Get entry date time info
+        result = self.processor._get_entry_date_time_info()
+        
+        # Verify result is a DataFrame with the expected columns
+        self.assertIsInstance(result, pd.DataFrame)
+        expected_columns = ['start_date', 'start_time', 'week', 'month', 'year']
+        for column in expected_columns:
+            self.assertIn(column, result.columns)
+        
+        # Verify data for each trade
+        self.assertEqual(result.loc['trade1', 'start_date'], '2023-01-01')
+        self.assertEqual(result.loc['trade1', 'start_time'], '10:00:00')
+        self.assertEqual(result.loc['trade1', 'week'], 52)  # Jan 1, 2023 is in week 52 of 2022 in ISO calendar
+        self.assertEqual(result.loc['trade1', 'month'], 1)
+        self.assertEqual(result.loc['trade1', 'year'], 2023)
+        
+        self.assertEqual(result.loc['trade2', 'start_date'], '2023-02-15')
+        self.assertEqual(result.loc['trade2', 'month'], 2)
+        
+        self.assertEqual(result.loc['trade3', 'start_date'], '2023-03-20')
+        self.assertEqual(result.loc['trade3', 'month'], 3)
+        
+        self.log_case_result("Correctly extracts date and time information", True)
+    
+    def test_empty_entry_executions(self):
+        """Test behavior when there are no entry executions."""
+        # Set entry_execs to empty DataFrame
+        original_entry_execs = self.processor.entry_execs
+        self.processor.entry_execs = pd.DataFrame(columns=self.entry_execs.columns)
+        
+        # Get entry date time info
+        result = self.processor._get_entry_date_time_info()
+        
+        # Verify result is an empty DataFrame
+        self.assertIsInstance(result, pd.DataFrame)
+        self.assertTrue(result.empty)
+        
+        # Restore original entry_execs
+        self.processor.entry_execs = original_entry_execs
+        
+        self.log_case_result("Returns empty DataFrame when no entry executions exist", True)
+    
+    def test_chronological_ordering(self):
+        """Test that the method correctly sorts by timestamp and returns the first execution."""
+        # Note: For trade4, the entries are intentionally not in chronological order
+        
+        # Get entry date time info
+        result = self.processor._get_entry_date_time_info()
+        
+        # Verify that the first chronological entry is used for trade4
+        self.assertEqual(result.loc['trade4', 'start_date'], '2023-12-30')  # Earlier date
+        self.assertEqual(result.loc['trade4', 'start_time'], '14:00:00')  # Time from earlier entry
+        
+        self.log_case_result("Correctly sorts by timestamp before determining first entry", True)
+    
+    def test_multiple_entry_executions(self):
+        """Test with trades having multiple entry executions."""
+        # Note: trade1 and trade4 have multiple entry executions
+        
+        # Get entry date time info
+        result = self.processor._get_entry_date_time_info()
+        
+        # Verify results for trade1
+        self.assertEqual(result.loc['trade1', 'start_date'], '2023-01-01')  # First entry date
+        self.assertEqual(result.loc['trade1', 'start_time'], '10:00:00')  # First entry time
+        
+        # Verify results for trade4
+        self.assertEqual(result.loc['trade4', 'start_date'], '2023-12-30')  # First entry date
+        self.assertEqual(result.loc['trade4', 'start_time'], '14:00:00')  # First entry time
+        
+        self.log_case_result("Correctly handles trades with multiple entry executions", True)
+    
+    def test_date_format_conversion(self):
+        """Test that date strings are properly converted to datetime objects."""
+        # Get entry date time info
+        result = self.processor._get_entry_date_time_info()
+        
+        # Verify month, week, and year calculations work correctly
+        # January 1st, 2023 should be in:
+        # - Week 52 (ISO calendar)
+        # - Month 1
+        # - Year 2023
+        self.assertEqual(result.loc['trade1', 'week'], 52)
+        self.assertEqual(result.loc['trade1', 'month'], 1)
+        self.assertEqual(result.loc['trade1', 'year'], 2023)
+        
+        # February 15th, 2023 should be in:
+        # - Week 7
+        # - Month 2
+        # - Year 2023
+        self.assertEqual(result.loc['trade2', 'week'], 7)
+        self.assertEqual(result.loc['trade2', 'month'], 2)
+        self.assertEqual(result.loc['trade2', 'year'], 2023)
+        
+        # December 30th, 2023 should be in:
+        # - Week 52
+        # - Month 12
+        # - Year 2023
+        self.assertEqual(result.loc['trade4', 'week'], 52)
+        self.assertEqual(result.loc['trade4', 'month'], 12)
+        self.assertEqual(result.loc['trade4', 'year'], 2023)
+        
+        self.log_case_result("Correctly converts date strings to datetime objects", True)
+    
+    def test_return_type_and_structure(self):
+        """Test that the function returns a DataFrame with expected columns."""
+        # Get entry date time info
+        result = self.processor._get_entry_date_time_info()
+        
+        # Verify return type is a DataFrame
+        self.assertIsInstance(result, pd.DataFrame)
+        
+        # Verify DataFrame has expected columns
+        expected_columns = ['start_date', 'start_time', 'week', 'month', 'year']
+        self.assertEqual(set(result.columns), set(expected_columns))
+        
+        # Verify index is trade_id
+        self.assertEqual(set(result.index), set(['trade1', 'trade2', 'trade3', 'trade4']))
+        
+        self.log_case_result("Returns DataFrame with expected columns and structure", True)
+    
+    def test_data_quality(self):
+        """Test that the week, month, and year values are extracted correctly."""
+        # Get entry date time info
+        result = self.processor._get_entry_date_time_info()
+        
+        # Verify data types
+        self.assertTrue(pd.api.types.is_string_dtype(result['start_date']))
+        self.assertTrue(pd.api.types.is_string_dtype(result['start_time']))
+        self.assertTrue(pd.api.types.is_numeric_dtype(result['week']))
+        self.assertTrue(pd.api.types.is_numeric_dtype(result['month']))
+        self.assertTrue(pd.api.types.is_numeric_dtype(result['year']))
+        
+        # Verify value ranges
+        self.assertTrue(all(1 <= week <= 53 for week in result['week']))  # ISO weeks range from 1 to 53
+        self.assertTrue(all(1 <= month <= 12 for month in result['month']))  # Months range from 1 to 12
+        self.assertTrue(all(year >= 1900 for year in result['year']))  # Years should be reasonable
+        
+        self.log_case_result("Extracted data has expected types and value ranges", True)
+    
+    def test_integration(self):
+        """Test the function's behavior when integrated with other components."""
+        # Create a new processor with our test data
+        processor = TradeProcessor(self.entry_execs.copy())
+        
+        # Run preprocess to populate entry_execs
+        processor.preprocess()
+        
+        # Get entry date time info
+        result = processor._get_entry_date_time_info()
+        
+        # Verify result is not empty and has entries for trades
+        self.assertFalse(result.empty)
+        self.assertTrue(set(result.index).issubset(set(processor.entry_execs['trade_id'])))
+        
+        self.log_case_result("Integrates correctly with TradeProcessor preprocessing", True)
+
+
 if __name__ == '__main__':
     unittest.main(exit=False)  # Run tests without exiting
     print_summary()  # Print detailed summary of test results
