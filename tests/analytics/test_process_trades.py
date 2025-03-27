@@ -6115,6 +6115,275 @@ class TestGetSymbols(BaseTestCase):
         
         self.log_case_result("Returns correct type and structure", True)
 
+class TestGetTakeProfitPrice(BaseTestCase):
+    """Test cases for TradeProcessor._get_take_profit_price method"""
+    
+    def setUp(self):
+        """Set up common test data for each test case"""
+        # Call the parent setUp to initialize BaseTestCase attributes
+        super().setUp()
+        
+        # Create a sample executions DataFrame
+        executions_df = pd.DataFrame({
+            'trade_id': ['trade1', 'trade2', 'trade3', 'trade4'],
+            'symbol': ['AAPL', 'MSFT', 'TSLA', 'GOOG'],
+            'price': [150.0, 250.0, 800.0, 2000.0],
+            'quantity': [10, -20, 5, -1]
+        })
+        
+        # Initialize the TradeProcessor with the executions DataFrame
+        self.processor = TradeProcessor(executions_df)
+        
+        # Set up trade directions
+        self.processor.trade_directions = {
+            'trade1': {'direction': 'bullish'},
+            'trade2': {'direction': 'bearish'},
+            'trade3': {'direction': 'bullish'},
+            'trade4': {'direction': 'bearish'}
+        }
+        
+        # Set up sample entry prices
+        self.entry_prices = pd.Series({
+            'trade1': 100.0,
+            'trade2': 200.0,
+            'trade3': 800.0,
+            'trade4': 2000.0
+        })
+        
+        # Set up sample risk amount per share
+        self.risk_amount_per_share = pd.Series({
+            'trade1': 10.0,
+            'trade2': 20.0,
+            'trade3': 50.0,
+            'trade4': 100.0
+        })
+        
+        # Initialize case_results for this test class
+        self.case_results = {}
+    
+    def test_basic_functionality(self):
+        """Test basic take profit price calculation for bullish and bearish trades"""
+        # Set risk reward goal
+        risk_reward_goal = 2.0
+        
+        # Call the method
+        result = self.processor._get_take_profit_price(
+            risk_reward_goal, 
+            self.entry_prices, 
+            self.risk_amount_per_share
+        )
+        
+        # Check bullish take profit: entry + (risk * goal)
+        # trade1: 100.0 + (10.0 * 2.0) = 120.0
+        self.assertEqual(result['trade1'], 120.0)
+        
+        # Check bearish take profit: entry - (risk * goal)
+        # trade2: 200.0 - (20.0 * 2.0) = 160.0
+        self.assertEqual(result['trade2'], 160.0)
+        
+        # Check other trades
+        # trade3: 800.0 + (50.0 * 2.0) = 900.0
+        self.assertEqual(result['trade3'], 900.0)
+        
+        # trade4: 2000.0 - (100.0 * 2.0) = 1800.0
+        self.assertEqual(result['trade4'], 1800.0)
+        
+        self.log_case_result("Correctly calculates take profit prices for bullish and bearish trades", True)
+    
+    def test_none_risk_reward_goal(self):
+        """Test behavior when risk_reward_goal is None"""
+        # Call the method with None risk_reward_goal
+        result = self.processor._get_take_profit_price(
+            None, 
+            self.entry_prices, 
+            self.risk_amount_per_share
+        )
+        
+        # Check that all values are None
+        for trade_id in self.processor.trade_directions.keys():
+            self.assertIsNone(result[trade_id])
+        
+        # Check that all trade_ids are included
+        self.assertEqual(set(result.index), set(self.processor.trade_directions.keys()))
+        
+        self.log_case_result("Returns None for all trades when risk_reward_goal is None", True)
+    
+    def test_missing_values(self):
+        """Test behavior with missing values"""
+        # Set risk reward goal
+        risk_reward_goal = 2.0
+        
+        # Create entry prices with missing values
+        entry_prices_with_missing = self.entry_prices.copy()
+        entry_prices_with_missing['trade1'] = None
+        
+        # Create risk amount with missing values
+        risk_amount_with_missing = self.risk_amount_per_share.copy()
+        risk_amount_with_missing['trade2'] = None
+        
+        # Remove direction for trade3
+        trade_directions_with_missing = self.processor.trade_directions.copy()
+        self.processor.trade_directions = {
+            'trade1': {'direction': 'bullish'},
+            'trade2': {'direction': 'bearish'},
+            'trade3': {'direction': None},
+            'trade4': {'direction': 'bearish'}
+        }
+        
+        # Call the method
+        result = self.processor._get_take_profit_price(
+            risk_reward_goal, 
+            entry_prices_with_missing, 
+            risk_amount_with_missing
+        )
+        
+        # Check that trades with missing values have NaN take profit prices
+        self.assertTrue(pd.isna(result['trade1']))  # Missing entry price -> NaN
+        self.assertTrue(pd.isna(result['trade2']))  # Missing risk amount -> NaN
+        self.assertTrue(pd.isna(result['trade3']))  # Missing direction -> NaN
+        
+        # Check that trade4 still has a valid take profit price
+        self.assertEqual(result['trade4'], 1800.0)
+        
+        # Restore original trade_directions
+        self.processor.trade_directions = trade_directions_with_missing
+        
+        self.log_case_result("Correctly handles missing values", True)
+    
+    def test_various_risk_reward_goals(self):
+        """Test with various risk_reward_goal values"""
+        # Test with risk_reward_goal = 1.0
+        result_1 = self.processor._get_take_profit_price(
+            1.0, 
+            self.entry_prices, 
+            self.risk_amount_per_share
+        )
+        
+        # trade1: 100.0 + (10.0 * 1.0) = 110.0
+        self.assertEqual(result_1['trade1'], 110.0)
+        # trade2: 200.0 - (20.0 * 1.0) = 180.0
+        self.assertEqual(result_1['trade2'], 180.0)
+        
+        # Test with risk_reward_goal = 0.0
+        result_0 = self.processor._get_take_profit_price(
+            0.0, 
+            self.entry_prices, 
+            self.risk_amount_per_share
+        )
+        
+        # trade1: 100.0 + (10.0 * 0.0) = 100.0
+        self.assertEqual(result_0['trade1'], 100.0)
+        # trade2: 200.0 - (20.0 * 0.0) = 200.0
+        self.assertEqual(result_0['trade2'], 200.0)
+        
+        # Test with risk_reward_goal = 3.0
+        result_3 = self.processor._get_take_profit_price(
+            3.0, 
+            self.entry_prices, 
+            self.risk_amount_per_share
+        )
+        
+        # trade1: 100.0 + (10.0 * 3.0) = 130.0
+        self.assertEqual(result_3['trade1'], 130.0)
+        # trade2: 200.0 - (20.0 * 3.0) = 140.0
+        self.assertEqual(result_3['trade2'], 140.0)
+        
+        # Test with negative risk_reward_goal (-1.0)
+        result_neg = self.processor._get_take_profit_price(
+            -1.0, 
+            self.entry_prices, 
+            self.risk_amount_per_share
+        )
+        
+        # trade1: 100.0 + (10.0 * -1.0) = 90.0
+        self.assertEqual(result_neg['trade1'], 90.0)
+        # trade2: 200.0 - (20.0 * -1.0) = 220.0
+        self.assertEqual(result_neg['trade2'], 220.0)
+        
+        self.log_case_result("Correctly handles various risk_reward_goal values", True)
+    
+    def test_various_risk_amounts(self):
+        """Test with various risk_amount_per_share values"""
+        # Risk reward goal
+        risk_reward_goal = 2.0
+        
+        # Create risk amounts with special values
+        varied_risk_amounts = pd.Series({
+            'trade1': 0.0,           # Zero risk
+            'trade2': -20.0,         # Negative risk (unusual)
+            'trade3': 1000.0,        # Very large risk
+            'trade4': 100.0          # Normal risk (control)
+        })
+        
+        # Call the method
+        result = self.processor._get_take_profit_price(
+            risk_reward_goal, 
+            self.entry_prices, 
+            varied_risk_amounts
+        )
+        
+        # Check results
+        # trade1: 100.0 + (0.0 * 2.0) = 100.0 (no change from entry)
+        self.assertEqual(result['trade1'], 100.0)
+        
+        # trade2: 200.0 - (-20.0 * 2.0) = 240.0 (increases rather than decreases)
+        self.assertEqual(result['trade2'], 240.0)
+        
+        # trade3: 800.0 + (1000.0 * 2.0) = 2800.0 (large increase)
+        self.assertEqual(result['trade3'], 2800.0)
+        
+        # trade4: 2000.0 - (100.0 * 2.0) = 1800.0 (normal)
+        self.assertEqual(result['trade4'], 1800.0)
+        
+        self.log_case_result("Correctly handles various risk_amount_per_share values", True)
+    
+    def test_return_type_and_structure(self):
+        """Test the return type and structure of the method"""
+        # Call the method
+        result = self.processor._get_take_profit_price(
+            2.0, 
+            self.entry_prices, 
+            self.risk_amount_per_share
+        )
+        
+        # Check that the result is a pandas Series
+        self.assertIsInstance(result, pd.Series)
+        
+        # Check that all trade_ids are included
+        self.assertEqual(set(result.index), set(self.processor.trade_directions.keys()))
+        
+        # Check that values are floats (for non-None values)
+        for value in result.dropna():
+            self.assertIsInstance(value, float)
+        
+        self.log_case_result("Returns correct type and structure", True)
+    
+    def test_exception_handling(self):
+        """Test that method raises ValueError for invalid direction values"""
+        # Set up invalid trade direction
+        original_directions = self.processor.trade_directions.copy()
+        self.processor.trade_directions = {
+            'trade1': {'direction': 'bullish'},
+            'trade2': {'direction': 'invalid'},  # Invalid direction
+            'trade3': {'direction': 'bullish'},
+            'trade4': {'direction': 'bearish'}
+        }
+        
+        # Check that ValueError is raised
+        with self.assertRaises(ValueError):
+            self.processor._get_take_profit_price(
+                2.0, 
+                self.entry_prices, 
+                self.risk_amount_per_share
+            )
+        
+        # Restore original trade_directions
+        self.processor.trade_directions = original_directions
+        
+        self.log_case_result("Correctly raises ValueError for invalid direction", True)
+
+
+
 if __name__ == '__main__':
     unittest.main(exit=False)  # Run tests without exiting
     print_summary()  # Print detailed summary of test results
