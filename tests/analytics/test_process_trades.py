@@ -2893,6 +2893,192 @@ class TestProcessTrades(BaseTestCase):
         self.log_case_result("Correctly integrates with all dependent methods", True)
 
 
+class TestProcessTradesFunction(BaseTestCase):
+    """Test cases for the standalone process_trades wrapper function."""
+
+    def setUp(self):
+        """Set up test fixtures before each test."""
+        # Call parent setUp to set up test tracking attributes
+        super().setUp()
+        
+        # Create a sample executions DataFrame for testing
+        timestamps = [
+            pd.Timestamp('2023-01-01 10:00:00'),  # trade1 entry
+            pd.Timestamp('2023-01-01 14:30:00'),  # trade1 exit
+            pd.Timestamp('2023-02-02 09:15:00'),  # trade2 entry
+            pd.Timestamp('2023-02-02 16:45:00'),  # trade2 exit
+        ]
+        
+        # Create dates and times from timestamps
+        dates = [ts.strftime('%Y-%m-%d') for ts in timestamps]
+        times = [ts.strftime('%H:%M:%S') for ts in timestamps]
+        
+        self.valid_executions_df = pd.DataFrame({
+            'trade_id': ['trade1', 'trade1', 'trade2', 'trade2'],
+            'execution_id': ['exec1', 'exec2', 'exec3', 'exec4'],
+            'symbol': ['AAPL', 'AAPL', 'MSFT', 'MSFT'],
+            'date': dates,
+            'time_of_day': times,
+            'is_entry': [1, 0, 1, 0],  # 1 for entries, 0 for exits
+            'is_exit': [0, 1, 0, 1],   # 0 for entries, 1 for exits
+            'quantity': [100, -100, -200, 200],  # positive for buys, negative for sells
+            'execution_timestamp': timestamps,
+            'price': [10.0, 11.0, 20.0, 21.0],
+            'commission': [1.0, 1.0, 2.0, 2.0]
+        })
+        
+        # Create an invalid DataFrame (missing required columns)
+        self.invalid_executions_df = self.valid_executions_df.drop(columns=['is_entry', 'is_exit'])
+        
+        # Create an empty DataFrame
+        self.empty_executions_df = pd.DataFrame(columns=self.valid_executions_df.columns)
+        
+        # Set up mock for db.get_account_balances() 
+        self.account_balances_patcher = patch('utils.db_utils.DatabaseManager.get_account_balances')
+        self.mock_get_account_balances = self.account_balances_patcher.start()
+        
+        # Set up mock account balances return value
+        self.mock_get_account_balances.return_value = pd.DataFrame({
+            'date': ['2023-01-01', '2023-02-02'],
+            'cash_balance': [10000.0, 10500.0]
+        })
+
+    def tearDown(self):
+        """Clean up after each test"""
+        super().tearDown()
+        self.account_balances_patcher.stop()
+
+    def test_basic_functionality(self):
+        """Test that valid input correctly passes through to the underlying class method."""
+        # Use the wrapper function
+        from analytics.process_trades import process_trades
+        
+        # Process trades with valid data
+        result_df = process_trades(self.valid_executions_df)
+        
+        # Verify the result
+        self.assertIsNotNone(result_df)
+        self.assertIsInstance(result_df, pd.DataFrame)
+        
+        # Check that expected trades are present
+        trade_ids = result_df['trade_id'].tolist()
+        self.assertEqual(set(trade_ids), {'trade1', 'trade2'})
+        
+        # Log test result
+        self.log_case_result("Successfully processes valid execution data", True)
+
+    def test_exception_handling(self):
+        """Test that exceptions are properly caught and result in None being returned."""
+        from analytics.process_trades import process_trades
+        
+        # Create a mock TradeProcessor that raises an exception
+        with patch('analytics.process_trades.TradeProcessor') as mock_processor_class:
+            # Make the constructor raise an exception
+            mock_processor_class.side_effect = Exception("Test constructor exception")
+            
+            # Call process_trades with valid data
+            with patch('sys.stdout', new=StringIO()) as fake_out:
+                result_df = process_trades(self.valid_executions_df)
+                
+                # Verify error message was printed
+                self.assertIn("Error processing trades", fake_out.getvalue())
+                
+                # Verify the result is None
+                self.assertIsNone(result_df)
+        
+        # Test exception from process_trades method
+        with patch('analytics.process_trades.TradeProcessor') as mock_processor_class:
+            # Make the process_trades method raise an exception
+            mock_processor_instance = MagicMock()
+            mock_processor_instance.process_trades.side_effect = Exception("Test method exception")
+            mock_processor_class.return_value = mock_processor_instance
+            
+            # Call process_trades with valid data
+            with patch('sys.stdout', new=StringIO()) as fake_out:
+                result_df = process_trades(self.valid_executions_df)
+                
+                # Verify error message was printed
+                self.assertIn("Error processing trades", fake_out.getvalue())
+                
+                # Verify the result is None
+                self.assertIsNone(result_df)
+        
+        # Log test result
+        self.log_case_result("Properly handles exceptions and returns None", True)
+
+    def test_input_validation(self):
+        """Test that different types of inputs are handled correctly."""
+        from analytics.process_trades import process_trades
+        
+        # Test with empty DataFrame
+        result_df = process_trades(self.empty_executions_df)
+        self.assertIsNone(result_df)
+        
+        # Test with invalid DataFrame (missing required columns)
+        result_df = process_trades(self.invalid_executions_df)
+        self.assertIsNone(result_df)
+        
+        # Log test result
+        self.log_case_result("Correctly handles different input types", True)
+
+    def test_end_to_end(self):
+        """Test that the function correctly processes trade data and returns expected results."""
+        from analytics.process_trades import process_trades
+        
+        # Process trades with valid data
+        result_df = process_trades(self.valid_executions_df)
+        
+        # Verify the result contains expected columns and data
+        self.assertIsNotNone(result_df)
+        
+        expected_columns = [
+            'trade_id', 'num_executions', 'symbol', 'direction', 'quantity', 
+            'entry_price', 'exit_price', 'status'
+        ]
+        
+        for col in expected_columns:
+            self.assertIn(col, result_df.columns)
+        
+        # Check some specific values
+        trade1_row = result_df[result_df['trade_id'] == 'trade1'].iloc[0]
+        trade2_row = result_df[result_df['trade_id'] == 'trade2'].iloc[0]
+        
+        # Check trade1 values
+        self.assertEqual(trade1_row['symbol'], 'AAPL')
+        self.assertEqual(trade1_row['num_executions'], 2)
+        self.assertEqual(trade1_row['direction'], 'bullish')
+        self.assertEqual(trade1_row['status'], 'closed')
+        
+        # Check trade2 values
+        self.assertEqual(trade2_row['symbol'], 'MSFT')
+        self.assertEqual(trade2_row['num_executions'], 2)
+        self.assertEqual(trade2_row['direction'], 'bearish')
+        self.assertEqual(trade2_row['status'], 'closed')
+        
+        # Log test result
+        self.log_case_result("Correctly processes trade data end-to-end", True)
+
+    def test_nonstandard_inputs(self):
+        """Test the function with nonstandard but valid inputs."""
+        from analytics.process_trades import process_trades
+        
+        # Test with a DataFrame that has extra columns
+        extra_columns_df = self.valid_executions_df.copy()
+        extra_columns_df['extra_column'] = 'test_value'
+        
+        result_df = process_trades(extra_columns_df)
+        self.assertIsNotNone(result_df)
+        
+        # Test with a DataFrame that has only one row per trade (just entries)
+        entries_only_df = self.valid_executions_df[self.valid_executions_df['is_entry'] == 1].copy()
+        
+        result_df = process_trades(entries_only_df)
+        self.assertIsNotNone(result_df)
+        
+        # Log test result
+        self.log_case_result("Handles nonstandard but valid inputs correctly", True)
+
+
 # If running the tests directly, print summary
 if __name__ == '__main__':
     unittest.main(exit=False)  # Run tests without exiting
