@@ -4178,6 +4178,238 @@ class TestGetDirectionExecutions(BaseTestCase):
         self.log_case_result("Integrates correctly with TradeProcessor class", True)
 
 
+class TestGetDurationHours(BaseTestCase):
+    """Test cases for the _get_duration_hours method of TradeProcessor."""
+
+    def setUp(self):
+        """Set up test fixtures before each test."""
+        super().setUp()
+        
+        # Create sample timestamps for various scenarios
+        now = pd.Timestamp('2023-01-01 10:00:00')
+        one_hour_later = pd.Timestamp('2023-01-01 11:00:00')
+        two_hours_later = pd.Timestamp('2023-01-01 12:00:00')
+        one_day_later = pd.Timestamp('2023-01-02 10:00:00')
+        two_days_later = pd.Timestamp('2023-01-03 10:00:00')
+        one_minute_later = pd.Timestamp('2023-01-01 10:01:00')
+        same_time = pd.Timestamp('2023-01-01 10:00:00')
+        earlier_time = pd.Timestamp('2023-01-01 09:00:00')
+        
+        # Create entry executions DataFrame
+        self.entry_execs = pd.DataFrame({
+            'trade_id': ['short_trade', 'long_trade', 'very_short_trade', 'no_exit_trade', 
+                        'invalid_trade', 'multiple_entries_trade', 'multiple_entries_trade'],
+            'execution_timestamp': [now, now, now, now, now, now, one_hour_later],
+            'quantity': [100, 100, 100, 100, 100, 50, 50],
+            'is_entry': [1, 1, 1, 1, 1, 1, 1],
+            'is_exit': [0, 0, 0, 0, 0, 0, 0]
+        })
+        
+        # Create exit executions DataFrame
+        self.exit_execs = pd.DataFrame({
+            'trade_id': ['short_trade', 'long_trade', 'very_short_trade', 'invalid_trade', 
+                        'multiple_entries_trade', 'multiple_entries_trade'],
+            'execution_timestamp': [one_hour_later, two_days_later, one_minute_later, earlier_time, 
+                                    two_hours_later, one_day_later],
+            'quantity': [-100, -100, -100, -100, -50, -50],
+            'is_entry': [0, 0, 0, 0, 0, 0],
+            'is_exit': [1, 1, 1, 1, 1, 1]
+        })
+        
+        # Create a processor and set entry_execs and exit_execs
+        self.processor = TradeProcessor(pd.DataFrame())  # Empty main DataFrame, we'll use separate entry/exit
+        self.processor.entry_execs = self.entry_execs
+        self.processor.exit_execs = self.exit_execs
+        
+        # Create a version of exit_execs without the invalid trade for most tests
+        self.valid_exit_execs = self.exit_execs[self.exit_execs['trade_id'] != 'invalid_trade']
+
+    def test_basic_duration_calculation(self):
+        """Test basic duration calculation for trades with both entry and exit."""
+        # Use valid exit executions (without invalid_trade)
+        self.processor.exit_execs = self.valid_exit_execs
+        
+        # Calculate durations
+        durations = self.processor._get_duration_hours()
+        
+        # Verify durations for short and long trades
+        # Short trade: 1 hour = 1.0 hours
+        self.assertAlmostEqual(durations['short_trade'], 1.0)
+        
+        # Long trade: 2 days = 48.0 hours
+        self.assertAlmostEqual(durations['long_trade'], 48.0)
+        
+        # Very short trade: 1 minute = 1/60 hours = 0.016667 hours
+        self.assertAlmostEqual(durations['very_short_trade'], 1/60, places=5)
+        
+        self.log_case_result("Correctly calculates basic durations in hours", True)
+
+    def test_missing_exit_executions(self):
+        """Test behavior when there are no exit executions at all."""
+        # Set exit_execs to empty DataFrame
+        original_exit_execs = self.processor.exit_execs
+        self.processor.exit_execs = pd.DataFrame(columns=self.exit_execs.columns)
+        
+        # Calculate durations
+        durations = self.processor._get_duration_hours()
+        
+        # The method returns a Series with the entry trade IDs as index but all NaN values
+        # This is documented in the method: "If no exits, return Series with NaN values"
+        entry_times = self.processor.entry_execs.groupby('trade_id')['execution_timestamp'].first()
+        
+        # Verify the Series has the same index as entry_times
+        self.assertEqual(len(durations), len(entry_times))
+        pd.testing.assert_index_equal(durations.index, entry_times.index)
+        
+        # Verify all values are NaN
+        self.assertTrue(durations.isna().all())
+        
+        # Restore original exit_execs
+        self.processor.exit_execs = original_exit_execs
+        
+        self.log_case_result("Returns Series with NaN values when no exit executions exist", True)
+
+    def test_partial_exit_executions(self):
+        """Test with some trades having exit executions and some without."""
+        # Use valid exit executions (without invalid_trade)
+        self.processor.exit_execs = self.valid_exit_execs
+        
+        # Calculate durations
+        durations = self.processor._get_duration_hours()
+        
+        # Verify durations are calculated only for trades with both entry and exit
+        self.assertIn('short_trade', durations.index)
+        self.assertIn('long_trade', durations.index)
+        self.assertIn('very_short_trade', durations.index)
+        
+        # 'no_exit_trade' should not be in durations because it has no exit execution
+        self.assertNotIn('no_exit_trade', durations.index)
+        
+        self.log_case_result("Calculates durations only for trades with both entry and exit", True)
+
+    def test_chronological_validation(self):
+        """Test error handling when exit time is earlier than entry time."""
+        # This test specifically tests the invalid trade scenario
+        # 'invalid_trade' has exit timestamp earlier than entry timestamp
+        with self.assertRaises(ValueError) as context:
+            self.processor._get_duration_hours()
+        
+        # Verify error message
+        self.assertIn("Exit time for trade invalid_trade is earlier than or equal to entry time", str(context.exception))
+        
+        # Remove the invalid trade to test remaining functionality
+        self.processor.exit_execs = self.valid_exit_execs
+        
+        # Now the function should work
+        durations = self.processor._get_duration_hours()
+        self.assertIn('short_trade', durations.index)
+        
+        self.log_case_result("Raises ValueError when exit time is earlier than entry time", True)
+
+    def test_identical_timestamps(self):
+        """Test handling of identical entry and exit timestamps."""
+        # Use valid exit executions first (without invalid_trade)
+        self.processor.exit_execs = self.valid_exit_execs
+        
+        # Add a trade with identical entry and exit timestamps
+        self.processor.entry_execs = pd.concat([
+            self.processor.entry_execs,
+            pd.DataFrame({
+                'trade_id': ['identical_time_trade'],
+                'execution_timestamp': [pd.Timestamp('2023-01-04 10:00:00')],
+                'quantity': [100],
+                'is_entry': [1],
+                'is_exit': [0]
+            })
+        ])
+        
+        self.processor.exit_execs = pd.concat([
+            self.processor.exit_execs,
+            pd.DataFrame({
+                'trade_id': ['identical_time_trade'],
+                'execution_timestamp': [pd.Timestamp('2023-01-04 10:00:01')],  # 1 second later
+                'quantity': [-100],
+                'is_entry': [0],
+                'is_exit': [1]
+            })
+        ])
+        
+        # Calculate durations
+        durations = self.processor._get_duration_hours()
+        
+        # For identical timestamps, the duration should be very close to 0 (1 second = 1/3600 hours)
+        self.assertIn('identical_time_trade', durations.index)
+        self.assertAlmostEqual(durations['identical_time_trade'], 1/3600, places=6)  # 1 second = 0.0002777... hours
+        
+        self.log_case_result("Correctly handles identical or very close timestamps", True)
+
+    def test_very_short_durations(self):
+        """Test handling of very short durations (close to zero)."""
+        # Use valid exit executions (without invalid_trade)
+        self.processor.exit_execs = self.valid_exit_execs
+        
+        # Calculate durations
+        durations = self.processor._get_duration_hours()
+        
+        # Very short trade duration should be close to 0
+        self.assertAlmostEqual(durations['very_short_trade'], 1/60, places=5)  # 1 minute = 0.0166... hours
+        
+        self.log_case_result("Correctly handles very short durations", True)
+
+    def test_different_time_units(self):
+        """Test conversion from seconds to hours is correct."""
+        # Use valid exit executions (without invalid_trade)
+        self.processor.exit_execs = self.valid_exit_execs
+        
+        # Calculate durations
+        durations = self.processor._get_duration_hours()
+        
+        # Short trade: 1 hour = 1.0 hours = 3600 seconds / 3600 = 1.0
+        self.assertAlmostEqual(durations['short_trade'], 1.0)
+        
+        # Long trade: 2 days = 48.0 hours = 172800 seconds / 3600 = 48.0
+        self.assertAlmostEqual(durations['long_trade'], 48.0)
+        
+        # Very short trade: 1 minute = 60 seconds = 60/3600 = 1/60 = 0.0166... hours
+        self.assertAlmostEqual(durations['very_short_trade'], 1/60, places=5)
+        
+        self.log_case_result("Correctly converts seconds to hours", True)
+
+    def test_multiple_entries_or_exits(self):
+        """Test trades with multiple entries or exits."""
+        # Use valid exit executions (without invalid_trade)
+        self.processor.exit_execs = self.valid_exit_execs
+        
+        # Calculate durations
+        durations = self.processor._get_duration_hours()
+        
+        # multiple_entries_trade has:
+        # - first entry at 10:00
+        # - second entry at 11:00
+        # - first exit at 12:00
+        # - second exit at 10:00 next day
+        # Duration should be from first entry to last exit = 24 hours
+        self.assertAlmostEqual(durations['multiple_entries_trade'], 24.0)
+        
+        self.log_case_result("Correctly handles trades with multiple entries or exits", True)
+
+    def test_return_type(self):
+        """Test that the return value is a pandas Series with correct structure."""
+        # Use valid exit executions (without invalid_trade)
+        self.processor.exit_execs = self.valid_exit_execs
+        
+        # Calculate durations
+        durations = self.processor._get_duration_hours()
+        
+        # Verify return type
+        self.assertIsInstance(durations, pd.Series)
+        
+        # Verify values are floats
+        self.assertTrue(np.issubdtype(durations.dtype, np.number))
+        
+        self.log_case_result("Returns a pandas Series with correct structure", True)
+
+
 if __name__ == '__main__':
     unittest.main(exit=False)  # Run tests without exiting
     print_summary()  # Print detailed summary of test results
