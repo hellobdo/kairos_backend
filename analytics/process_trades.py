@@ -156,15 +156,14 @@ class TradeProcessor:
             if entry_price is None or exit_price is None or stop_price is None:
                 risk_reward_ratios[trade_id] = None
                 continue
+
             
             if direction == 'bullish':
-                # For bullish trades
-                reward = exit_price - entry_price
                 risk = entry_price - stop_price
+                reward = exit_price - entry_price
             else:
-                # For bearish trades
-                reward = entry_price - exit_price
                 risk = stop_price - entry_price
+                reward = entry_price - exit_price
             
             # Calculate R:R ratio, handling division by zero
             if risk <= 0:
@@ -496,10 +495,9 @@ class TradeProcessor:
         Returns:
             Tuple containing (end_date_series, end_time_series)
         """
-        # If no exits, return empty Series
+        # If no exits, return empty Series with appropriate indexes
         if self.exit_execs.empty:
-            # Return None for both date and time
-            return None, None
+            return pd.Series(index=self.entry_execs['trade_id']), pd.Series(index=self.entry_execs['trade_id'])
         
         # Sort by execution_timestamp to ensure chronological order
         sorted_exits = self.exit_execs.sort_values('execution_timestamp')
