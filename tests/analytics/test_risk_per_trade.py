@@ -1,6 +1,7 @@
 import unittest
 import pandas as pd
 import numpy as np
+from unittest.mock import patch, MagicMock
 from analytics.process_trades import TradeProcessor
 from tests._utils.test_utils import BaseTestCase
 

@@ -5565,6 +5565,260 @@ class TestGetRiskAmountPerShare(BaseTestCase):
         
         self.log_case_result("Returns correct type with proper index", True)
 
+class TestGetRiskPerTrade(BaseTestCase):
+    """Test cases for TradeProcessor._get_risk_per_trade method"""
+    
+    def setUp(self):
+        """Set up test environment before each test method"""
+        # Call super to set up test tracking attributes
+        super().setUp()
+        
+        # Create a sample executions DataFrame
+        self.executions_df = pd.DataFrame({
+            'trade_id': ['trade1', 'trade2', 'trade3', 'trade4'],
+            'quantity': [100, -50, 200, -75],
+            'price': [150.0, 160.0, 200.0, 90.0],
+            'symbol': ['AAPL', 'MSFT', 'TSLA', 'META'],
+            'date': ['2023-01-01'] * 4,
+            'time_of_day': ['09:30:00'] * 4,
+            'execution_timestamp': pd.to_datetime(['2023-01-01 09:30:00'] * 4),
+            'is_entry': [1, 1, 1, 1]
+        })
+        
+        # Initialize processor and set trade directions
+        self.processor = TradeProcessor(self.executions_df)
+        self.processor.trade_directions = {
+            'trade1': {'direction': 'bullish'},
+            'trade2': {'direction': 'bearish'},
+            'trade3': {'direction': 'bullish'},
+            'trade4': {'direction': 'bearish'}
+        }
+        
+        # Create sample data for test inputs
+        self.risk_amount_per_share = pd.Series({
+            'trade1': 10.0,
+            'trade2': 15.0,
+            'trade3': 20.0,
+            'trade4': 5.0
+        })
+        
+        self.quantity = pd.Series({
+            'trade1': 100,
+            'trade2': 50,
+            'trade3': 200,
+            'trade4': 75
+        })
+        
+        self.entry_info = pd.DataFrame({
+            'start_date': {
+                'trade1': '2023-01-01',
+                'trade2': '2023-01-02',
+                'trade3': '2023-01-03',
+                'trade4': '2023-01-04'
+            }
+        })
+        
+        # Sample account balances
+        self.account_balances = pd.DataFrame({
+            'date': ['2023-01-01', '2023-01-02', '2023-01-03', '2023-01-04'],
+            'cash_balance': [10000.0, 12000.0, 11000.0, 13000.0]
+        })
+        
+        # Set class_name attribute for BaseTestCase tracking
+        self.class_name = "TestGetRiskPerTrade"
+    
+    def test_fixed_risk_per_trade(self):
+        """Test with fixed risk_per_trade parameter"""
+        # Set a fixed risk_per_trade value
+        fixed_risk = 0.02  # 2%
+        
+        # Call the method with fixed risk
+        result = self.processor._get_risk_per_trade(
+            risk_per_trade=fixed_risk,
+            risk_amount_per_share=self.risk_amount_per_share,
+            quantity=self.quantity,
+            entry_info=self.entry_info
+        )
+        
+        # Verify all trades have the fixed risk value
+        for trade_id in self.processor.trade_directions.keys():
+            self.assertEqual(result[trade_id], fixed_risk)
+        
+        self.log_case_result("Correctly applies fixed risk_per_trade value", True)
+    
+    @patch('utils.db_utils.DatabaseManager.get_account_balances')
+    def test_basic_calculation(self, mock_get_account_balances):
+        """Test basic risk calculation"""
+        # Mock account balances
+        mock_get_account_balances.return_value = self.account_balances
+        
+        # Call the method without fixed risk
+        result = self.processor._get_risk_per_trade(
+            risk_per_trade=None,
+            risk_amount_per_share=self.risk_amount_per_share,
+            quantity=self.quantity,
+            entry_info=self.entry_info
+        )
+        
+        # Calculate expected values manually
+        # trade1: 10.0 * 100 / 10000.0 = 0.1 (1%)
+        # trade2: 15.0 * 50 / 12000.0 = 0.0625 (0.625%)
+        # trade3: 20.0 * 200 / 11000.0 = 0.3636... (3.636%)
+        # trade4: 5.0 * 75 / 13000.0 = 0.0288... (0.288%)
+        expected_values = {
+            'trade1': 10.0 * 100 / 10000.0,
+            'trade2': 15.0 * 50 / 12000.0,
+            'trade3': 20.0 * 200 / 11000.0,
+            'trade4': 5.0 * 75 / 13000.0
+        }
+        
+        # Verify results
+        for trade_id, expected in expected_values.items():
+            self.assertAlmostEqual(result[trade_id], expected, places=5)
+        
+        self.log_case_result("Correctly calculates risk percentages", True)
+    
+    @patch('utils.db_utils.DatabaseManager.get_account_balances')
+    def test_missing_values(self, mock_get_account_balances):
+        """Test handling of missing values"""
+        # Mock account balances
+        mock_get_account_balances.return_value = self.account_balances
+        
+        # Create data with missing values
+        risk_amount_with_missing = self.risk_amount_per_share.copy()
+        risk_amount_with_missing['trade1'] = None
+        
+        quantity_with_missing = self.quantity.copy()
+        quantity_with_missing['trade2'] = None
+        
+        entry_info_with_missing = self.entry_info.copy()
+        entry_info_with_missing.loc['trade3', 'start_date'] = None
+        
+        # Call the method with data containing missing values
+        result = self.processor._get_risk_per_trade(
+            risk_per_trade=None,
+            risk_amount_per_share=risk_amount_with_missing,
+            quantity=quantity_with_missing,
+            entry_info=entry_info_with_missing
+        )
+        
+        # Verify trades with missing values have NaN risk (not None)
+        self.assertTrue(pd.isna(result['trade1']))  # Missing risk_amount
+        self.assertTrue(pd.isna(result['trade2']))  # Missing quantity
+        self.assertTrue(pd.isna(result['trade3']))  # Missing start_date
+        
+        # Verify trade4 still has a valid value
+        expected_trade4 = 5.0 * 75 / 13000.0
+        self.assertAlmostEqual(result['trade4'], expected_trade4, places=5)
+        
+        self.log_case_result("Correctly handles missing values", True)
+    
+    @patch('utils.db_utils.DatabaseManager.get_account_balances')
+    def test_missing_account_balances(self, mock_get_account_balances):
+        """Test with missing account balances for some dates"""
+        # Mock account balances with missing dates
+        incomplete_balances = pd.DataFrame({
+            'date': ['2023-01-01', '2023-01-04'],  # Missing dates for trade2 and trade3
+            'cash_balance': [10000.0, 13000.0]
+        })
+        mock_get_account_balances.return_value = incomplete_balances
+        
+        # Call the method
+        result = self.processor._get_risk_per_trade(
+            risk_per_trade=None,
+            risk_amount_per_share=self.risk_amount_per_share,
+            quantity=self.quantity,
+            entry_info=self.entry_info
+        )
+        
+        # Verify trades with missing balances have NaN risk (not None)
+        self.assertTrue(pd.isna(result['trade2']))  # No balance for 2023-01-02
+        self.assertTrue(pd.isna(result['trade3']))  # No balance for 2023-01-03
+        
+        # Verify trades with valid balances have calculated values
+        expected_trade1 = 10.0 * 100 / 10000.0
+        expected_trade4 = 5.0 * 75 / 13000.0
+        self.assertAlmostEqual(result['trade1'], expected_trade1, places=5)
+        self.assertAlmostEqual(result['trade4'], expected_trade4, places=5)
+        
+        self.log_case_result("Correctly handles missing account balances", True)
+    
+    @patch('utils.db_utils.DatabaseManager.get_account_balances')
+    def test_account_balance_exception(self, mock_get_account_balances):
+        """Test exception handling when account balance retrieval fails"""
+        # Mock get_account_balances to raise an exception
+        mock_get_account_balances.side_effect = Exception("Database error")
+        
+        # Call the method
+        result = self.processor._get_risk_per_trade(
+            risk_per_trade=None,
+            risk_amount_per_share=self.risk_amount_per_share,
+            quantity=self.quantity,
+            entry_info=self.entry_info
+        )
+        
+        # Verify all trades have None risk (from exception handling, not NaN)
+        for trade_id in self.processor.trade_directions.keys():
+            self.assertIsNone(result[trade_id])
+        
+        self.log_case_result("Correctly handles account balance retrieval exception", True)
+    
+    @patch('utils.db_utils.DatabaseManager.get_account_balances')
+    def test_multiple_trades_mixed_scenarios(self, mock_get_account_balances):
+        """Test with multiple trades in different scenarios"""
+        # Mock account balances
+        mock_get_account_balances.return_value = self.account_balances
+        
+        # Create a mixed scenario: missing risk for trade1, missing balance for trade3
+        risk_amount_mixed = self.risk_amount_per_share.copy()
+        risk_amount_mixed['trade1'] = None
+        
+        # Modify account balances to remove trade3's date
+        mixed_balances = self.account_balances[self.account_balances['date'] != '2023-01-03'].copy()
+        mock_get_account_balances.return_value = mixed_balances
+        
+        # Call the method
+        result = self.processor._get_risk_per_trade(
+            risk_per_trade=None,
+            risk_amount_per_share=risk_amount_mixed,
+            quantity=self.quantity,
+            entry_info=self.entry_info
+        )
+        
+        # Verify expected results
+        self.assertTrue(pd.isna(result['trade1']))  # Missing risk_amount
+        self.assertTrue(pd.isna(result['trade3']))  # Missing account balance
+        
+        # trade2 and trade4 should have valid values
+        expected_trade2 = 15.0 * 50 / 12000.0
+        expected_trade4 = 5.0 * 75 / 13000.0
+        self.assertAlmostEqual(result['trade2'], expected_trade2, places=5)
+        self.assertAlmostEqual(result['trade4'], expected_trade4, places=5)
+        
+        self.log_case_result("Correctly handles mixed scenarios", True)
+    
+    def test_return_type(self):
+        """Test that the return value is a pandas Series with correct structure"""
+        # Use fixed risk to avoid mocking database
+        fixed_risk = 0.02
+        
+        # Call the method
+        result = self.processor._get_risk_per_trade(
+            risk_per_trade=fixed_risk,
+            risk_amount_per_share=self.risk_amount_per_share,
+            quantity=self.quantity,
+            entry_info=self.entry_info
+        )
+        
+        # Verify return type is pandas Series
+        self.assertIsInstance(result, pd.Series)
+        
+        # Verify Series index contains all trade IDs
+        all_trade_ids = set(self.processor.trade_directions.keys())
+        self.assertEqual(set(result.index), all_trade_ids)
+        
+        self.log_case_result("Returns correct type with proper index", True)
+
 if __name__ == '__main__':
     unittest.main(exit=False)  # Run tests without exiting
     print_summary()  # Print detailed summary of test results
