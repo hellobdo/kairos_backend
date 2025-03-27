@@ -3805,6 +3805,176 @@ class TestCalculateVWAP(BaseTestCase):
         
         self.log_case_result("Correctly calculates VWAP from processor's execution data", True)
 
+class TestGetCommission(BaseTestCase):
+    """Test cases for the _get_commission method of TradeProcessor."""
+
+    def setUp(self):
+        """Set up test fixtures before each test."""
+        super().setUp()
+        
+        # Create a basic TradeProcessor instance without commission column
+        self.executions_df_no_commission = pd.DataFrame({
+            'trade_id': ['trade1', 'trade1', 'trade2', 'trade2'],
+            'execution_id': ['exec1', 'exec2', 'exec3', 'exec4'],
+            'quantity': [100, -100, 200, -200],
+            'price': [10.0, 11.0, 20.0, 21.0],
+            'symbol': ['AAPL', 'AAPL', 'MSFT', 'MSFT'],
+            'is_entry': [1, 0, 1, 0],
+            'is_exit': [0, 1, 0, 1],
+            'execution_timestamp': pd.to_datetime(['2023-01-01', '2023-01-02', '2023-01-03', '2023-01-04'])
+        })
+        
+        # Create a processor without commission data
+        self.processor_no_commission = TradeProcessor(self.executions_df_no_commission)
+        self.processor_no_commission.trade_directions = {
+            'trade1': {'direction': 'bullish', 'initial_quantity': 100},
+            'trade2': {'direction': 'bullish', 'initial_quantity': 200}
+        }
+        
+        # Create a DataFrame with commission column
+        self.executions_df_with_commission = self.executions_df_no_commission.copy()
+        self.executions_df_with_commission['commission'] = [1.5, 2.5, 3.5, 4.5]
+        
+        # Create a processor with commission data
+        self.processor_with_commission = TradeProcessor(self.executions_df_with_commission)
+        self.processor_with_commission.trade_directions = {
+            'trade1': {'direction': 'bullish', 'initial_quantity': 100},
+            'trade2': {'direction': 'bullish', 'initial_quantity': 200}
+        }
+
+    def test_with_commission_column(self):
+        """Test commission calculation when commission column exists."""
+        # Calculate commissions
+        result = self.processor_with_commission._get_commission()
+        
+        # Expected calculations:
+        # trade1: 1.5 + 2.5 = 4.0
+        # trade2: 3.5 + 4.5 = 8.0
+        expected = pd.Series({'trade1': 4.0, 'trade2': 8.0})
+        
+        # Verify results
+        pd.testing.assert_series_equal(result, expected, check_names=False)
+        
+        self.log_case_result("Correctly sums commissions per trade_id", True)
+
+    def test_without_commission_column(self):
+        """Test behavior when commission column is missing."""
+        # Calculate commissions with missing column
+        result = self.processor_no_commission._get_commission()
+        
+        # Expected: empty Series with trade_ids as index
+        expected = pd.Series(index=['trade1', 'trade2'])
+        
+        # Verify results
+        pd.testing.assert_series_equal(result, expected, check_names=False)
+        
+        self.log_case_result("Returns empty Series when commission column missing", True)
+
+    def test_mixed_commission_values(self):
+        """Test with mixed commission values including zeros and NaNs."""
+        # Create DataFrame with mixed commission values
+        mixed_df = self.executions_df_no_commission.copy()
+        mixed_df['commission'] = [1.5, 0.0, np.nan, 4.5]
+        
+        processor = TradeProcessor(mixed_df)
+        processor.trade_directions = {
+            'trade1': {'direction': 'bullish', 'initial_quantity': 100},
+            'trade2': {'direction': 'bullish', 'initial_quantity': 200}
+        }
+        
+        # Calculate commissions
+        result = processor._get_commission()
+        
+        # Expected: trade1 = 1.5 + 0.0 = 1.5, trade2 = NaN + 4.5 = NaN
+        expected = pd.Series({'trade1': 1.5, 'trade2': 4.5})  # NaN is handled by pandas sum
+        
+        # Verify results
+        pd.testing.assert_series_equal(result, expected, check_dtype=False, check_names=False)
+        
+        self.log_case_result("Correctly handles mixed commission values", True)
+
+    def test_negative_commission_values(self):
+        """Test with negative commission values (e.g., rebates)."""
+        # Create DataFrame with negative commission values
+        negative_df = self.executions_df_no_commission.copy()
+        negative_df['commission'] = [1.5, -0.5, 3.5, -1.0]
+        
+        processor = TradeProcessor(negative_df)
+        processor.trade_directions = {
+            'trade1': {'direction': 'bullish', 'initial_quantity': 100},
+            'trade2': {'direction': 'bullish', 'initial_quantity': 200}
+        }
+        
+        # Calculate commissions
+        result = processor._get_commission()
+        
+        # Expected: trade1 = 1.5 + (-0.5) = 1.0, trade2 = 3.5 + (-1.0) = 2.5
+        expected = pd.Series({'trade1': 1.0, 'trade2': 2.5})
+        
+        # Verify results
+        pd.testing.assert_series_equal(result, expected, check_names=False)
+        
+        self.log_case_result("Correctly handles negative commission values", True)
+
+    def test_missing_trades(self):
+        """Test behavior with trade_ids in trade_directions but not in executions."""
+        # Add an extra trade_id to trade_directions that doesn't exist in executions
+        processor = TradeProcessor(self.executions_df_with_commission)
+        processor.trade_directions = {
+            'trade1': {'direction': 'bullish', 'initial_quantity': 100},
+            'trade2': {'direction': 'bullish', 'initial_quantity': 200},
+            'trade3': {'direction': 'bullish', 'initial_quantity': 300}  # Not in executions
+        }
+        
+        # Calculate commissions
+        result = processor._get_commission()
+        
+        # Expected: trade1 and trade2 have commissions, trade3 is in the index but has no value
+        expected = pd.Series({'trade1': 4.0, 'trade2': 8.0})
+        
+        # Verify only trade1 and trade2 are in the result
+        self.assertEqual(set(result.index), {'trade1', 'trade2'})
+        pd.testing.assert_series_equal(result, expected, check_names=False)
+        
+        self.log_case_result("Correctly handles trades not in executions", True)
+
+    def test_empty_executions(self):
+        """Test with empty executions DataFrame."""
+        # Create an empty DataFrame with the right columns
+        empty_df = pd.DataFrame(columns=self.executions_df_with_commission.columns)
+        
+        processor = TradeProcessor(empty_df)
+        processor.trade_directions = {
+            'trade1': {'direction': 'bullish', 'initial_quantity': 100},
+            'trade2': {'direction': 'bullish', 'initial_quantity': 200}
+        }
+        
+        # Calculate commissions
+        result = processor._get_commission()
+        
+        # Expected: empty Series with trade_ids not in index (since no groupby results)
+        expected = pd.Series()
+        
+        # Verify result is an empty Series
+        self.assertTrue(result.empty)
+        
+        self.log_case_result("Correctly handles empty executions", True)
+
+    def test_type_verification(self):
+        """Test that return value is always a pandas Series with proper structure."""
+        # Get commissions from both processors
+        result_with = self.processor_with_commission._get_commission()
+        result_without = self.processor_no_commission._get_commission()
+        
+        # Verify both return pandas Series
+        self.assertIsInstance(result_with, pd.Series)
+        self.assertIsInstance(result_without, pd.Series)
+        
+        # Verify Series with commissions has numeric values
+        self.assertTrue(np.issubdtype(result_with.dtype, np.number))
+        
+        self.log_case_result("Always returns pandas Series with proper structure", True)
+
 
 if __name__ == "__main__":
     # Run the tests and print a summary
