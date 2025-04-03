@@ -2,8 +2,6 @@ import pandas as pd
 from utils.pandas_utils import csv_to_dataframe, clean_empty_rows, convert_to_numeric
 from utils.process_executions_utils import process_datetime_fields, identify_trade_ids
 
-
-
 def side_follows_qty(df):
     """
     Standardizes the 'side' column to "buy" or "sell" and 
@@ -84,7 +82,7 @@ def process_csv(csv_path, run_id=None):
         
     Returns:
         pd.DataFrame: Processed DataFrame containing execution data
-        None: If any processing step fails
+        False: If any processing step fails
     """
     print(f"Processing CSV file: {csv_path}")
     
