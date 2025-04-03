@@ -381,13 +381,13 @@ def generate_periods(df: pd.DataFrame, group_by: str) -> pd.Series:
     if group_by == 'day':
         period = df['start_date']
     elif group_by == 'week':
-        # Ensure week is zero-padded to 2 digits
-        period = df['year'] + '-W' + df['week'].str.zfill(2)
+        # Ensure week is zero-padded to 2 digits and year is string
+        period = df['year'].astype(str) + '-W' + df['week'].astype(str).str.zfill(2)
     elif group_by == 'month':
-        # Ensure month is zero-padded to 2 digits
-        period = df['year'] + '-' + df['month'].str.zfill(2)
+        # Ensure month is zero-padded to 2 digits and year is string
+        period = df['year'].astype(str) + '-' + df['month'].astype(str).str.zfill(2)
     else:  # year
-        period = df['year']
+        period = df['year'].astype(str)
     
     # Name the series for identification
     period.name = 'period'

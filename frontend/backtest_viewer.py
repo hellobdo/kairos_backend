@@ -21,6 +21,18 @@ def view_backtest_results():
     if executions_df is None or trades_df is None:
         st.warning("No backtest data found. Run a backtest first!")
         return
+    
+      # reports
+    reports = generate_reports(trades_df)
+    if reports:
+        st.subheader("Yearly Report")
+        st.dataframe(reports['year'])
+
+        st.subheader("Monthly Report")
+        st.dataframe(reports['month'])
+
+        st.subheader("Weekly Report")
+        st.dataframe(reports['week'])
 
     # trades
     st.subheader("Trades")
@@ -29,18 +41,6 @@ def view_backtest_results():
     # executions
     st.subheader("Executions")
     st.dataframe(executions_df)
-
-    # reports
-    reports = generate_reports(trades_df)
-    if reports:
-        st.subheader("Weekly Report")
-        st.dataframe(reports['week'])
-
-        st.subheader("Monthly Report")
-        st.dataframe(reports['month'])
-
-        st.subheader("Yearly Report")
-        st.dataframe(reports['year'])
 
 if __name__ == "__main__":
     view_backtest_results() 

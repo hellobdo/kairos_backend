@@ -154,9 +154,13 @@ def process_csv_to_executions(csv_path):
     df = identify_trade_ids(df, db_validation=False)
     print("Trade IDs identification successful")
 
+    # Convert is_entry and is_exit to boolean
+    df['is_entry'] = df['is_entry'].astype(bool)
+    df['is_exit'] = df['is_exit'].astype(bool)
+
     return df
 
-def process_executions_to_trades(df):
+def process_executions_to_trades(df, backtest: bool = True):
     """
     Process a DataFrame of executions into trades.
     
@@ -167,15 +171,11 @@ def process_executions_to_trades(df):
         pandas.DataFrame: DataFrame with processed trades, or False if processing fails
     """
     try:
-        trades_df = process_trades(df)
+        trades_df = process_trades(df, backtest)
         if trades_df is None:
             print("Processing trades failed")
             return False
         print("Trades processing successful")
-
-        # Convert is_entry and is_exit to boolean
-        trades_df['is_entry'] = trades_df['is_entry'].astype(bool)
-        trades_df['is_exit'] = trades_df['is_exit'].astype(bool)
     
         return trades_df
             
