@@ -2,7 +2,9 @@ import os
 import sys
 import runpy
 from pathlib import Path
+import argparse
 from backtests.utils.process_executions import process_csv_to_executions, process_executions_to_trades
+from backtests.utils.backtest_data_to_db import insert_to_db
 
 def process_data(trades_file):
     """
@@ -85,6 +87,11 @@ def run_backtest(file_path):
         return None
 
 if __name__ == "__main__":
+    # Parse only the db flag
+    parser = argparse.ArgumentParser(description='Run backtest and process results')
+    parser.add_argument('--db', action='store_true', help='Also insert data into database')
+    args = parser.parse_args()
+
     # Example usage
     strategy_file = "backtests/dt-tshaped.py"
     result = run_backtest(strategy_file)
@@ -101,3 +108,12 @@ if __name__ == "__main__":
             print("Successfully processed data:")
             print(f"Executions shape: {executions_df.shape}")
             print(f"Trades shape: {trades_df.shape}")
+            
+            # If --db flag is set, also insert into database
+            if args.db:
+                print("\nInserting data into database...")
+                success = insert_to_db(trades_file, settings_file)
+                if success:
+                    print("Successfully inserted data into database")
+                else:
+                    print("Failed to insert data into database")
