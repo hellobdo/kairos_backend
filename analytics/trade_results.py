@@ -45,9 +45,6 @@ def calculate_accuracy(df: pd.DataFrame) -> pd.Series:
     # Append total to the Series
     accuracy['Total'] = total_accuracy
     
-    # Name the series for identification
-    accuracy.name = 'accuracy'
-    
     return accuracy
 
 def calculate_risk_per_trade(df: pd.DataFrame) -> pd.Series:
@@ -91,9 +88,6 @@ def calculate_risk_per_trade(df: pd.DataFrame) -> pd.Series:
     
     # Append total to the Series
     risk_per_trade['Total'] = total_risk
-    
-    # Name the series for identification
-    risk_per_trade.name = 'avg_risk_per_trade'
     
     return risk_per_trade
 
@@ -143,9 +137,6 @@ def calculate_average_risk_reward_on_losses(df: pd.DataFrame) -> pd.Series:
     # Append total to the Series
     risk_reward_losses['Total'] = total_risk_reward
     
-    # Name the series for identification
-    risk_reward_losses.name = 'avg_risk_reward_losses'
-    
     return risk_reward_losses
 
 def calculate_average_risk_reward_on_wins(df: pd.DataFrame) -> pd.Series:
@@ -194,9 +185,6 @@ def calculate_average_risk_reward_on_wins(df: pd.DataFrame) -> pd.Series:
     # Append total to the Series
     risk_reward_wins['Total'] = total_risk_reward
     
-    # Name the series for identification
-    risk_reward_wins.name = 'avg_risk_reward_wins'
-    
     return risk_reward_wins
 
 def calculate_average_return_per_trade(df: pd.DataFrame) -> pd.Series:
@@ -240,9 +228,6 @@ def calculate_average_return_per_trade(df: pd.DataFrame) -> pd.Series:
     
     # Append total to the Series
     avg_return['Total'] = total_return
-    
-    # Name the series for identification
-    avg_return.name = 'avg_return_per_trade'
     
     return avg_return
 
@@ -288,9 +273,6 @@ def calculate_total_return(df: pd.DataFrame) -> pd.Series:
     # Append total to the Series
     total_return['Total'] = overall_total
     
-    # Name the series for identification
-    total_return.name = 'total_return'
-    
     return total_return
 
 def calculate_average_duration(df: pd.DataFrame) -> pd.Series:
@@ -334,9 +316,6 @@ def calculate_average_duration(df: pd.DataFrame) -> pd.Series:
     
     # Append total to the Series
     avg_duration['Total'] = total_duration
-    
-    # Name the series for identification
-    avg_duration.name = 'avg_duration_hours'
     
     return avg_duration
 
@@ -434,9 +413,6 @@ def calculate_nr_of_trades(df: pd.DataFrame) -> pd.Series:
     # Append total to the Series
     nr_trades['Total'] = total_trades
     
-    # Name the series for identification
-    nr_trades.name = 'nr_trades'
-    
     return nr_trades
 
 def run_report(df: pd.DataFrame, group_by: str) -> pd.DataFrame:
@@ -464,6 +440,8 @@ def run_report(df: pd.DataFrame, group_by: str) -> pd.DataFrame:
         - avg_return_per_trade (average return)
         - total_return
     """
+    df = df.copy()
+    
     # Validate group_by parameter
     valid_groups = {'day', 'week', 'month', 'year'}
     if group_by not in valid_groups:

@@ -25,22 +25,79 @@ def view_backtest_results():
       # reports
     reports = generate_reports(trades_df)
     if reports:
+        # Column display names
+        column_display_names = {
+            'nr_trades': 'nr trades',
+            'accuracy': 'accuracy',
+            'avg_risk_per_trade': 'risk per trade',
+            'avg_risk_reward_wins': 'avg win',
+            'avg_risk_reward_losses': 'avg loss',
+            'avg_return_per_trade': 'avg return',
+            'total_return': 'total return'
+        }
+
+        # Style formatting for percentage columns
+        reports_format = {
+            'accuracy': '{:.2%}',
+            'risk per trade': '{:.2%}',
+            'avg win': '{:.2%}',
+            'avg loss': '{:.2%}',
+            'avg return': '{:.2%}',
+            'total return': '{:.2%}'
+        }
+
+        # Style formatting for number columns
+        base_dfs_format = {
+            'capital_required': '{:,.2f}', # trades
+            'entry_price': '{:,.2f}', # trades
+            'exit_price': '{:,.2f}', # trades
+            'stop_price': '{:,.2f}', # trades
+            'price': '{:,.2f}', # executions
+            'trade_cost': '{:,.2f}', # executions
+            'quantity': '{:,.0f}', # executions and trades
+            'risk_reward': '{:,.2f}', # trades
+            'risk_amount_per_share': '{:,.2f}', # trades
+            'risk_per_trade': '{:.2%}', # trades
+            'perc_return': '{:.2%}', # trades
+            'duration_hours': '{:,.4f}', # trades
+        }
+
         st.subheader("Yearly Report")
-        st.dataframe(reports['year'])
+        st.dataframe(
+            reports['year']
+            .rename(columns=column_display_names)
+            .style.format(reports_format),
+            hide_index=True
+        )
 
         st.subheader("Monthly Report")
-        st.dataframe(reports['month'])
+        st.dataframe(
+            reports['month']
+            .rename(columns=column_display_names)
+            .style.format(reports_format),
+            hide_index=True
+        )
 
         st.subheader("Weekly Report")
-        st.dataframe(reports['week'])
+        st.dataframe(
+            reports['week']
+            .rename(columns=column_display_names)
+            .style.format(reports_format),
+            hide_index=True
+        )
 
     # trades
     st.subheader("Trades")
-    st.dataframe(trades_df)
+    st.dataframe(
+        trades_df
+        .style.format(base_dfs_format),
+        hide_index=True)
 
     # executions
     st.subheader("Executions")
-    st.dataframe(executions_df)
+    st.dataframe(executions_df
+        .style.format(base_dfs_format),
+         hide_index=True)
 
 if __name__ == "__main__":
     view_backtest_results() 

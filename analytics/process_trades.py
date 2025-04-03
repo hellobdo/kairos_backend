@@ -808,7 +808,7 @@ class TradeProcessor:
         
         # Get account balances
         if self.backtest:
-            risk_per_trade_dict = {trade_id: 0.05 for trade_id in self.trade_directions.keys()}
+            risk_per_trade_dict = {trade_id: 0.005 for trade_id in self.trade_directions.keys()}
             return pd.Series(risk_per_trade_dict)
             
         try:
