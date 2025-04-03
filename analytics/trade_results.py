@@ -475,12 +475,64 @@ def calculate_nr_of_trades(df: pd.DataFrame) -> pd.Series:
 
 def run_report(df: pd.DataFrame, group_by: str) -> pd.DataFrame:
     """
-    Run the report on the trade data.
+    Run the report on the trade data, combining all metrics in a specific order.
+    
+    Parameters
+    ----------
+    df : pd.DataFrame
+        DataFrame containing trade data
+    group_by : str
+        Time period to group by ('day', 'week', 'month', 'year')
+        
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame containing all metrics organized by period, with a Total row
+        Columns are ordered as:
+        - period
+        - nr_trades (number of trades)
+        - accuracy
+        - avg_risk_per_trade (risk per trade)
+        - avg_risk_reward_wins (average win)
+        - avg_risk_reward_losses (average loss)
+        - avg_return_per_trade (average return)
+        - total_return
     """
-
     # Validate group_by parameter
     valid_groups = {'day', 'week', 'month', 'year'}
     if group_by not in valid_groups:
         raise ValueError(f"group_by must be one of {valid_groups}")
     
-    return df
+    # Generate period column
+    df['period'] = generate_periods(df, group_by)
+    
+    # Calculate all metrics
+    metrics = {
+        'nr_trades': calculate_nr_of_trades(df),
+        'accuracy': calculate_accuracy(df),
+        'avg_risk_per_trade': calculate_risk_per_trade(df),
+        'avg_risk_reward_wins': calculate_average_risk_reward_on_wins(df),
+        'avg_risk_reward_losses': calculate_average_risk_reward_on_losses(df),
+        'avg_return_per_trade': calculate_average_return_per_trade(df),
+        'total_return': calculate_total_return(df)
+    }
+    
+    # Combine all metrics into a DataFrame
+    result = pd.DataFrame(metrics)
+    
+    # Reset index to make period a column
+    result = result.reset_index().rename(columns={'index': 'period'})
+    
+    # Ensure columns are in the desired order
+    column_order = [
+        'period',
+        'nr_trades',
+        'accuracy',
+        'avg_risk_per_trade',
+        'avg_risk_reward_wins',
+        'avg_risk_reward_losses',
+        'avg_return_per_trade',
+        'total_return'
+    ]
+    
+    return result[column_order]
