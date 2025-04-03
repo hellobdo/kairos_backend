@@ -34,285 +34,371 @@ def check_columns(df: pd.DataFrame) -> bool:
     return True if all(col in df.columns for col in required_columns) else False
 
 
-def calculate_accuracy(df: pd.DataFrame) -> float:
+def calculate_accuracy(df: pd.DataFrame, group_by: str) -> pd.Series:
     """
-    Calculate the trading accuracy as the ratio of winning trades to total trades.
+    Calculate the trading accuracy as the ratio of winning trades to total trades, grouped by specified time period.
     
     Parameters
     ----------
     df : pd.DataFrame
-        DataFrame containing trade data with an 'is_winner' column (1 for winning trades, 0 for losing trades)
+        DataFrame containing trade data with 'is_winner' and time-based columns
+    group_by : str
+        Time period to group by. Must be one of: 'day', 'week', 'month', 'year'
         
     Returns
     -------
-    float
-        The accuracy ratio (winning trades / total trades), ranging from 0.0 to 1.0
-        Returns 0.0 if there are no trades in the DataFrame
+    pd.Series
+        Series containing accuracy values for each time period
+        
+    Raises
+    ------
+    ValueError
+        If group_by is not one of the allowed values
+        If required columns are missing
     
     Examples
     --------
-    >>> df = pd.DataFrame({'trade_id': [1, 2, 3, 4], 'is_winner': [1, 0, 1, 1]})
-    >>> calculate_accuracy(df)
-    0.75
+    >>> df = pd.DataFrame({
+    ...     'is_winner': [1, 0, 1, 1],
+    ...     'week': ['2024-01', '2024-01', '2024-02', '2024-02']
+    ... })
+    >>> calculate_accuracy(df, group_by='week')
+    2024-01    0.50
+    2024-02    1.00
+    Name: accuracy, dtype: float64
     """
-    # Check if the DataFrame is empty
-    if df.empty:
-        return 0.0
     
-    # Check if 'is_winner' column exists
+    # Check if required columns exist
     if 'is_winner' not in df.columns:
         raise ValueError("DataFrame must contain an 'is_winner' column")
+    if group_by not in df.columns:
+        raise ValueError(f"DataFrame must contain a '{group_by}' column")
     
-    # Count winning trades (where is_winner == 1)
-    winning_trades = df['is_winner'].sum()
+    # Group by the specified time period and calculate accuracy
+    grouped = df.groupby(group_by)
+    winning_trades = grouped['is_winner'].sum()
+    total_trades = grouped.size()
     
-    # Count total trades
-    total_trades = len(df)
+    # Calculate accuracy for each group
+    accuracy = winning_trades / total_trades
     
-    # Calculate accuracy
-    accuracy = winning_trades / total_trades if total_trades > 0 else 0.0
+    # Convert to series with meaningful name
+    accuracy.name = 'accuracy'
     
     return accuracy
 
-def calculate_risk_per_trade(df: pd.DataFrame) -> float:
+def calculate_risk_per_trade(df: pd.DataFrame, group_by: str) -> pd.Series:
     """
-    Calculate the average risk per trade from a DataFrame of trade data.
+    Calculate the average risk per trade from a DataFrame of trade data, grouped by specified time period.
     
     Parameters
     ----------
     df : pd.DataFrame
-        DataFrame containing trade data with a 'risk_per_trade' column
+        DataFrame containing trade data with 'risk_per_trade' and time-based columns
+    group_by : str
+        Time period to group by ('day', 'week', 'month', 'year')
         
     Returns
     -------
-    float
-        The mean risk per trade across all trades
-        Returns 0.0 if there are no trades or all values are NaN
-    
+    pd.Series
+        Series containing average risk per trade for each time period
+        
     Examples
     --------
-    >>> df = pd.DataFrame({'trade_id': [1, 2, 3], 'risk_per_trade': [0.02, 0.01, 0.03]})
-    >>> calculate_risk_per_trade(df)
-    0.02
+    >>> df = pd.DataFrame({
+    ...     'risk_per_trade': [0.02, 0.01, 0.03, 0.02],
+    ...     'week': ['2024-01', '2024-01', '2024-02', '2024-02']
+    ... })
+    >>> calculate_risk_per_trade(df, group_by='week')
+    2024-01    0.015
+    2024-02    0.025
+    Name: avg_risk_per_trade, dtype: float64
     """
-    # Check if the DataFrame is empty
-    if df.empty:
-        return 0.0
-    
-    # Check if 'risk_per_trade' column exists
+    # Check if required columns exist
     if 'risk_per_trade' not in df.columns:
         raise ValueError("DataFrame must contain a 'risk_per_trade' column")
+    if group_by not in df.columns:
+        raise ValueError(f"DataFrame must contain a '{group_by}' column")
     
-    # Calculate the mean risk per trade, ignoring NaN values
-    mean_risk = df['risk_per_trade'].mean()
+    # Calculate mean risk per trade for each group
+    risk_per_trade = df.groupby(group_by)['risk_per_trade'].mean()
     
-    # Handle case where all values might be NaN
-    return mean_risk if not pd.isna(mean_risk) else 0.0
+    # Name the series for identification
+    risk_per_trade.name = 'avg_risk_per_trade'
     
-def calculate_average_risk_reward_on_losses(df: pd.DataFrame) -> float:
+    return risk_per_trade
+
+def calculate_average_risk_reward_on_losses(df: pd.DataFrame, group_by: str) -> pd.Series:
     """
-    Calculate the average risk reward ratio on losing trades from a DataFrame of trade data.
+    Calculate the average risk reward ratio on losing trades, grouped by specified time period.
     
     Parameters
     ----------
     df : pd.DataFrame
-        DataFrame containing trade data with 'risk_reward' and 'is_winner' columns
+        DataFrame containing trade data with 'risk_reward', 'is_winner' and time-based columns
+    group_by : str
+        Time period to group by ('day', 'week', 'month', 'year')
         
     Returns
     -------
-    float
-        The average risk-reward ratio on losing trades
-        Returns 0.0 if there are no losing trades or all values are NaN
-    
+    pd.Series
+        Series containing average risk-reward ratio on losing trades for each time period
+        
     Examples
     --------
     >>> df = pd.DataFrame({
-    ...     'trade_id': [1, 2, 3, 4],
     ...     'risk_reward': [2.5, 1.8, 3.0, 2.0],
-    ...     'is_winner': [1, 1, 0, 1]
+    ...     'is_winner': [1, 0, 0, 1],
+    ...     'week': ['2024-01', '2024-01', '2024-02', '2024-02']
     ... })
-    >>> calculate_average_risk_reward_on_losses(df)
-    3.0
+    >>> calculate_average_risk_reward_on_losses(df, group_by='week')
+    2024-01    1.8
+    2024-02    3.0
+    Name: avg_risk_reward_losses, dtype: float64
     """
-    # Check if the DataFrame is empty
-    if df.empty:
-        return 0.0
-    
     # Check if required columns exist
     if 'risk_reward' not in df.columns or 'is_winner' not in df.columns:
         raise ValueError("DataFrame must contain 'risk_reward' and 'is_winner' columns")
+    if group_by not in df.columns:
+        raise ValueError(f"DataFrame must contain a '{group_by}' column")
     
-    # Filter for losing trades
+    # Filter for losing trades and calculate mean risk-reward ratio for each group
     losing_trades = df[df['is_winner'] == 0]
+    risk_reward_losses = losing_trades.groupby(group_by)['risk_reward'].mean()
     
-    # If no losing trades, return 0.0
-    if losing_trades.empty:
-        return 0.0
+    # Name the series for identification
+    risk_reward_losses.name = 'avg_risk_reward_losses'
     
-    # Calculate the mean risk-reward ratio on losing trades, ignoring NaN values
-    mean_rr = losing_trades['risk_reward'].abs().mean()
-    
-    # Handle case where all values might be NaN
-    return mean_rr if not pd.isna(mean_rr) else 0.0
-    
-def calculate_average_risk_reward_on_wins(df: pd.DataFrame) -> float:
+    return risk_reward_losses
+
+def calculate_average_risk_reward_on_wins(df: pd.DataFrame, group_by: str) -> pd.Series:
     """
-    Calculate the average risk reward ratio on winning trades from a DataFrame of trade data.
+    Calculate the average risk reward ratio on winning trades, grouped by specified time period.
     
     Parameters
     ----------
     df : pd.DataFrame
-        DataFrame containing trade data with 'risk_reward' and 'is_winner' columns
+        DataFrame containing trade data with 'risk_reward', 'is_winner' and time-based columns
+    group_by : str
+        Time period to group by ('day', 'week', 'month', 'year')
         
     Returns
     -------
-    float
-        The average risk-reward ratio on winning trades
-        Returns 0.0 if there are no winning trades or all values are NaN
-    
+    pd.Series
+        Series containing average risk-reward ratio on winning trades for each time period
+        
     Examples
     --------
     >>> df = pd.DataFrame({
-    ...     'trade_id': [1, 2, 3, 4],
     ...     'risk_reward': [2.5, 1.8, 3.0, 2.0],
-    ...     'is_winner': [1, 0, 1, 1]
+    ...     'is_winner': [1, 0, 1, 1],
+    ...     'week': ['2024-01', '2024-01', '2024-02', '2024-02']
     ... })
-    >>> calculate_average_risk_reward_on_wins(df)
-    2.5
+    >>> calculate_average_risk_reward_on_wins(df, group_by='week')
+    2024-01    2.5
+    2024-02    2.5
+    Name: avg_risk_reward_wins, dtype: float64
     """
-    # Check if the DataFrame is empty
-    if df.empty:
-        return 0.0
-    
     # Check if required columns exist
     if 'risk_reward' not in df.columns or 'is_winner' not in df.columns:
         raise ValueError("DataFrame must contain 'risk_reward' and 'is_winner' columns")
+    if group_by not in df.columns:
+        raise ValueError(f"DataFrame must contain a '{group_by}' column")
     
-    # Filter for winning trades
+    # Filter for winning trades and calculate mean risk-reward ratio for each group
     winning_trades = df[df['is_winner'] == 1]
+    risk_reward_wins = winning_trades.groupby(group_by)['risk_reward'].mean()
     
-    # If no winning trades, return 0.0
-    if winning_trades.empty:
-        return 0.0
+    # Name the series for identification
+    risk_reward_wins.name = 'avg_risk_reward_wins'
     
-    # Calculate the mean risk-reward ratio on winning trades, ignoring NaN values
-    mean_rr = winning_trades['risk_reward'].mean()
-    
-    # Handle case where all values might be NaN
-    return mean_rr if not pd.isna(mean_rr) else 0.0
+    return risk_reward_wins
 
-
-def calculate_average_return_per_trade(df: pd.DataFrame) -> float:
+def calculate_average_return_per_trade(df: pd.DataFrame, group_by: str) -> pd.Series:
     """
-    Calculate the average percentage return per trade from a DataFrame of trade data.
+    Calculate the average percentage return per trade, grouped by specified time period.
     
     Parameters
     ----------
     df : pd.DataFrame
-        DataFrame containing trade data with a 'perc_return' column
+        DataFrame containing trade data with 'perc_return' and time-based columns
+    group_by : str
+        Time period to group by ('day', 'week', 'month', 'year')
         
     Returns
     -------
-    float
-        The mean percentage return across all trades
-        Returns 0.0 if there are no trades or all values are NaN
-    
+    pd.Series
+        Series containing average percentage return for each time period
+        
     Examples
     --------
     >>> df = pd.DataFrame({
-    ...     'trade_id': [1, 2, 3, 4],
-    ...     'perc_return': [2.5, -1.0, 3.0, 1.5]
+    ...     'perc_return': [2.5, -1.0, 3.0, 1.5],
+    ...     'week': ['2024-01', '2024-01', '2024-02', '2024-02']
     ... })
-    >>> calculate_average_return_per_trade(df)
-    1.5
+    >>> calculate_average_return_per_trade(df, group_by='week')
+    2024-01    0.75
+    2024-02    2.25
+    Name: avg_return_per_trade, dtype: float64
     """
-    # Check if the DataFrame is empty
-    if df.empty:
-        return 0.0
-    
-    # Check if 'perc_return' column exists
+    # Check if required columns exist
     if 'perc_return' not in df.columns:
         raise ValueError("DataFrame must contain a 'perc_return' column")
+    if group_by not in df.columns:
+        raise ValueError(f"DataFrame must contain a '{group_by}' column")
     
-    # Calculate the mean percentage return, ignoring NaN values
-    mean_return = df['perc_return'].mean()
+    # Calculate mean percentage return for each group
+    avg_return = df.groupby(group_by)['perc_return'].mean()
     
-    # Handle case where all values might be NaN
-    return mean_return if not pd.isna(mean_return) else 0.0
+    # Name the series for identification
+    avg_return.name = 'avg_return_per_trade'
     
-def calculate_total_return(df: pd.DataFrame) -> float:
+    return avg_return
+
+def calculate_total_return(df: pd.DataFrame, group_by: str) -> pd.Series:
     """
-    Calculate the total percentage return from a DataFrame of trade data.
+    Calculate the total percentage return, grouped by specified time period.
     
     Parameters
     ----------
     df : pd.DataFrame
-        DataFrame containing trade data with a 'perc_return' column
+        DataFrame containing trade data with 'perc_return' and time-based columns
+    group_by : str
+        Time period to group by ('day', 'week', 'month', 'year')
         
     Returns
     -------
-    float
-        The sum of percentage returns across all trades
-        Returns 0.0 if there are no trades or all values are NaN
-    
+    pd.Series
+        Series containing total percentage return for each time period
+        
     Examples
     --------
     >>> df = pd.DataFrame({
-    ...     'trade_id': [1, 2, 3, 4],
-    ...     'perc_return': [2.5, -1.0, 3.0, 1.5]
+    ...     'perc_return': [2.5, -1.0, 3.0, 1.5],
+    ...     'week': ['2024-01', '2024-01', '2024-02', '2024-02']
     ... })
-    >>> calculate_total_return(df)
-    6.0
+    >>> calculate_total_return(df, group_by='week')
+    2024-01    1.5
+    2024-02    4.5
+    Name: total_return, dtype: float64
     """
-    # Check if the DataFrame is empty
-    if df.empty:
-        return 0.0
-    
-    # Check if 'perc_return' column exists
+    # Check if required columns exist
     if 'perc_return' not in df.columns:
         raise ValueError("DataFrame must contain a 'perc_return' column")
+    if group_by not in df.columns:
+        raise ValueError(f"DataFrame must contain a '{group_by}' column")
     
-    # Calculate the sum of percentage returns, ignoring NaN values
-    total_return = df['perc_return'].sum()
+    # Calculate total percentage return for each group
+    total_return = df.groupby(group_by)['perc_return'].sum()
     
-    # Handle case where all values might be NaN
-    return total_return if not pd.isna(total_return) else 0.0
+    # Name the series for identification
+    total_return.name = 'total_return'
     
-def calculate_average_duration(df: pd.DataFrame) -> float:
+    return total_return
+
+def calculate_average_duration(df: pd.DataFrame, group_by: str) -> pd.Series:
     """
-    Calculate the average duration of trades from a DataFrame of trade data.
+    Calculate the average duration of trades in hours, grouped by specified time period.
     
     Parameters
     ----------
     df : pd.DataFrame
-        DataFrame containing trade data with a 'duration_hours' column
+        DataFrame containing trade data with 'duration_hours' and time-based columns
+    group_by : str
+        Time period to group by ('day', 'week', 'month', 'year')
         
     Returns
     -------
-    float
-        The mean duration in hours across all trades
-        Returns 0.0 if there are no trades or all values are NaN
-    
+    pd.Series
+        Series containing average duration in hours for each time period
+        
     Examples
     --------
     >>> df = pd.DataFrame({
-    ...     'trade_id': [1, 2, 3, 4],
-    ...     'duration_hours': [2.5, 1.0, 3.0, 1.5]
+    ...     'duration_hours': [2.5, 1.0, 3.0, 1.5],
+    ...     'week': ['2024-01', '2024-01', '2024-02', '2024-02']
     ... })
-    >>> calculate_average_duration(df)
-    2.0
+    >>> calculate_average_duration(df, group_by='week')
+    2024-01    1.75
+    2024-02    2.25
+    Name: avg_duration_hours, dtype: float64
     """
-    # Check if the DataFrame is empty
-    if df.empty:
-        return 0.0
-    
-    # Check if 'duration_hours' column exists
+    # Check if required columns exist
     if 'duration_hours' not in df.columns:
         raise ValueError("DataFrame must contain a 'duration_hours' column")
+    if group_by not in df.columns:
+        raise ValueError(f"DataFrame must contain a '{group_by}' column")
     
-    # Calculate the mean duration, ignoring NaN values
-    mean_duration = df['duration_hours'].mean()
+    # Calculate mean duration for each group
+    avg_duration = df.groupby(group_by)['duration_hours'].mean()
     
-    # Handle case where all values might be NaN
-    return mean_duration if not pd.isna(mean_duration) else 0.0
+    # Name the series for identification
+    avg_duration.name = 'avg_duration_hours'
     
+    return avg_duration
+
+def generate_periods(df: pd.DataFrame, group_by: str) -> pd.Series:
+    """
+    Generate a period Series based on the grouping parameter.
+    
+    Parameters
+    ----------
+    df : pd.DataFrame
+        DataFrame containing trade data with 'start_date', 'week', 'month', and 'year' columns
+    group_by : str
+        Time period to group by ('day', 'week', 'month', 'year')
+        
+    Returns
+    -------
+    pd.Series
+        Series containing properly formatted period strings for grouping
+        
+    Examples
+    --------
+    >>> df = pd.DataFrame({
+    ...     'start_date': ['2024-01-15', '2024-01-16'],
+    ...     'week': ['02', '03'],
+    ...     'month': ['01', '01'],
+    ...     'year': ['2024', '2024']
+    ... })
+    >>> generate_periods(df, 'day')
+    0    2024-01-15
+    1    2024-01-16
+    Name: period, dtype: object
+    >>> generate_periods(df, 'week')
+    0    2024-W02
+    1    2024-W03
+    Name: period, dtype: object
+    >>> generate_periods(df, 'month')
+    0    2024-01
+    1    2024-01
+    Name: period, dtype: object
+    """    
+    # Generate period strings based on group_by
+    if group_by == 'day':
+        period = df['start_date']
+    elif group_by == 'week':
+        # Ensure week is zero-padded to 2 digits
+        period = df['year'] + '-W' + df['week'].str.zfill(2)
+    elif group_by == 'month':
+        # Ensure month is zero-padded to 2 digits
+        period = df['year'] + '-' + df['month'].str.zfill(2)
+    else:  # year
+        period = df['year']
+    
+    # Name the series for identification
+    period.name = 'period'
+    
+    return period
+
+def run_report(df: pd.DataFrame, group_by: str) -> pd.DataFrame:
+    """
+    Run the report on the trade data.
+    """
+
+        # Validate group_by parameter
+    valid_groups = {'day', 'week', 'month', 'year'}
+    if group_by not in valid_groups:
+        raise ValueError(f"group_by must be one of {valid_groups}")
+    
+    return df
