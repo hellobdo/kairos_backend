@@ -1,56 +1,7 @@
 import pandas as pd
 from utils.pandas_utils import csv_to_dataframe, clean_empty_rows, convert_to_numeric
 from utils.process_executions_utils import process_datetime_fields, identify_trade_ids
-from utils.db_utils import DatabaseManager
 
-# Initialize database manager
-db = DatabaseManager()
-
-def insert_executions_to_db(df):
-    """
-    Insert processed backtest data into the backtest_executions table.
-    
-    Args:
-        df (pandas.DataFrame): Processed DataFrame with trade_id assignments
-        
-    Returns:
-        int: Number of records inserted
-    """
-    if df.empty:
-        return 0
-    
-    try:
-        # Create a copy of the DataFrame and prepare for database insertion
-        backtest_executions_df = pd.DataFrame({
-            'execution_timestamp': df['execution_timestamp'],
-            'identifier': df['order_id'],
-            'symbol': df['symbol'],
-            'side': df['side'],
-            'type': df['order_type'],
-            'price': df['price'],
-            'quantity': df['quantity'],
-            'trade_cost': df['commission'],
-            'date': df['date'],
-            'time_of_day': df['time_of_day'],
-            'trade_id': df['trade_id'],
-            'is_entry': df['is_entry'].astype(int),
-            'is_exit': df['is_exit'].astype(int),
-            'net_cash_with_billable': df['quantity'] * df['price'] + df['commission']
-        })
-        
-        # Add run_id only if it exists in the DataFrame
-        if 'run_id' in df.columns:
-            backtest_executions_df['run_id'] = df['run_id']
-        
-        # Insert the DataFrame into the database
-        records_inserted = db.insert_dataframe(backtest_executions_df, 'backtest_executions')
-        
-        print(f"Successfully inserted {records_inserted} records into backtest_executions table")
-        return records_inserted
-        
-    except Exception as e:
-        print(f"Error inserting backtest executions into database: {e}")
-        raise
 
 
 def side_follows_qty(df):
@@ -116,18 +67,24 @@ def drop_columns(df):
 
 def process_csv(csv_path, run_id=None):
     """
-    Orchestration function that reads a CSV file and processes the resulting DataFrame.
+    Process a CSV file containing execution data and return a processed DataFrame.
     
     This function:
     1. Reads the CSV file into a DataFrame
-    2. Drops unnecessary columns from the DataFrame
+    2. Drops unnecessary columns
+    3. Cleans empty rows
+    4. Converts numeric fields
+    5. Processes datetime fields
+    6. Identifies trade IDs
+    7. Adds run_id if provided
     
     Args:
         csv_path (str): Path to the CSV file
         run_id (str, optional): ID for the backtest run
         
     Returns:
-        bool: True if processing and database insertion succeeded, False otherwise
+        pd.DataFrame: Processed DataFrame containing execution data
+        None: If any processing step fails
     """
     print(f"Processing CSV file: {csv_path}")
     
@@ -195,27 +152,15 @@ def process_csv(csv_path, run_id=None):
 
     try:
         # Step 7: Identify trade IDs
-        df_executions_with_trade_ids = identify_trade_ids(df)
+        df = identify_trade_ids(df)
         print("Trade IDs identification successful")
         
         # Step 8: Add run_id if provided
         if run_id is not None:
-            df_executions_with_trade_ids['run_id'] = run_id
+            df['run_id'] = run_id
             print(f"Added run_id: {run_id}")
+            
+        return df
     except Exception as e:
         print(f"Error in trade ID identification: {e}")
-        return False
-
-    try:
-        # Step 9: Insert into database
-        inserted = insert_executions_to_db(df_executions_with_trade_ids)
-        
-        if inserted:
-            print(f"Updated database with {inserted} new executions for {run_id} backtest")
-            return True
-        else:
-            print(f"No new executions inserted for {run_id} backtest")
-            return False
-    except Exception as e:
-        print(f"Error during database insertion: {e}")
         return False

@@ -15,6 +15,7 @@ on:
       - 'indicators/*.py'
       - 'backtests/utils/backtest_functions.py'
       - 'backtests/utils/process_executions.py'
+      - 'backtests/utils/process_backtest.py'
       - 'tests/api/test_ibkr_api.py'
       - 'tests/analytics/test_broker_cash.py'
       - 'tests/analytics/test_broker_executions.py'
@@ -26,6 +27,7 @@ on:
       - 'tests/indicators/test_indicators.py'
       - 'tests/backtests/test_backtest_functions.py'
       - 'tests/backtests/test_process_executions.py'
+      - 'tests/backtests/test_process_backtest.py'
   pull_request:
     branches: [ main, master ]
     paths:
@@ -40,6 +42,7 @@ on:
       - 'indicators/*.py'
       - 'backtests/utils/backtest_functions.py'
       - 'backtests/utils/process_executions.py'
+      - 'backtests/utils/process_backtest.py'
       - 'tests/api/test_ibkr_api.py'
       - 'tests/analytics/test_broker_cash.py'
       - 'tests/analytics/test_broker_executions.py'
@@ -51,6 +54,7 @@ on:
       - 'tests/indicators/test_indicators.py'
       - 'tests/backtests/test_backtest_functions.py'
       - 'tests/backtests/test_process_executions.py'
+      - 'tests/backtests/test_process_backtest.py'
   workflow_dispatch:  # Allow manual triggering
 
 jobs:
@@ -66,7 +70,7 @@ jobs:
         id: set-test-modules
         run: |
           # Explicitly list the test modules
-          TEST_MODULES_JSON='["api.test_ibkr_api", "analytics.test_broker_cash", "analytics.test_broker_executions", "analytics.test_process_trades", "utils.test_db_utils", "utils.test_pandas_utils", "utils.test_process_executions_utils", "indicators.test_column_utils", "indicators.test_indicators", "backtests.test_backtest_functions", "backtests.test_process_executions"]'
+          TEST_MODULES_JSON='["api.test_ibkr_api", "analytics.test_broker_cash", "analytics.test_broker_executions", "analytics.test_process_trades", "utils.test_db_utils", "utils.test_pandas_utils", "utils.test_process_executions_utils", "indicators.test_column_utils", "indicators.test_indicators", "backtests.test_backtest_functions", "backtests.test_process_executions", "backtests.test_process_backtest"]'
           
           # Set output for the test job
           echo "test_modules=$TEST_MODULES_JSON" >> $GITHUB_OUTPUT

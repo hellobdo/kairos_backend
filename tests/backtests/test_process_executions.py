@@ -17,7 +17,6 @@ from backtests.utils.process_executions import (
     drop_columns, 
     process_csv, 
     side_follows_qty,
-    insert_executions_to_db
 )
 # Import csv_to_dataframe from pandas_utils since it was moved there
 from utils.pandas_utils import csv_to_dataframe
@@ -139,7 +138,6 @@ class TestFunctionImports(BaseTestCase):
         self.assertTrue(callable(drop_columns))
         self.assertTrue(callable(process_csv))
         self.assertTrue(callable(side_follows_qty))
-        self.assertTrue(callable(insert_executions_to_db))
         self.log_case_result("All functions are properly imported", True)
 
 class TestDropColumns(BaseTestCase):
@@ -228,11 +226,6 @@ class TestProcessCsv(BaseTestCase):
         self.identify_trade_ids_patcher = patch('backtests.utils.process_executions.identify_trade_ids')
         self.mock_identify_trade_ids = self.identify_trade_ids_patcher.start()
         
-        # Create patch for insert_executions_to_db to isolate our test
-        self.insert_executions_patcher = patch('backtests.utils.process_executions.insert_executions_to_db')
-        self.mock_insert_executions = self.insert_executions_patcher.start()
-        self.mock_insert_executions.return_value = 3  # Default to 3 records inserted
-        
         # Add debug tracing for identify_trade_ids
         def trace_identify_trade_ids(df):
             print("\nDEBUG: identify_trade_ids called with DataFrame shape:", df.shape)
@@ -254,7 +247,6 @@ class TestProcessCsv(BaseTestCase):
         # Stop all patchers
         self.process_datetime_patcher.stop()
         self.identify_trade_ids_patcher.stop()
-        self.insert_executions_patcher.stop()
         
         # Remove temporary CSV files
         if hasattr(self, 'fixtures'):
@@ -297,8 +289,9 @@ class TestProcessCsv(BaseTestCase):
         print("\nCaptured output during test:")
         print(self.captured_output.get_value())
         
-        # Verify the result
-        self.assertTrue(result)  # Now expecting True for success
+        # Verify the result is a non-empty DataFrame
+        self.assertIsInstance(result, pd.DataFrame)
+        self.assertFalse(result.empty)
         
         # Verify both mocks were called
         self.mock_process_datetime.assert_called()
@@ -327,8 +320,9 @@ class TestProcessCsv(BaseTestCase):
         # Restore stdout
         self.restore_stdout(original_stdout)
         
-        # Verify the result
-        self.assertTrue(result)  # Now expecting True for success
+        # Verify the result is a non-empty DataFrame
+        self.assertIsInstance(result, pd.DataFrame)
+        self.assertFalse(result.empty)
         
         # Verify both mocks were called
         self.mock_process_datetime.assert_called()
@@ -521,282 +515,11 @@ class TestSideFollowsQty(BaseTestCase):
         
         self.log_case_result("Successfully returns a DataFrame", True)
 
-class TestInsertExecutionsToDb(BaseTestCase):
-    """Test the insert_executions_to_db function"""
-    
-    def setUp(self):
-        """Set up test fixtures"""
-        super().setUp()
-        self.fixtures = create_module_fixtures()
-        
-        # Create a mock database connection
-        self.mock_db = MockDatabaseConnection()
-        self.db_patcher = patch('backtests.utils.process_executions.db', self.mock_db)
-        self.db_patcher.start()
-    
-    def tearDown(self):
-        """Clean up after tests"""
-        super().tearDown()
-        self.db_patcher.stop()
-    
-    def test_successful_insertion(self):
-        """Test successful insertion of executions into database"""
-        # Get a copy of our final DataFrame fixture
-        df = self.fixtures['final_df'].copy()
-        
-        # Add required columns that might be missing
-        df['order_id'] = ['order1', 'order2', 'order3']
-        df['order_type'] = ['market', 'market', 'market']
-        df['commission'] = [1.0, 1.0, 1.0]
-        # run_id is optional, so we don't need to add it
-        
-        # Configure mock to return number of inserted records
-        self.mock_db.insert_dataframe.return_value = len(df)
-        
-        # Capture stdout
-        original_stdout = self.capture_stdout()
-        
-        # Call the function
-        result = insert_executions_to_db(df)
-        
-        # Restore stdout
-        self.restore_stdout(original_stdout)
-        
-        # Verify the result
-        self.assertEqual(result, len(df))
-        
-        # Verify the mock was called with correct DataFrame structure
-        args, _ = self.mock_db.insert_dataframe.call_args
-        inserted_df = args[0]
-        
-        # Check that all required columns are present
-        required_columns = [
-            'execution_timestamp', 'identifier', 'symbol',
-            'side', 'type', 'price', 'quantity', 'trade_cost',
-            'date', 'time_of_day', 'trade_id', 'is_entry', 'is_exit', 
-            'net_cash_with_billable'
-        ]
-        for col in required_columns:
-            self.assertIn(col, inserted_df.columns)
-            
-        # Verify that boolean values are correctly converted to integers
-        for i in range(len(df)):
-            # Check is_entry conversion
-            self.assertEqual(inserted_df['is_entry'].iloc[i], 1 if df['is_entry'].iloc[i] else 0)
-            # Check is_exit conversion
-            self.assertEqual(inserted_df['is_exit'].iloc[i], 1 if df['is_exit'].iloc[i] else 0)
-            # Also ensure they are integer type
-            self.assertIsInstance(inserted_df['is_entry'].iloc[i], (int, np.int64))
-            self.assertIsInstance(inserted_df['is_exit'].iloc[i], (int, np.int64))
-        
-        # Verify that net_cash_with_billable was calculated correctly
-        for i in range(len(df)):
-            expected_net_cash = df.iloc[i]['quantity'] * df.iloc[i]['price'] + df.iloc[i]['commission']
-            self.assertEqual(inserted_df.iloc[i]['net_cash_with_billable'], expected_net_cash)
-        
-        # Verify output message
-        output = self.captured_output.get_value()
-        self.assertIn(f"Successfully inserted {len(df)} records into backtest_executions table", output)
-        
-        self.log_case_result("Successfully inserts executions into database", True)
-    
-    def test_empty_dataframe(self):
-        """Test handling of empty DataFrame"""
-        # Create empty DataFrame
-        empty_df = pd.DataFrame()
-        
-        # Capture stdout
-        original_stdout = self.capture_stdout()
-        
-        # Call the function
-        result = insert_executions_to_db(empty_df)
-        
-        # Restore stdout
-        self.restore_stdout(original_stdout)
-        
-        # Verify the result
-        self.assertEqual(result, 0)
-        
-        # Verify the mock was not called
-        self.mock_db.insert_dataframe.assert_not_called()
-        
-        self.log_case_result("Successfully handles empty DataFrame", True)
-    
-    def test_database_error(self):
-        """Test handling of database insertion error"""
-        # Get a copy of our final DataFrame fixture
-        df = self.fixtures['final_df'].copy()
-        
-        # Add required columns that might be missing
-        df['order_id'] = ['order1', 'order2', 'order3']
-        df['order_type'] = ['market', 'market', 'market']
-        df['commission'] = [1.0, 1.0, 1.0]
-        
-        # Configure mock to raise an exception
-        self.mock_db.insert_dataframe.side_effect = Exception("Database error")
-        
-        # Capture stdout
-        original_stdout = self.capture_stdout()
-        
-        # Call the function and expect exception
-        with self.assertRaises(Exception) as context:
-            insert_executions_to_db(df)
-        
-        # Restore stdout
-        self.restore_stdout(original_stdout)
-        
-        # Verify error message
-        self.assertEqual(str(context.exception), "Database error")
-        
-        # Verify output message
-        output = self.captured_output.get_value()
-        self.assertIn("Error inserting backtest executions into database:", output)
-        
-        self.log_case_result("Successfully handles database errors", True)
-
-class TestProcessCsvWithDb(BaseTestCase):
-    """Test the process_csv function with database integration"""
-    
-    def setUp(self):
-        """Set up test fixtures"""
-        super().setUp()
-        self.fixtures = create_module_fixtures()
-        
-        # Create patches for all the utility functions used in process_csv
-        self.process_datetime_patcher = patch('backtests.utils.process_executions.process_datetime_fields')
-        self.mock_process_datetime = self.process_datetime_patcher.start()
-        
-        self.identify_trade_ids_patcher = patch('backtests.utils.process_executions.identify_trade_ids')
-        self.mock_identify_trade_ids = self.identify_trade_ids_patcher.start()
-        
-        # Create a mock database connection with insert_dataframe method
-        self.mock_db = MagicMock()
-        self.mock_db.insert_dataframe = MagicMock(return_value=3)  # Default to 3 records
-        
-        # Patch the db object in process_executions.py
-        self.db_patcher = patch('backtests.utils.process_executions.db', self.mock_db)
-        self.db_patcher.start()
-        
-        # Add debug tracing for identify_trade_ids
-        def trace_identify_trade_ids(df):
-            print("\nDEBUG: TestProcessCsvWithDb.identify_trade_ids called with DataFrame shape:", df.shape)
-            print("DEBUG: DataFrame columns:", df.columns.tolist())
-            
-            # Create a result DataFrame with all required columns
-            df_with_required = self.fixtures['datetime_df'].copy()
-            df_with_required['quantity'] = df_with_required['filled_quantity'].copy()
-            df_with_required['order_id'] = ['order1', 'order2', 'order3']
-            df_with_required['order_type'] = ['market', 'market', 'market']
-            df_with_required['commission'] = [1.0, 1.0, 1.0]
-            df_with_required['side'] = ['buy', 'sell', 'buy']
-            df_with_required['trade_id'] = [1, 2, 3]
-            df_with_required['is_entry'] = [True, True, True]
-            df_with_required['is_exit'] = [False, False, False]
-            
-            print("DEBUG: identify_trade_ids returning DataFrame with columns:", df_with_required.columns.tolist())
-            return df_with_required
-            
-        self.mock_identify_trade_ids.side_effect = trace_identify_trade_ids
-        
-        # Configure mock_process_datetime to return DataFrame with required columns
-        df_with_required = self.fixtures['datetime_df'].copy()
-        df_with_required['quantity'] = df_with_required['filled_quantity'].copy()
-        df_with_required['order_id'] = ['order1', 'order2', 'order3']
-        df_with_required['order_type'] = ['market', 'market', 'market']
-        df_with_required['commission'] = [1.0, 1.0, 1.0]
-        df_with_required['side'] = ['buy', 'sell', 'buy']
-        
-        self.mock_process_datetime.return_value = df_with_required
-    
-    def tearDown(self):
-        """Clean up fixtures"""
-        super().tearDown()
-        
-        # Stop all patchers
-        self.process_datetime_patcher.stop()
-        self.identify_trade_ids_patcher.stop()
-        self.db_patcher.stop()
-        
-        # Remove temporary CSV files
-        if hasattr(self, 'fixtures'):
-            if 'temp_csv_path' in self.fixtures:
-                try:
-                    os.remove(self.fixtures['temp_csv_path'])
-                except:
-                    pass
-    
-    def test_successful_flow(self):
-        """Test successful end-to-end flow with database insertion"""
-        # Capture stdout
-        original_stdout = self.capture_stdout()
-        
-        # Call the function with run_id
-        print("\nDEBUG: Before calling process_csv with run_id=test_run")
-        result = process_csv(self.fixtures['temp_csv_path'], run_id='test_run')
-        print(f"\nDEBUG: After calling process_csv, result: {result}")
-        
-        # Restore stdout
-        self.restore_stdout(original_stdout)
-        
-        # Print captured output for debugging
-        print("\nCaptured output during test:")
-        print(self.captured_output.get_value())
-        
-        # Verify the result is True (successful insertion)
-        self.assertTrue(result)
-        
-        # Verify all mocks were called in the correct order
-        self.mock_process_datetime.assert_called_once()
-        self.mock_identify_trade_ids.assert_called_once()
-        self.mock_db.insert_dataframe.assert_called_once()
-        
-        # Verify output messages
-        output = self.captured_output.get_value()
-        self.assertIn("Processing CSV file:", output)
-        self.assertIn("CSV loaded successfully", output)
-        
-        self.log_case_result("Successfully processes CSV and inserts into database", True)
-    
-    def test_database_error_handling(self):
-        """Test handling of database errors during processing"""
-        # Configure mock to raise an exception
-        self.mock_db.insert_dataframe.side_effect = Exception("Database error")
-        
-        # Capture stdout
-        original_stdout = self.capture_stdout()
-        
-        # Call the function with run_id
-        print("\nDEBUG: Before calling process_csv with database error")
-        result = process_csv(self.fixtures['temp_csv_path'], run_id='test_run')
-        print(f"\nDEBUG: After calling process_csv, result: {result}")
-        
-        # Restore stdout
-        self.restore_stdout(original_stdout)
-        
-        # Print captured output for debugging
-        print("\nCaptured output during test:")
-        print(self.captured_output.get_value())
-        
-        # Verify the result is False (failed insertion)
-        self.assertFalse(result)
-        
-        # Verify mocks were called
-        self.mock_process_datetime.assert_called_once()
-        self.mock_identify_trade_ids.assert_called_once()
-        self.mock_db.insert_dataframe.assert_called_once()
-        
-        # Verify output messages
-        output = self.captured_output.get_value()
-        self.assertIn("Processing CSV file:", output)
-        self.assertIn("Error during database insertion:", output)
-        
-        self.log_case_result("Successfully handles database errors during processing", True)
-
 if __name__ == '__main__':
-    print("\n🔍 Running tests for process_executions module...")
+    print("\n🔍 Running tests for process_backtest module...")
     
     # Run the tests with default verbosity
     unittest.main(exit=False, verbosity=0)
     
     # Print summary using the existing function from test_utils
-    print_summary() 
+    print_summary()
