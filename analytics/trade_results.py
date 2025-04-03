@@ -370,6 +370,44 @@ def generate_periods(df: pd.DataFrame, group_by: str) -> pd.Series:
     
     return period
 
+def calculate_nr_of_trades(df: pd.DataFrame) -> pd.Series:
+    """
+    Calculate the number of trades, grouped by period.
+    
+    Parameters
+    ----------
+    df : pd.DataFrame
+        DataFrame containing trade data with 'period' column
+        
+    Returns
+    -------
+    pd.Series
+        Series containing number of trades for each time period
+        
+    Examples
+    --------
+    >>> df = pd.DataFrame({
+    ...     'trade_id': [1, 2, 3, 4],
+    ...     'period': ['2024-01-15', '2024-01-15', '2024-01-16', '2024-01-16']
+    ... })
+    >>> calculate_nr_of_trades(df)
+    2024-01-15    2
+    2024-01-16    2
+    Name: nr_trades, dtype: int64
+    """
+    # Check if required column exists
+    if 'period' not in df.columns:
+        raise ValueError("DataFrame must contain a 'period' column")
+    
+    # Count trades for each period
+    nr_trades = df.groupby('period').size()
+    
+    # Name the series for identification
+    nr_trades.name = 'nr_trades'
+    
+    return nr_trades
+
+
 def run_report(df: pd.DataFrame, group_by: str) -> pd.DataFrame:
     """
     Run the report on the trade data.
