@@ -63,7 +63,7 @@ def drop_columns(df):
         
     return df
 
-def process_csv(csv_path, run_id=None):
+def process_csv_to_executions(csv_path):
     """
     Process a CSV file containing execution data and return a processed DataFrame.
     
@@ -73,8 +73,6 @@ def process_csv(csv_path, run_id=None):
     3. Cleans empty rows
     4. Converts numeric fields
     5. Processes datetime fields
-    6. Identifies trade IDs
-    7. Adds run_id if provided
     
     Args:
         csv_path (str): Path to the CSV file
@@ -139,24 +137,37 @@ def process_csv(csv_path, run_id=None):
         return False
 
     try:
-        # Step 6: Rename quantity field for compatibility with identify_trade_ids
+        # Step 6: Rename quantity field
         df = df.rename(columns={
             'filled_quantity': 'quantity', 
             })
         print("Column renaming successful")
     except Exception as e:
         print(f"Error renaming columns: {e}")
-        return False
 
+    # Step 7: Standardize sides and adjust quantities
+    df = side_follows_qty(df)
+
+    return df
+
+def process_executions_to_trades(df):
+    """
+    Process a DataFrame of executions into trades by identifying trade IDs.
+    
+    Args:
+        df (pandas.DataFrame): DataFrame containing execution data with required columns:
+            - quantity: Trade quantity (positive for buys, negative for sells)
+            - symbol: The traded symbol
+            - execution_timestamp: Timestamp of the execution
+            - side: Buy or sell side
+            
+    Returns:
+        pandas.DataFrame: DataFrame with trade IDs assigned, or False if processing fails
+    """
     try:
         # Step 7: Identify trade IDs
         df = identify_trade_ids(df)
         print("Trade IDs identification successful")
-        
-        # Step 8: Add run_id if provided
-        if run_id is not None:
-            df['run_id'] = run_id
-            print(f"Added run_id: {run_id}")
             
         return df
     except Exception as e:
