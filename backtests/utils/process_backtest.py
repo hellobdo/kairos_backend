@@ -1,5 +1,6 @@
 import pandas as pd
 from utils.db_utils import DatabaseManager
+import json
 import os
 
 # Initialize database manager
@@ -60,6 +61,14 @@ def create_backtest_info(json_path):
         
     Returns:
         dict: Dictionary containing the required fields from parameters
+              - backtesting_start
+              - backtesting_end
+              - indicators
+              - symbols
+              - side
+              - stop_loss_rules
+              - risk_reward
+              - risk_per_trade
               - backtest_name (extracted from filename)
     """
     try:
@@ -67,10 +76,25 @@ def create_backtest_info(json_path):
         # From: path/to/Strategy_2025-03-24_15-41_E6mMj9_settings.json
         # Get: Strategy_2025-03-24_15-41_E6mMj9
         filename = os.path.basename(json_path)  # Get just the filename
+        backtest_name = filename.replace('_settings.json', '')
+        
+        with open(json_path, 'r') as f:
+            settings = json.load(f)
+            
+        # Extract parameters
+        params = settings.get('parameters', {})
         
         # Get required fields
         backtest_info = {
-            'source_file': filename
+            'backtesting_start': params.get('backtesting_start'),
+            'backtesting_end': params.get('backtesting_end'),
+            'indicators': json.dumps(params.get('indicators', [])),  # Convert list to JSON string
+            'symbols_traded': json.dumps(params.get('symbols', [])),  # Convert list to JSON string
+            'direction': params.get('side'),
+            'stop_loss': json.dumps(params.get('stop_loss_rules', [])),  # Convert list to JSON string
+            'risk_reward': params.get('risk_reward'),
+            'risk_per_trade': params.get('risk_per_trade'),
+            'backtest_name': backtest_name
         }
         
         return backtest_info
