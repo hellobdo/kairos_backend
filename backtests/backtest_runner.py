@@ -7,6 +7,22 @@ from backtests.utils.process_executions import process_csv_to_executions, proces
 from backtests.utils.backtest_data_to_db import insert_to_db
 from analytics.trade_results import run_report
 
+def get_backtest_files():
+    """Get all backtest files from backtests/backtests directory.
+    
+    Returns:
+        dict: Dictionary with file names as keys and full paths as values
+    """
+    backtest_dir = Path("backtests/backtests")
+    files = {}
+    
+    if backtest_dir.exists():
+        for file in backtest_dir.glob("*"):
+            if file.is_file():
+                files[file.name] = str(file)
+    
+    return files
+
 def process_data(trades_file):
     """
     Process the trades file through both processing steps.

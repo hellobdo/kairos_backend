@@ -121,7 +121,7 @@ class Strategy(BaseStrategy):
             "side": order.side,
             "timestamp": self.get_datetime(),  # The time this fill was processed
             "take_profit_price": getattr(order, 'take_profit_price', None),
-            "stop_loss_price": getattr(order, 'stop_loss_price', None),
+            "stop_loss_price": order.stop_price,
             "custom_params": order.custom_params,
             "order_type": getattr(order, 'type', None),
             "date_created": getattr(order, 'date_created', None),

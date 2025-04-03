@@ -6,10 +6,40 @@ from pathlib import Path
 
 # Add the project root to Python path
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-from backtests.backtest_runner import get_latest_backtest_files, process_data, generate_reports
+from backtests.backtest_runner import get_latest_backtest_files, process_data, generate_reports, run_backtest, get_backtest_files
+
 
 def view_backtest_results():
+
+    
     st.title("Backtest Results Viewer")
+    
+    # Create a row with button and dropdown side by side
+    col1, col2 = st.columns([1, 3])
+    
+    # Add button to run new backtest in first column
+    with col1:
+        if st.button("Run New Backtest"):
+            with st.spinner('Running backtest...'):
+                try:
+                    run_backtest()
+                    st.success("Backtest completed successfully!")
+                except Exception as e:
+                    st.error(f"Error running backtest: {str(e)}")
+    
+    # Add dropdown to select backtest in second column
+    with col2:
+        backtest_files = get_backtest_files()
+        if backtest_files:
+            selected_file = st.selectbox(
+                "Select backtest file",
+                options=list(backtest_files.keys()),
+                key="backtest_selector"
+            )
+            selected_path = backtest_files[selected_file]
+        else:
+            st.warning("No backtest files found")
+            return
     
     # Load latest data
     settings_file, trades_file = get_latest_backtest_files()
