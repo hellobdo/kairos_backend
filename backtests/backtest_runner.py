@@ -5,6 +5,7 @@ from pathlib import Path
 import argparse
 from backtests.utils.process_executions import process_csv_to_executions, process_executions_to_trades
 from backtests.utils.backtest_data_to_db import insert_to_db
+from analytics.trade_results import run_report
 
 def process_data(trades_file):
     """
@@ -86,6 +87,25 @@ def run_backtest(file_path):
         print(f"Error running backtest: {str(e)}")
         return None
 
+def generate_reports(trades_df):
+    """
+    Generate reports for different time periods.
+    
+    Args:
+        trades_df (pd.DataFrame): DataFrame containing processed trades
+        
+    Returns:
+        dict: Dictionary containing reports for week, month, and year periods
+    """
+    try:
+        reports = {}
+        for period in ['week', 'month', 'year']:
+            reports[period] = run_report(trades_df, period)
+        return reports
+    except Exception as e:
+        print(f"Error generating reports: {str(e)}")
+        return None
+
 if __name__ == "__main__":
     # Parse only the db flag
     parser = argparse.ArgumentParser(description='Run backtest and process results')
@@ -108,6 +128,14 @@ if __name__ == "__main__":
             print("Successfully processed data:")
             print(f"Executions shape: {executions_df.shape}")
             print(f"Trades shape: {trades_df.shape}")
+            
+            # Generate reports
+            reports = generate_reports(trades_df)
+            if reports:
+                print("\nGenerated reports for different time periods:")
+                for period, report in reports.items():
+                    print(f"\n{period.capitalize()} Report:")
+                    print(report)
             
             # If --db flag is set, also insert into database
             if args.db:

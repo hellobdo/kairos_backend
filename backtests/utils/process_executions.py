@@ -1,6 +1,7 @@
 import pandas as pd
 from utils.pandas_utils import csv_to_dataframe, clean_empty_rows, convert_to_numeric
 from utils.process_executions_utils import process_datetime_fields, identify_trade_ids
+from analytics.process_trades import process_trades
 
 def side_follows_qty(df):
     """
@@ -136,40 +137,48 @@ def process_csv_to_executions(csv_path):
         print(f"Error processing datetime fields: {e}")
         return False
 
+    # Step 6: Standardize sides and adjust quantities
+    df = side_follows_qty(df)
+
     try:
-        # Step 6: Rename quantity field
+        # Step 7: Rename quantity field
         df = df.rename(columns={
             'filled_quantity': 'quantity', 
             })
         print("Column renaming successful")
     except Exception as e:
         print(f"Error renaming columns: {e}")
+        return False
 
-    # Step 7: Standardize sides and adjust quantities
-    df = side_follows_qty(df)
+    # Step 8: Identify trade IDs
+    df = identify_trade_ids(df, db_validation=False)
+    print("Trade IDs identification successful")
 
     return df
 
 def process_executions_to_trades(df):
     """
-    Process a DataFrame of executions into trades by identifying trade IDs.
+    Process a DataFrame of executions into trades.
     
     Args:
-        df (pandas.DataFrame): DataFrame containing execution data with required columns:
-            - quantity: Trade quantity (positive for buys, negative for sells)
-            - symbol: The traded symbol
-            - execution_timestamp: Timestamp of the execution
-            - side: Buy or sell side
+        df (pandas.DataFrame): DataFrame containing execution data
             
     Returns:
-        pandas.DataFrame: DataFrame with trade IDs assigned, or False if processing fails
+        pandas.DataFrame: DataFrame with processed trades, or False if processing fails
     """
     try:
-        # Step 7: Identify trade IDs
-        df = identify_trade_ids(df)
-        print("Trade IDs identification successful")
+        trades_df = process_trades(df)
+        if trades_df is None:
+            print("Processing trades failed")
+            return False
+        print("Trades processing successful")
+
+        # Convert is_entry and is_exit to boolean
+        trades_df['is_entry'] = trades_df['is_entry'].astype(bool)
+        trades_df['is_exit'] = trades_df['is_exit'].astype(bool)
+    
+        return trades_df
             
-        return df
     except Exception as e:
-        print(f"Error in trade ID identification: {e}")
+        print(f"Error in trade processing: {e}")
         return False
