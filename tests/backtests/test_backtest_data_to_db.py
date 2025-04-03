@@ -1,5 +1,5 @@
 """
-Tests for process_backtest module
+Tests for backtest_data_to_db module
 """
 import unittest
 import pandas as pd
@@ -10,7 +10,7 @@ import numpy as np
 from tests import BaseTestCase, print_summary, MockDatabaseConnection
 
 # Import the function to test
-from backtests.utils.process_backtest import insert_executions_to_db
+from backtests.utils.backtest_data_to_db import insert_executions_to_db
 
 # Module specific test fixtures
 def create_module_fixtures():
@@ -46,7 +46,7 @@ class TestInsertExecutionsToDb(BaseTestCase):
         
         # Create a mock database connection
         self.mock_db = MockDatabaseConnection()
-        self.db_patcher = patch('backtests.utils.process_backtest.db', self.mock_db)
+        self.db_patcher = patch('backtests.utils.backtest_data_to_db.db', self.mock_db)
         self.db_patcher.start()
     
     def tearDown(self):
@@ -159,7 +159,7 @@ class TestInsertExecutionsToDb(BaseTestCase):
         self.log_case_result("Successfully handles database errors", True)
 
 if __name__ == '__main__':
-    print("\n🔍 Running tests for process_backtest module...")
+    print("\n🔍 Running tests for backtest_data_to_db module...")
     
     # Run the tests with default verbosity
     unittest.main(exit=False, verbosity=0)
