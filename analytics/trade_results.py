@@ -36,7 +36,8 @@ def check_columns(df: pd.DataFrame) -> bool:
 
 def calculate_accuracy(df: pd.DataFrame) -> pd.Series:
     """
-    Calculate the trading accuracy as the ratio of winning trades to total trades, grouped by period.
+    Calculate the trading accuracy as the ratio of winning trades to total trades.
+    Returns both period-by-period accuracy and total accuracy.
     
     Parameters
     ----------
@@ -46,7 +47,7 @@ def calculate_accuracy(df: pd.DataFrame) -> pd.Series:
     Returns
     -------
     pd.Series
-        Series containing accuracy values for each time period
+        Series containing accuracy values for each period plus the total
         
     Examples
     --------
@@ -57,6 +58,7 @@ def calculate_accuracy(df: pd.DataFrame) -> pd.Series:
     >>> calculate_accuracy(df)
     2024-01-15    0.50
     2024-01-16    1.00
+    Total         0.75
     Name: accuracy, dtype: float64
     """
     # Check if required columns exist
@@ -65,13 +67,17 @@ def calculate_accuracy(df: pd.DataFrame) -> pd.Series:
     if 'period' not in df.columns:
         raise ValueError("DataFrame must contain a 'period' column")
     
-    # Group by period and calculate accuracy
+    # Calculate accuracy by period
     grouped = df.groupby('period')
     winning_trades = grouped['is_winner'].sum()
     total_trades = grouped.size()
-    
-    # Calculate accuracy for each group
     accuracy = winning_trades / total_trades
+    
+    # Calculate total accuracy
+    total_accuracy = df['is_winner'].mean()
+    
+    # Append total to the Series
+    accuracy['Total'] = total_accuracy
     
     # Name the series for identification
     accuracy.name = 'accuracy'
@@ -80,7 +86,8 @@ def calculate_accuracy(df: pd.DataFrame) -> pd.Series:
 
 def calculate_risk_per_trade(df: pd.DataFrame) -> pd.Series:
     """
-    Calculate the average risk per trade from a DataFrame of trade data, grouped by period.
+    Calculate the average risk per trade from a DataFrame of trade data.
+    Returns both period-by-period risk and total risk.
     
     Parameters
     ----------
@@ -90,7 +97,7 @@ def calculate_risk_per_trade(df: pd.DataFrame) -> pd.Series:
     Returns
     -------
     pd.Series
-        Series containing average risk per trade for each time period
+        Series containing average risk per trade for each period plus the total
         
     Examples
     --------
@@ -101,6 +108,7 @@ def calculate_risk_per_trade(df: pd.DataFrame) -> pd.Series:
     >>> calculate_risk_per_trade(df)
     2024-01-15    0.015
     2024-01-16    0.025
+    Total         0.020
     Name: avg_risk_per_trade, dtype: float64
     """
     # Check if required columns exist
@@ -112,6 +120,12 @@ def calculate_risk_per_trade(df: pd.DataFrame) -> pd.Series:
     # Calculate mean risk per trade for each period
     risk_per_trade = df.groupby('period')['risk_per_trade'].mean()
     
+    # Calculate total average risk
+    total_risk = df['risk_per_trade'].mean()
+    
+    # Append total to the Series
+    risk_per_trade['Total'] = total_risk
+    
     # Name the series for identification
     risk_per_trade.name = 'avg_risk_per_trade'
     
@@ -119,7 +133,8 @@ def calculate_risk_per_trade(df: pd.DataFrame) -> pd.Series:
 
 def calculate_average_risk_reward_on_losses(df: pd.DataFrame) -> pd.Series:
     """
-    Calculate the average risk reward ratio on losing trades, grouped by period.
+    Calculate the average risk reward ratio on losing trades.
+    Returns both period-by-period and total averages.
     
     Parameters
     ----------
@@ -129,7 +144,7 @@ def calculate_average_risk_reward_on_losses(df: pd.DataFrame) -> pd.Series:
     Returns
     -------
     pd.Series
-        Series containing average risk-reward ratio on losing trades for each time period
+        Series containing average risk-reward ratio on losing trades for each period plus the total
         
     Examples
     --------
@@ -141,6 +156,7 @@ def calculate_average_risk_reward_on_losses(df: pd.DataFrame) -> pd.Series:
     >>> calculate_average_risk_reward_on_losses(df)
     2024-01-15    1.8
     2024-01-16    3.0
+    Total         2.4
     Name: avg_risk_reward_losses, dtype: float64
     """
     # Check if required columns exist
@@ -149,9 +165,17 @@ def calculate_average_risk_reward_on_losses(df: pd.DataFrame) -> pd.Series:
     if 'period' not in df.columns:
         raise ValueError("DataFrame must contain a 'period' column")
     
-    # Filter for losing trades and calculate mean risk-reward ratio for each period
+    # Filter for losing trades
     losing_trades = df[df['is_winner'] == 0]
+    
+    # Calculate mean risk-reward ratio for each period
     risk_reward_losses = losing_trades.groupby('period')['risk_reward'].mean()
+    
+    # Calculate total average for losing trades
+    total_risk_reward = losing_trades['risk_reward'].mean()
+    
+    # Append total to the Series
+    risk_reward_losses['Total'] = total_risk_reward
     
     # Name the series for identification
     risk_reward_losses.name = 'avg_risk_reward_losses'
@@ -160,7 +184,8 @@ def calculate_average_risk_reward_on_losses(df: pd.DataFrame) -> pd.Series:
 
 def calculate_average_risk_reward_on_wins(df: pd.DataFrame) -> pd.Series:
     """
-    Calculate the average risk reward ratio on winning trades, grouped by period.
+    Calculate the average risk reward ratio on winning trades.
+    Returns both period-by-period and total averages.
     
     Parameters
     ----------
@@ -170,7 +195,7 @@ def calculate_average_risk_reward_on_wins(df: pd.DataFrame) -> pd.Series:
     Returns
     -------
     pd.Series
-        Series containing average risk-reward ratio on winning trades for each time period
+        Series containing average risk-reward ratio on winning trades for each period plus the total
         
     Examples
     --------
@@ -182,6 +207,7 @@ def calculate_average_risk_reward_on_wins(df: pd.DataFrame) -> pd.Series:
     >>> calculate_average_risk_reward_on_wins(df)
     2024-01-15    2.5
     2024-01-16    2.5
+    Total         2.5
     Name: avg_risk_reward_wins, dtype: float64
     """
     # Check if required columns exist
@@ -190,9 +216,17 @@ def calculate_average_risk_reward_on_wins(df: pd.DataFrame) -> pd.Series:
     if 'period' not in df.columns:
         raise ValueError("DataFrame must contain a 'period' column")
     
-    # Filter for winning trades and calculate mean risk-reward ratio for each period
+    # Filter for winning trades
     winning_trades = df[df['is_winner'] == 1]
+    
+    # Calculate mean risk-reward ratio for each period
     risk_reward_wins = winning_trades.groupby('period')['risk_reward'].mean()
+    
+    # Calculate total average for winning trades
+    total_risk_reward = winning_trades['risk_reward'].mean()
+    
+    # Append total to the Series
+    risk_reward_wins['Total'] = total_risk_reward
     
     # Name the series for identification
     risk_reward_wins.name = 'avg_risk_reward_wins'
@@ -201,7 +235,8 @@ def calculate_average_risk_reward_on_wins(df: pd.DataFrame) -> pd.Series:
 
 def calculate_average_return_per_trade(df: pd.DataFrame) -> pd.Series:
     """
-    Calculate the average percentage return per trade, grouped by period.
+    Calculate the average percentage return per trade.
+    Returns both period-by-period and total averages.
     
     Parameters
     ----------
@@ -211,7 +246,7 @@ def calculate_average_return_per_trade(df: pd.DataFrame) -> pd.Series:
     Returns
     -------
     pd.Series
-        Series containing average percentage return for each time period
+        Series containing average percentage return for each period plus the total
         
     Examples
     --------
@@ -222,6 +257,7 @@ def calculate_average_return_per_trade(df: pd.DataFrame) -> pd.Series:
     >>> calculate_average_return_per_trade(df)
     2024-01-15    0.75
     2024-01-16    2.25
+    Total         1.50
     Name: avg_return_per_trade, dtype: float64
     """
     # Check if required columns exist
@@ -233,6 +269,12 @@ def calculate_average_return_per_trade(df: pd.DataFrame) -> pd.Series:
     # Calculate mean percentage return for each period
     avg_return = df.groupby('period')['perc_return'].mean()
     
+    # Calculate total average return
+    total_return = df['perc_return'].mean()
+    
+    # Append total to the Series
+    avg_return['Total'] = total_return
+    
     # Name the series for identification
     avg_return.name = 'avg_return_per_trade'
     
@@ -240,7 +282,8 @@ def calculate_average_return_per_trade(df: pd.DataFrame) -> pd.Series:
 
 def calculate_total_return(df: pd.DataFrame) -> pd.Series:
     """
-    Calculate the total percentage return, grouped by period.
+    Calculate the total percentage return.
+    Returns both period-by-period and overall total returns.
     
     Parameters
     ----------
@@ -250,7 +293,7 @@ def calculate_total_return(df: pd.DataFrame) -> pd.Series:
     Returns
     -------
     pd.Series
-        Series containing total percentage return for each time period
+        Series containing total percentage return for each period plus the overall total
         
     Examples
     --------
@@ -261,6 +304,7 @@ def calculate_total_return(df: pd.DataFrame) -> pd.Series:
     >>> calculate_total_return(df)
     2024-01-15    1.5
     2024-01-16    4.5
+    Total         6.0
     Name: total_return, dtype: float64
     """
     # Check if required columns exist
@@ -272,6 +316,12 @@ def calculate_total_return(df: pd.DataFrame) -> pd.Series:
     # Calculate total percentage return for each period
     total_return = df.groupby('period')['perc_return'].sum()
     
+    # Calculate overall total return
+    overall_total = df['perc_return'].sum()
+    
+    # Append total to the Series
+    total_return['Total'] = overall_total
+    
     # Name the series for identification
     total_return.name = 'total_return'
     
@@ -279,7 +329,8 @@ def calculate_total_return(df: pd.DataFrame) -> pd.Series:
 
 def calculate_average_duration(df: pd.DataFrame) -> pd.Series:
     """
-    Calculate the average duration of trades in hours, grouped by period.
+    Calculate the average duration of trades in hours.
+    Returns both period-by-period and total averages.
     
     Parameters
     ----------
@@ -289,7 +340,7 @@ def calculate_average_duration(df: pd.DataFrame) -> pd.Series:
     Returns
     -------
     pd.Series
-        Series containing average duration in hours for each time period
+        Series containing average duration in hours for each period plus the total
         
     Examples
     --------
@@ -300,6 +351,7 @@ def calculate_average_duration(df: pd.DataFrame) -> pd.Series:
     >>> calculate_average_duration(df)
     2024-01-15    1.75
     2024-01-16    2.25
+    Total         2.00
     Name: avg_duration_hours, dtype: float64
     """
     # Check if required columns exist
@@ -310,6 +362,12 @@ def calculate_average_duration(df: pd.DataFrame) -> pd.Series:
     
     # Calculate mean duration for each period
     avg_duration = df.groupby('period')['duration_hours'].mean()
+    
+    # Calculate total average duration
+    total_duration = df['duration_hours'].mean()
+    
+    # Append total to the Series
+    avg_duration['Total'] = total_duration
     
     # Name the series for identification
     avg_duration.name = 'avg_duration_hours'
@@ -372,7 +430,8 @@ def generate_periods(df: pd.DataFrame, group_by: str) -> pd.Series:
 
 def calculate_nr_of_trades(df: pd.DataFrame) -> pd.Series:
     """
-    Calculate the number of trades, grouped by period.
+    Calculate the number of trades.
+    Returns both period-by-period and total counts.
     
     Parameters
     ----------
@@ -382,7 +441,7 @@ def calculate_nr_of_trades(df: pd.DataFrame) -> pd.Series:
     Returns
     -------
     pd.Series
-        Series containing number of trades for each time period
+        Series containing number of trades for each period plus the total
         
     Examples
     --------
@@ -393,6 +452,7 @@ def calculate_nr_of_trades(df: pd.DataFrame) -> pd.Series:
     >>> calculate_nr_of_trades(df)
     2024-01-15    2
     2024-01-16    2
+    Total         4
     Name: nr_trades, dtype: int64
     """
     # Check if required column exists
@@ -402,18 +462,23 @@ def calculate_nr_of_trades(df: pd.DataFrame) -> pd.Series:
     # Count trades for each period
     nr_trades = df.groupby('period').size()
     
+    # Calculate total number of trades
+    total_trades = len(df)
+    
+    # Append total to the Series
+    nr_trades['Total'] = total_trades
+    
     # Name the series for identification
     nr_trades.name = 'nr_trades'
     
     return nr_trades
-
 
 def run_report(df: pd.DataFrame, group_by: str) -> pd.DataFrame:
     """
     Run the report on the trade data.
     """
 
-        # Validate group_by parameter
+    # Validate group_by parameter
     valid_groups = {'day', 'week', 'month', 'year'}
     if group_by not in valid_groups:
         raise ValueError(f"group_by must be one of {valid_groups}")
