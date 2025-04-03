@@ -121,27 +121,18 @@ class DatabaseManager:
         Save mapped data to the backtest_runs table.
         
         Args:
-            data (dict): Dictionary containing the mapped data
+            data (dict): Dictionary containing the source_file
             
         Returns:
             int: The ID of the inserted run
         """
         insert_sql = """
-        INSERT INTO backtest_runs (
-            timestamp, indicators, symbols_traded, direction,
-            stop_loss, risk_reward, risk_per_trade,
-            backtest_start_date, backtest_end_date, source_file, is_valid
-        ) VALUES (
-            :timestamp, :indicators, :symbols_traded, :direction,
-            :stop_loss, :risk_reward, :risk_per_trade,
-            :backtest_start_date, :backtest_end_date, :source_file, :is_valid
-        )
+        INSERT INTO backtest_runs (source_file) 
+        VALUES (:source_file)
         """
         
         with self.connection() as conn:
             cursor = conn.cursor()
-            
-            # Insert new run
             cursor.execute(insert_sql, data)
             run_id = cursor.lastrowid
             conn.commit()

@@ -67,11 +67,10 @@ def create_backtest_info(json_path):
         # From: path/to/Strategy_2025-03-24_15-41_E6mMj9_settings.json
         # Get: Strategy_2025-03-24_15-41_E6mMj9
         filename = os.path.basename(json_path)  # Get just the filename
-        backtest_name = filename.replace('_settings.json', '')
         
         # Get required fields
         backtest_info = {
-            'backtest_name': backtest_name
+            'source_file': filename
         }
         
         return backtest_info

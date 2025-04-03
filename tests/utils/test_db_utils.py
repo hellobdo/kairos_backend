@@ -125,17 +125,7 @@ def create_module_fixtures():
     
     # Sample backtest data for insertion
     fixtures['backtest_data'] = {
-        'timestamp': '2023-06-01 10:00:00',
-        'indicators': 'macd,rsi,bollinger',
-        'symbols_traded': 'AAPL,MSFT',
-        'direction': 'long',
-        'stop_loss': '0.02',
-        'risk_reward': '2.5',
-        'risk_per_trade': '0.01',
-        'backtest_start_date': '2023-01-01',
-        'backtest_end_date': '2023-05-31',
-        'source_file': 'test_report.html',
-        'is_valid': True
+        'source_file': 'test_report.html'
     }
     
     return fixtures
@@ -479,14 +469,14 @@ class TestDatabaseUtils(BaseTestCase):
             
             # Check if query contains correct SQL
             sql = mock_cursor.execute.call_args[0][0]
-            self.assertIn("INSERT INTO backtest_runs", sql)
-            self.assertIn("VALUES", sql)
+            self.assertIn("INSERT INTO backtest_runs (source_file)", sql)
+            self.assertIn("VALUES (:source_file)", sql)
             
             # Verify the data was passed correctly
             data_param = mock_cursor.execute.call_args[0][1]
-            self.assertEqual(data_param, self.fixtures['backtest_data'])
+            self.assertEqual(data_param, {'source_file': 'test_report.html'})
             
-            # Verify commit was called (important since we modified this in the implementation)
+            # Verify commit was called
             mock_conn.commit.assert_called_once()
         
         self.log_case_result("save_to_backtest_runs inserts data correctly", True)
