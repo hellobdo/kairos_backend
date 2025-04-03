@@ -4,7 +4,7 @@ import json
 import os
 
 # Initialize database manager
-db = DatabaseManager()
+db_manager = DatabaseManager()
 
 def insert_executions_to_db(df):
     """
@@ -35,15 +35,12 @@ def insert_executions_to_db(df):
             'trade_id': df['trade_id'],
             'is_entry': df['is_entry'].astype(int),
             'is_exit': df['is_exit'].astype(int),
-            'net_cash_with_billable': df['quantity'] * df['price'] + df['commission']
+            'net_cash_with_billable': df['quantity'] * df['price'] + df['commission'],
+            'run_id': df['run_id']
         })
         
-        # Add run_id only if it exists in the DataFrame
-        if 'run_id' in df.columns:
-            backtest_executions_df['run_id'] = df['run_id']
-        
         # Insert the DataFrame into the database
-        records_inserted = db.insert_dataframe(backtest_executions_df, 'backtest_executions')
+        records_inserted = db_manager.insert_dataframe(backtest_executions_df, 'backtest_executions')
         
         print(f"Successfully inserted {records_inserted} records into backtest_executions table")
         return records_inserted
@@ -102,3 +99,59 @@ def create_backtest_info(json_path):
     except Exception as e:
         print(f"Error reading JSON file: {e}")
         return None
+    
+def save_backtest_info(json_path):
+    """
+    Save backtest information to the database.
+    
+    Args:
+        json_path (str): Path to the JSON settings file
+        
+    Returns:
+        int: The ID of the inserted backtest run, or None if there was an error
+    """
+    try:
+        # First get the data from the JSON file
+        backtest_info = create_backtest_info(json_path)
+        if not backtest_info:
+            print(f"Error: Could not extract backtest info from {json_path}")
+            return None
+        
+        # Save to database and get run_id
+        run_id = db_manager.save_to_backtest_runs(backtest_info)
+        
+        return run_id
+        
+    except Exception as e:
+        print(f"Error saving backtest info: {str(e)}")
+        return None
+
+def insert_to_db(df, json_path):
+    """
+    Insert the processed DataFrame into the database.
+    
+    Args:
+        df (pd.DataFrame): DataFrame containing the backtest executions
+        json_path (str): Path to the JSON settings file
+        
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    try:
+        # First save backtest info and get run_id
+        run_id = save_backtest_info(json_path)
+        if run_id is None:
+            print("Error: Could not save backtest info")
+            return False
+            
+        # Add run_id to DataFrame
+        df['run_id'] = run_id
+        
+        # Insert executions using the dedicated function
+        records_inserted = insert_executions_to_db(df)
+        
+        return records_inserted > 0
+        
+    except Exception as e:
+        print(f"Error inserting data into database: {str(e)}")
+        return False
