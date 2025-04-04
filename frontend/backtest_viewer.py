@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import sys
 import os
+import asyncio
 from pathlib import Path
 
 # Add the project root to Python path
@@ -10,22 +11,11 @@ from backtests.backtest_runner import get_latest_backtest_files, process_data, g
 
 
 def view_backtest_results():
-
     
     st.title("Backtest Results Viewer")
     
     # Create a row with button and dropdown side by side
     col1, col2 = st.columns([1, 3])
-    
-    # Add button to run new backtest in first column
-    with col1:
-        if st.button("Run New Backtest"):
-            with st.spinner('Running backtest...'):
-                try:
-                    run_backtest()
-                    st.success("Backtest completed successfully!")
-                except Exception as e:
-                    st.error(f"Error running backtest: {str(e)}")
     
     # Add dropdown to select backtest in second column
     with col2:
@@ -41,12 +31,30 @@ def view_backtest_results():
             st.warning("No backtest files found")
             return
     
-    # Load latest data
-    settings_file, trades_file = get_latest_backtest_files()
-    if settings_file and trades_file:
-        executions_df, trades_df = process_data(trades_file)
-    else:
-        executions_df, trades_df = None, None
+    # Add button to run new backtest in first column
+    with col1:
+        if st.button("Run New Backtest"):
+            with st.spinner('Running backtest...'):
+                try:# Run the backtest asynchronously
+                    executions_df, trades_df, reports = run_backtest(selected_path, insert_to_db=False)
+                    
+                    if executions_df is not None:
+                        st.success("Backtest completed successfully!")
+                    else:
+                        st.error("Failed to run backtest")
+                        return
+                except Exception as e:
+                    st.error(f"Error running backtest: {str(e)}")
+                    return
+    
+    # If we haven't just run a backtest, load latest data
+    if 'executions_df' not in locals():
+        settings_file, trades_file = get_latest_backtest_files()
+        if settings_file and trades_file:
+            executions_df, trades_df = process_data(trades_file)
+            reports = generate_reports(trades_df)
+        else:
+            executions_df, trades_df = None, None
     
     if executions_df is None or trades_df is None:
         st.warning("No backtest data found. Run a backtest first!")

@@ -1,10 +1,9 @@
 import os
 import sys
-import runpy
+import subprocess
 from pathlib import Path
 import argparse
-from backtests.utils.process_executions import process_csv_to_executions, process_executions_to_trades
-from backtests.utils.backtest_data_to_db import insert_to_db
+from backtests.utils import process_csv_to_executions, process_executions_to_trades, insert_to_db
 from analytics.trade_results import run_report
 
 def get_backtest_files():
@@ -82,26 +81,53 @@ def get_latest_backtest_files():
         print(f"Error finding latest files: {str(e)}")
         return None, None
 
-def run_backtest(file_path):
+def run_backtest(file_path, insert_to_db=False):
     """
-    Run a backtest file directly.
+    Run a backtest file and process its results.
     
     Args:
         file_path (str): Path to the Python file containing the Strategy class
+        insert_to_db (bool): Whether to insert results into database
         
     Returns:
-        The result from running the backtest file
+        tuple: (executions_df, trades_df, reports) containing the processed data and reports
     """
     try:
-        # Add the project root to Python path
-        sys.path.insert(0, os.path.dirname(os.path.dirname(file_path)))
+        # Convert file path to module path (e.g. backtests/backtests/dt-tshaped.py -> backtests.backtests.dt-tshaped)
+        rel_path = os.path.relpath(file_path)
+        module_path = os.path.splitext(rel_path)[0].replace('/', '.')
         
-        # Run the file
-        return runpy.run_path(file_path)
+        # Run the strategy file as a module
+        result = subprocess.run([sys.executable, '-m', module_path], check=True)
+        if result.returncode != 0:
+            raise Exception(f"Backtest failed with return code {result.returncode}")
+        
+        # Get latest files
+        settings_file, trades_file = get_latest_backtest_files()
+        if not settings_file or not trades_file:
+            raise Exception("Could not find output files after running backtest")
+            
+        # Process the trades file
+        executions_df, trades_df = process_data(trades_file)
+        if executions_df is None or trades_df is None:
+            raise Exception("Failed to process backtest data")
+            
+        # Generate reports
+        reports = generate_reports(trades_df)
+        if not reports:
+            raise Exception("Failed to generate reports")
+            
+        # If requested, insert into database
+        if insert_to_db:
+            success = insert_to_db(trades_file, settings_file)
+            if not success:
+                print("Warning: Failed to insert data into database")
+                
+        return executions_df, trades_df, reports
         
     except Exception as e:
-        print(f"Error running backtest: {str(e)}")
-        return None
+        print(f"Error in backtest pipeline: {str(e)}")
+        return None, None, None
 
 def generate_reports(trades_df):
     """
@@ -126,38 +152,16 @@ if __name__ == "__main__":
     # Parse only the db flag
     parser = argparse.ArgumentParser(description='Run backtest and process results')
     parser.add_argument('--db', action='store_true', help='Also insert data into database')
+    parser.add_argument('--file', type=str, default="backtests/backtests/dt-tshaped.py", help='Path to strategy file')
     args = parser.parse_args()
 
-    # Example usage
-    strategy_file = "backtests/dt-tshaped.py"
-    result = run_backtest(strategy_file)
+    # Run the backtest pipeline
+    executions_df, trades_df, reports = run_backtest(args.file, args.db)
     
-    # Get latest files
-    settings_file, trades_file = get_latest_backtest_files()
-    if settings_file and trades_file:
-        print(f"Latest settings file: {settings_file}")
-        print(f"Latest trades file: {trades_file}")
-        
-        # Process the trades file
-        executions_df, trades_df = process_data(trades_file)
-        if executions_df is not None and trades_df is not None:
-            print("Successfully processed data:")
-            print(f"Executions shape: {executions_df.shape}")
-            print(f"Trades shape: {trades_df.shape}")
-            
-            # Generate reports
-            reports = generate_reports(trades_df)
-            if reports:
-                print("\nGenerated reports for different time periods:")
-                for period, report in reports.items():
-                    print(f"\n{period.capitalize()} Report:")
-                    print(report)
-            
-            # If --db flag is set, also insert into database
-            if args.db:
-                print("\nInserting data into database...")
-                success = insert_to_db(trades_file, settings_file)
-                if success:
-                    print("Successfully inserted data into database")
-                else:
-                    print("Failed to insert data into database")
+    if executions_df is not None:
+        print("\nBacktest completed successfully:")
+        print(f"Executions shape: {executions_df.shape}")
+        print(f"Trades shape: {trades_df.shape}")
+        print("\nReports generated for:")
+        for period in reports.keys():
+            print(f"- {period}")

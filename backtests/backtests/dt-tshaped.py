@@ -138,10 +138,11 @@ class Strategy(BaseStrategy):
     def after_market_closes(self):
         self.vars.daily_loss_count = 0
 
-if __name__ == "__main__":
+def run_strategy():
+    """Run the backtest strategy and return the result."""
     if data_source == "polygon":
         polygon_api_key = os.getenv("POLYGON_API_KEY")
-        result = Strategy.run_backtest(
+        return Strategy.run_backtest(
             PolygonDataBacktesting,
             backtesting_start,
             backtesting_end,
@@ -160,10 +161,13 @@ if __name__ == "__main__":
             asset: Data(asset, df, timestep="minute"),
         }
 
-        result = Strategy.run_backtest(
+        return Strategy.run_backtest(
             PandasDataBacktesting,
             backtesting_start,
             backtesting_end,
             parameters=Strategy.parameters,
             pandas_data=pandas_data
         )
+
+if __name__ == "__main__":
+    result = run_strategy()
