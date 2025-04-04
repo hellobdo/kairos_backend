@@ -90,6 +90,7 @@ def view_backtest_results():
             'entry_price': '{:,.2f}', # trades
             'exit_price': '{:,.2f}', # trades
             'stop_price': '{:,.2f}', # trades
+            'take_profit_price': '{:,.2f}', # trades
             'price': '{:,.2f}', # executions
             'trade_cost': '{:,.2f}', # executions
             'quantity': '{:,.0f}', # executions and trades

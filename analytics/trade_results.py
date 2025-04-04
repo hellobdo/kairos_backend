@@ -47,7 +47,7 @@ def calculate_accuracy(df: pd.DataFrame) -> pd.Series:
     
     return accuracy
 
-def calculate_risk_per_trade(df: pd.DataFrame) -> pd.Series:
+def calculate_risk_per_trade_perc(df: pd.DataFrame) -> pd.Series:
     """
     Calculate the average risk per trade from a DataFrame of trade data.
     Returns both period-by-period risk and total risk.
@@ -55,7 +55,7 @@ def calculate_risk_per_trade(df: pd.DataFrame) -> pd.Series:
     Parameters
     ----------
     df : pd.DataFrame
-        DataFrame containing trade data with 'risk_per_trade' and 'period' columns
+        DataFrame containing trade data with 'risk_per_trade_perc' and 'period' columns
         
     Returns
     -------
@@ -65,31 +65,31 @@ def calculate_risk_per_trade(df: pd.DataFrame) -> pd.Series:
     Examples
     --------
     >>> df = pd.DataFrame({
-    ...     'risk_per_trade': [0.02, 0.01, 0.03, 0.02],
+    ...     'risk_per_trade_perc': [0.02, 0.01, 0.03, 0.02],
     ...     'period': ['2024-01-15', '2024-01-15', '2024-01-16', '2024-01-16']
     ... })
-    >>> calculate_risk_per_trade(df)
+    >>> calculate_risk_per_trade_perc(df)
     2024-01-15    0.015
     2024-01-16    0.025
     Total         0.020
     Name: avg_risk_per_trade, dtype: float64
     """
     # Check if required columns exist
-    if 'risk_per_trade' not in df.columns:
-        raise ValueError("DataFrame must contain a 'risk_per_trade' column")
+    if 'risk_per_trade_perc' not in df.columns:
+        raise ValueError("DataFrame must contain a 'risk_per_trade_perc' column")
     if 'period' not in df.columns:
         raise ValueError("DataFrame must contain a 'period' column")
     
     # Calculate mean risk per trade for each period
-    risk_per_trade = df.groupby('period')['risk_per_trade'].mean()
+    risk_per_trade_perc = df.groupby('period')['risk_per_trade_perc'].mean()
     
     # Calculate total average risk
-    total_risk = df['risk_per_trade'].mean()
+    total_risk_perc = df['risk_per_trade_perc'].mean()
     
     # Append total to the Series
-    risk_per_trade['Total'] = total_risk
+    risk_per_trade_perc['Total'] = total_risk_perc
     
-    return risk_per_trade
+    return risk_per_trade_perc
 
 def calculate_average_risk_reward_on_losses(df: pd.DataFrame) -> pd.Series:
     """
@@ -454,7 +454,7 @@ def run_report(df: pd.DataFrame, group_by: str) -> pd.DataFrame:
     metrics = {
         'nr_trades': calculate_nr_of_trades(df),
         'accuracy': calculate_accuracy(df),
-        'avg_risk_per_trade': calculate_risk_per_trade(df),
+        'avg_risk_per_trade_perc': calculate_risk_per_trade_perc(df),
         'avg_risk_reward_wins': calculate_average_risk_reward_on_wins(df),
         'avg_risk_reward_losses': calculate_average_risk_reward_on_losses(df),
         'avg_return_per_trade': calculate_average_return_per_trade(df),
@@ -472,7 +472,7 @@ def run_report(df: pd.DataFrame, group_by: str) -> pd.DataFrame:
         'period',
         'nr_trades',
         'accuracy',
-        'avg_risk_per_trade',
+        'avg_risk_per_trade_perc',
         'avg_risk_reward_wins',
         'avg_risk_reward_losses',
         'avg_return_per_trade',

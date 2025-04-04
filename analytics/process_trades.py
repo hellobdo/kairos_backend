@@ -220,7 +220,7 @@ class TradeProcessor:
             
         return pd.Series(winners)
 
-    def _calculate_perc_return(self, risk_per_trade: pd.Series, risk_reward: pd.Series) -> pd.Series:
+    def _calculate_perc_return(self, risk_per_trade_perc: pd.Series, risk_reward: pd.Series) -> pd.Series:
         """
         Calculate the percentage return for each trade
         
@@ -238,7 +238,7 @@ class TradeProcessor:
         # Calculate percentage return
         perc_return = {}
         for trade_id in self.trade_directions.keys():
-            rpt = risk_per_trade.get(trade_id)
+            rpt = risk_per_trade_perc.get(trade_id)
             rr = risk_reward.get(trade_id)
             
             # Skip if either value is None
@@ -373,7 +373,7 @@ class TradeProcessor:
             # 6. Get stop price 
             stop_price = self._get_stop_prices()
             
-            print("\n7. Stop prices:")
+            print("\n6. Stop prices:")
             print(f"Sample:\n{stop_price.head()}")
             print(f"Stop price dtype: {stop_price.dtype}")
             
@@ -383,7 +383,7 @@ class TradeProcessor:
                 exit_prices=exit_price,
                 stop_prices=stop_price
             )
-            print("\n8. Risk-reward ratios:")
+            print("\n7. Risk-reward ratios:")
             print(f"Sample:\n{risk_reward.head()}")
             
             # 8. Get risk amount per share
@@ -391,36 +391,41 @@ class TradeProcessor:
                 entry_prices=entry_price, 
                 stop_prices=stop_price
             )
-            print("\n9. Risk amount per share:")
+            print("\n8. Risk amount per share:")
             print(f"Sample:\n{risk_amount_per_share.head()}")
-            
-            # 9. Get risk per trade
-            risk_per_trade = self._get_risk_per_trade(
-                risk_per_trade=None,
+
+            # 9. Get total risk amount
+            risk_per_trade_amount = self._get_risk_per_trade_amount(
                 risk_amount_per_share=risk_amount_per_share,
-                quantity=quantity,
+                quantity=quantity
+            )
+            print("\n9. Total risk amount:")
+            print(f"Sample:\n{risk_per_trade_amount.head()}")
+            
+            # 10. Get risk per trade
+            risk_per_trade_perc = self._get_risk_per_trade_perc(
                 entry_info=entry_info
             )
             print("\n10. Risk per trade:")
-            print(f"Sample:\n{risk_per_trade.head()}")
+            print(f"Sample:\n{risk_per_trade_perc.head()}")
             
-            # 10. Calculate percentage return
+            # 11. Calculate percentage return
             perc_return = self._calculate_perc_return(
-                risk_per_trade=risk_per_trade,
+                risk_per_trade_perc=risk_per_trade_perc,
                 risk_reward=risk_reward
             )
             print("\n11. Percentage return:")
             print(f"Sample:\n{perc_return.head()}")
             
-            # 11. Get winning trades 
+            # 12. Get winning trades 
             is_winner = self._get_winning_trades(
                 risk_reward=risk_reward
             )
             print("\n12. Winning trades:")
             print(f"Sample:\n{is_winner.head()}")
             
-            # 12. Get trade status
-            print("\n12. Trade status:")
+            # 13. Get trade status
+            print("\n13. Trade status:")
             status = self._get_trade_status()
             print(f"Sample:\n{status.head()}")
             
@@ -430,13 +435,13 @@ class TradeProcessor:
                 print(f"Error calculating take profit prices: {str(e)}")
                 take_profit_price = pd.Series()
 
-            # 13. Get end date and time
-            print("\n13. End date and time:")
+            # 14. Get end date and time
+            print("\n14. End date and time:")
             end_date, end_time = self._get_end_date_and_time()
             print(f"End date sample:\n{end_date.head()}")
             print(f"End time sample:\n{end_time.head()}")
             
-            # 14. Get exit type
+            # 15. Get exit type
             try:
                 exit_type = self._get_exit_type(
                     exit_prices=exit_price,
@@ -448,15 +453,13 @@ class TradeProcessor:
                 print(f"Error determining exit types: {str(e)}")
                 exit_type = pd.Series()
             
-            
-            
-            # 15. Get duration hours
-            print("\n15. Duration hours:")
+            # 16. Get duration hours
+            print("\n16. Duration hours:")
             duration_hours = self._get_duration_hours()
             print(f"Sample:\n{duration_hours.head()}")
             
-            # 16. Get commission
-            print("\n16. Commission:")
+            # 17. Get commission
+            print("\n17. Commission:")
             commission = self._get_commission()
             print(f"Sample:\n{commission.head()}")
             
@@ -465,25 +468,26 @@ class TradeProcessor:
                 'num_executions': num_executions,
                 'symbol': symbols,
                 'direction': direction_series,
-                'quantity': quantity,
-                'entry_price': entry_price,
-                'capital_required': capital_required,
-                'exit_price': exit_price,
-                'stop_price': stop_price,
-                'take_profit_price': take_profit_price,
-                'risk_reward': risk_reward,
-                'risk_amount_per_share': risk_amount_per_share,
-                'is_winner': is_winner,
-                'risk_per_trade': risk_per_trade,
-                'perc_return': perc_return,
-                'status': status,
-                'exit_type': exit_type,
-                'end_date': end_date,
-                'end_time': end_time,
-                'duration_hours': duration_hours,
-                'commission': commission,
                 'start_date': entry_info['start_date'],
                 'start_time': entry_info['start_time'],
+                'quantity': quantity,
+                'entry_price': entry_price,
+                'stop_price': stop_price,
+                'take_profit_price': take_profit_price,
+                'exit_price': exit_price,
+                'commission': commission,
+                'end_date': end_date,
+                'end_time': end_time,
+                'exit_type': exit_type,
+                'status': status,
+                'capital_required': capital_required,
+                'is_winner': is_winner,
+                'duration_hours': duration_hours,
+                'risk_per_trade_perc': risk_per_trade_perc,
+                'risk_per_trade_amount': risk_per_trade_amount,
+                'risk_amount_per_share': risk_amount_per_share,
+                'risk_reward': risk_reward,
+                'perc_return': perc_return,
                 'week': entry_info['week'],
                 'month': entry_info['month'],
                 'year': entry_info['year']
@@ -732,6 +736,10 @@ class TradeProcessor:
         
     def _get_commission(self) -> pd.Series:
         """Get the commission for each trade_id"""
+
+        if self.backtest:
+            return pd.Series(0, index=self.trade_directions.keys())
+
         try:
             if 'commission' in self.executions_df.columns:
                 return self.executions_df.groupby('trade_id')['commission'].sum()
@@ -770,7 +778,7 @@ class TradeProcessor:
             
         return pd.Series(take_profit_prices)
 
-    def _get_risk_per_trade(self, risk_per_trade: Optional[float], risk_amount_per_share: pd.Series, quantity: pd.Series, entry_info: pd.DataFrame) -> pd.Series:
+    def _get_risk_per_trade_perc(self, entry_info: pd.DataFrame) -> pd.Series:
         """
         Get risk per trade from entry executions in backtest mode or calculate from account balance
         
@@ -783,11 +791,7 @@ class TradeProcessor:
         Returns:
             Series with risk percentage per trade indexed by trade_id
         """
-        # If a fixed risk_per_trade value is provided, use it for all trades
-        if risk_per_trade is not None:
-            return pd.Series({trade_id: risk_per_trade for trade_id in self.trade_directions.keys()})
-        
-        risk_per_trade_dict = {}
+        risk_per_trade_perc_dict = {}
         
         # Get risk per trade based on mode
         if self.backtest:
@@ -795,44 +799,34 @@ class TradeProcessor:
             for trade_id, group in self.entry_execs.groupby('trade_id'):
                 # Get the first entry execution
                 entry_exec = group.sort_values('execution_timestamp').iloc[0]
-                risk_per_trade_dict[trade_id] = entry_exec.get('risk_per_trade')
-            return pd.Series(risk_per_trade_dict)
+                risk_per_trade_perc_dict[trade_id] = entry_exec.get('risk_per_trade')
+            return pd.Series(risk_per_trade_perc_dict)
             
         try:
             # Get account balances for non-backtest mode
             account_balances = db.get_account_balances()
-            
-            # Process each trade to calculate its risk
+
             for trade_id in self.trade_directions.keys():
-                # Get risk amount per share and quantity
-                risk_per_share = risk_amount_per_share.get(trade_id)
-                qty = quantity.get(trade_id)
-                
-                # Skip if any required value is missing
-                if risk_per_share is None or qty is None:
-                    risk_per_trade_dict[trade_id] = None
-                    continue
-                
-                # Get the trade's start date
+            # Get the trade's start date
                 start_date = entry_info['start_date'].get(trade_id)
                 if start_date is None:
-                    risk_per_trade_dict[trade_id] = None
+                    risk_per_trade_perc_dict[trade_id] = None
                     continue
-                    
+                
                 # Find the account balance on the date of the trade entry
                 matching_balances = account_balances[account_balances['date'] == start_date]
                 
                 if matching_balances.empty:
                     # Use default risk if no matching balance found
-                    risk_per_trade_dict[trade_id] = None
+                    risk_per_trade_perc_dict[trade_id] = None
+
                 else:
-                    # Calculate risk as a percentage of account balance
+                    # Use the account balance on the trade entry date
                     balance = matching_balances['cash_balance'].iloc[0]
-                    risk_amount = risk_per_share * qty
-                    risk_per_trade_dict[trade_id] = risk_amount / balance
+                    risk_per_trade_amount = risk_amount_per_share.get(trade_id)
+                    risk_per_trade_perc_dict[trade_id] = risk_per_trade_amount / balance
             
-            return pd.Series(risk_per_trade_dict)
-            
+            return pd.Series(risk_per_trade_perc_dict)
         except Exception as e:
             print(f"Error calculating risk per trade: {str(e)}")
             # Return None for all trades if calculation fails
@@ -867,6 +861,31 @@ class TradeProcessor:
             risk_amount_per_share[trade_id] = abs(entry_price - stop_price)
         
         return pd.Series(risk_amount_per_share)
+    
+    def _get_risk_per_trade_amount(self, risk_amount_per_share: pd.Series, quantity: pd.Series) -> pd.Series:
+        """
+        Calculate the total risk amount for each trade
+        
+        Total risk amount is the product of risk amount per share and quantity.
+        
+        """
+        risk_per_trade_amount_dict = {}
+        
+        # Process each trade to calculate its risk
+        for trade_id in self.trade_directions.keys():
+            # Get risk amount per share and quantity
+            risk_per_share = risk_amount_per_share.get(trade_id)
+            qty = quantity.get(trade_id)
+            
+            # Skip if any required value is missing
+            if risk_per_share is None or qty is None:
+                risk_per_trade_amount_dict[trade_id] = None
+                continue
+
+            # Calculate risk per trade amount
+            risk_per_trade_amount_dict[trade_id] = risk_per_share * qty
+        
+        return pd.Series(risk_per_trade_amount_dict)
 
 def process_trades(executions_df: pd.DataFrame, backtest: bool = False) -> Optional[pd.DataFrame]:
     """
