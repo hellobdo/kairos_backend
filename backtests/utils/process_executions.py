@@ -6,9 +6,9 @@ from analytics.process_trades import process_trades
 def side_follows_qty(df):
     """
     Standardizes the 'side' column to "buy" or "sell" and 
-    adjusts filled_quantity based on side:
-    - If side contains 'sell', makes filled_quantity negative
-    - If side contains 'buy', leaves filled_quantity as is
+    adjusts quantity based on side:
+    - If side contains 'sell', makes quantity negative
+    - If side contains 'buy', leaves quantity as is
     """
     # Create a copy to avoid modifying the original DataFrame
     processed_df = df.copy()
@@ -28,7 +28,7 @@ def side_follows_qty(df):
         processed_df.loc[sell_mask, 'side'] = 'sell'
         
         # Now apply the quantity adjustment for sell orders
-        processed_df.loc[sell_mask, 'filled_quantity'] = processed_df.loc[sell_mask, 'filled_quantity'] * -1
+        processed_df.loc[sell_mask, 'quantity'] = processed_df.loc[sell_mask, 'quantity'] * -1
     
     return processed_df
 
@@ -108,16 +108,8 @@ def process_csv_to_executions(csv_path):
         return False
 
     try:
-        # Step 3: Clean empty rows
-        df = clean_empty_rows(df, 'filled_quantity')
-        print("Empty rows cleaned successfully")
-    except Exception as e:
-        print(f"Error cleaning empty rows: {e}")
-        return False
-
-    try:
-        # Step 4: Convert numeric fields
-        numeric_fields = ['filled_quantity', 'price', 'trade_cost']
+        # Step 3: Convert numeric fields
+        numeric_fields = ['quantity', 'price', 'trade_cost']
         df = convert_to_numeric(df, numeric_fields)
         print("Numeric conversion successful")
     except Exception as e:
@@ -125,9 +117,9 @@ def process_csv_to_executions(csv_path):
         return False
     
     try:    
-        # Step 5: Process date and time fields
+        # Step 4: Process date and time fields
         # This also validates execution_timestamp and sorts the DataFrame
-        df = process_datetime_fields(df, 'time')
+        df = process_datetime_fields(df, 'timestamp')
         if df.empty:
             print("WARNING: process_datetime_fields returned an empty DataFrame")
             return False
@@ -137,20 +129,10 @@ def process_csv_to_executions(csv_path):
         print(f"Error processing datetime fields: {e}")
         return False
 
-    # Step 6: Standardize sides and adjust quantities
+    # Step 5: Standardize sides and adjust quantities
     df = side_follows_qty(df)
 
-    try:
-        # Step 7: Rename quantity field
-        df = df.rename(columns={
-            'filled_quantity': 'quantity', 
-            })
-        print("Column renaming successful")
-    except Exception as e:
-        print(f"Error renaming columns: {e}")
-        return False
-
-    # Step 8: Identify trade IDs
+    # Step 6: Identify trade IDs
     df = identify_trade_ids(df, db_validation=False)
     print("Trade IDs identification successful")
 

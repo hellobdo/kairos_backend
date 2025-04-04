@@ -23,7 +23,7 @@ def insert_executions_to_db(df):
         # Create a copy of the DataFrame and prepare for database insertion
         backtest_executions_df = pd.DataFrame({
             'execution_timestamp': df['execution_timestamp'],
-            'identifier': df['order_id'],
+            'order_id': df['order_id'],
             'symbol': df['symbol'],
             'side': df['side'],
             'type': df['order_type'],

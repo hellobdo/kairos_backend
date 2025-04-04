@@ -138,6 +138,7 @@ class Strategy(BaseStrategy):
             "take_profit": take_profit,
             "status": order.status,
             "type": order.order_type,
+            "risk_per_trade": self.parameters.get("risk_per_trade")
         }
 
         self.vars.trade_log.append(trade_info)

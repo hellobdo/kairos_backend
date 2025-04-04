@@ -69,7 +69,7 @@ def get_latest_backtest_files():
             
         # Find all matching files and their creation times
         settings_files = [(f, f.stat().st_ctime) for f in logs_dir.glob('*_settings.json')]
-        trades_files = [(f, f.stat().st_ctime) for f in logs_dir.glob('*_trades.csv')]
+        trades_files = [(f, f.stat().st_ctime) for f in logs_dir.glob('*custom_trades.csv')]
         
         # Get the most recent files
         latest_settings = max(settings_files, key=lambda x: x[1])[0] if settings_files else None
