@@ -378,7 +378,18 @@ def generate_periods(df: pd.DataFrame, group_by: str) -> pd.Series:
             # Ensure week is zero-padded to 2 digits and year is string
             print(f"generate_periods: Using 'year' column: {df['year'].head().tolist()}")
             print(f"generate_periods: Using 'week' column: {df['week'].head().tolist()}")
-            period = df['year'].astype(str) + '-W' + df['week'].astype(str).str.zfill(2)
+            
+            # Convert to datetime if needed to ensure consistent week formatting
+            if 'date' in df.columns:
+                # Use the date column to get consistent week numbers
+                dates = pd.to_datetime(df['date'])
+                # Get ISO year and week numbers (more consistent across year boundaries)
+                iso_years = dates.dt.isocalendar().year.astype(str)
+                iso_weeks = dates.dt.isocalendar().week.astype(str).str.zfill(2)
+                period = iso_years + '-W' + iso_weeks
+            else:
+                # Fall back to existing year and week columns
+                period = df['year'].astype(str) + '-W' + df['week'].astype(str).str.zfill(2)
         except Exception as e:
             print(f"generate_periods: Error processing week periods: {str(e)}")
             raise
@@ -585,66 +596,23 @@ def generate_comparison_data(df: pd.DataFrame, group_by: str) -> dict:
     
     print("Getting backtest timeframe...")
     unique_dates = get_backtest_timeframe(df)
-    print(f"Found {len(unique_dates)} unique dates in backtest")
-    if len(unique_dates) > 0:
-        print(f"First few backtest dates: {unique_dates['date'].head().tolist()}")
-        print(f"Backtest date type: {type(unique_dates['date'].iloc[0])}")
     
-    # Convert backtest dates to string for consistent comparison
-    print("Converting backtest dates to string format...")
     unique_dates['date'] = pd.to_datetime(unique_dates['date']).dt.strftime('%Y-%m-%d')
-    if len(unique_dates) > 0:
-        print(f"First few formatted backtest dates: {unique_dates['date'].head().tolist()}")
     
     returns = {}
 
     # Process each ticker's data
     for ticker, ticker_df in data_dict.items():
-        print(f"\nProcessing {ticker}...")
-        print(f"Original columns: {ticker_df.columns.tolist()}")
-        print(f"Original shape: {ticker_df.shape}")
-        print(f"First few market dates: {ticker_df['date'].head().tolist()}")
-        print(f"Market date type: {type(ticker_df['date'].iloc[0])}")
-        
-        # Convert ticker dates to same format as backtest dates
-        print("Converting market dates to string format...")
         ticker_df['date'] = pd.to_datetime(ticker_df['date']).dt.strftime('%Y-%m-%d')
-        print(f"First few formatted market dates: {ticker_df['date'].head().tolist()}")
-        
-        # Filter by dates in unique_dates
-        print("Filtering dates...")
-        print(f"Looking for these {len(unique_dates)} backtest dates in market data")
-        
-        # More detailed debugging
-        common_dates = set(ticker_df['date']).intersection(set(unique_dates['date']))
-        print(f"Found {len(common_dates)} common dates between backtest and {ticker}")
-        if len(common_dates) > 0:
-            print(f"First few common dates: {list(common_dates)[:5]}")
-        else:
-            print("No common dates found! Sample comparison:")
-            print(f"First 5 backtest dates: {unique_dates['date'].head().tolist()}")
-            print(f"First 5 market dates: {ticker_df['date'].head().tolist()}")
-            
-            # Check date ranges
-            backtest_min = min(unique_dates['date']) if len(unique_dates) > 0 else "No dates"
-            backtest_max = max(unique_dates['date']) if len(unique_dates) > 0 else "No dates"
-            market_min = min(ticker_df['date']) if len(ticker_df) > 0 else "No dates"
-            market_max = max(ticker_df['date']) if len(ticker_df) > 0 else "No dates"
-            print(f"Backtest date range: {backtest_min} to {backtest_max}")
-            print(f"{ticker} date range: {market_min} to {market_max}")
         
         filtered_df = ticker_df[ticker_df['date'].isin(unique_dates['date'])]
-        print(f"After filtering, shape: {filtered_df.shape} ({len(filtered_df)} rows remain for {ticker})")
         
-        if len(filtered_df) == 0:
-            print(f"Warning: No matching dates found for {ticker}")
-            continue
+        # Create a copy to avoid SettingWithCopyWarning
+        filtered_df = filtered_df.copy()
             
         # Add period column
         try:
-            print("Generating periods...")
             filtered_df['period'] = generate_periods(filtered_df, group_by)
-            print(f"Periods generated for {ticker}")
         except Exception as e:
             print(f"Error generating periods: {str(e)}")
             print(f"DataFrame columns: {filtered_df.columns.tolist()}")
@@ -699,7 +667,7 @@ def calculate_returns_based_on_close_and_open(df: pd.DataFrame, group_by: str) -
             print(f"Available columns: {df.columns.tolist()}")
             print(f"First few rows: {df.head().to_dict()}")
             raise
-    
+
     # Add a 'Total' row using first open and last close across all dates
     try:
         if len(df) > 0:
@@ -726,5 +694,6 @@ def calculate_returns_based_on_close_and_open(df: pd.DataFrame, group_by: str) -
     except Exception as e:
         print(f"Error calculating total return: {str(e)}")
         # Silently fail for total calculation
+
     
     return result_df
