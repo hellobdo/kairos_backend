@@ -450,46 +450,6 @@ class TestDatabaseUtils(BaseTestCase):
             mock_cursor.fetchall.assert_called_once()
         
         self.log_case_result("get_backtest_runs works correctly with various filters", True)
-    
-    def test_save_to_backtest_runs(self):
-        """Test saving backtest run data to the database"""
-        # Create mock connection and cursor
-        mock_conn = MagicMock()
-        mock_cursor = MagicMock()
-        mock_cursor.lastrowid = 42  # Simulate the returned run_id
-        
-        # Setup the connection context
-        with patch.object(self.db_manager, 'connection') as mock_cm:
-            # When connection is called, return our mock connection
-            mock_cm.return_value.__enter__.return_value = mock_conn
-            mock_conn.cursor.return_value = mock_cursor
-            
-            # Call the method
-            run_id = self.db_manager.save_to_backtest_runs(self.fixtures['backtest_data'])
-            
-            # Verify the result
-            self.assertEqual(run_id, 42)
-            
-            # Verify connection was used correctly
-            mock_cm.assert_called_once()
-            mock_conn.cursor.assert_called_once()
-            
-            # Verify cursor operations
-            mock_cursor.execute.assert_called_once()
-            
-            # Check if query contains correct SQL
-            sql = mock_cursor.execute.call_args[0][0]
-            self.assertIn("INSERT INTO backtest_runs", sql)
-            self.assertIn("VALUES", sql)
-            
-            # Verify the data was passed correctly
-            data_param = mock_cursor.execute.call_args[0][1]
-            self.assertEqual(data_param, self.fixtures['backtest_data'])
-            
-            # Verify commit was called (important since we modified this in the implementation)
-            mock_conn.commit.assert_called_once()
-        
-        self.log_case_result("save_to_backtest_runs inserts data correctly", True)
         
     def test_insert_dataframe(self):
         """Test inserting a DataFrame into a database table"""

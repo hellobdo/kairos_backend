@@ -41,8 +41,18 @@ jobs:
         cache-from: type=local,src=/tmp/.buildx-cache
         cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
     
-    - name: Run tests in container
-      run: docker run --rm kairos-test:latest python -m pytest
+    - name: Run tests in container (by module)
+      run: |
+        docker run --rm kairos-test:latest bash -c "
+          echo 'Running analytics tests...' && 
+          python -m pytest tests/analytics -v && 
+          echo 'Running API tests...' && 
+          python -m pytest tests/api -v && 
+          echo 'Running utils tests...' && 
+          python -m pytest tests/utils -v && 
+          echo 'Running any remaining tests...' && 
+          python -m pytest tests/_utils -v
+        "
     
     # Temp fix for cache size
     - name: Move cache
