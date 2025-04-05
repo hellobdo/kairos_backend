@@ -9,7 +9,7 @@ from backtests.utils.backtest_data_to_db import insert_to_db
 
 def view_backtest_results():
     
-    st.title("Backtest Results Viewer")
+    st.title("Kairos")
     
     # Get list of backtest files
     backtest_files = get_backtest_files_for_display()
