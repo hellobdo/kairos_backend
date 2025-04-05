@@ -42,17 +42,27 @@ jobs:
         cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
     
     - name: Run tests in container (by module)
+      env:
+        IBKR_TOKEN_PAPER: ${{ secrets.IBKR_TOKEN_PAPER || 'test_token_paper' }}
+        IBKR_QUERY_ID_CASH_PAPER: ${{ secrets.IBKR_QUERY_ID_CASH_PAPER || 'test_query_id_paper' }}
+        IBKR_TOKEN_LIVE: ${{ secrets.IBKR_TOKEN_LIVE || 'test_token_live' }}
+        IBKR_QUERY_ID_CASH_LIVE: ${{ secrets.IBKR_QUERY_ID_CASH_LIVE || 'test_query_id_live' }}
       run: |
-        docker run --rm kairos-test:latest bash -c "
-          echo 'Running analytics tests...' && 
-          python -m pytest tests/analytics -v && 
-          echo 'Running API tests...' && 
-          python -m pytest tests/api -v && 
-          echo 'Running utils tests...' && 
-          python -m pytest tests/utils -v && 
-          echo 'Running any remaining tests...' && 
-          python -m pytest tests/_utils -v
-        "
+        docker run --rm \
+          -e IBKR_TOKEN_PAPER="${IBKR_TOKEN_PAPER}" \
+          -e IBKR_QUERY_ID_CASH_PAPER="${IBKR_QUERY_ID_CASH_PAPER}" \
+          -e IBKR_TOKEN_LIVE="${IBKR_TOKEN_LIVE}" \
+          -e IBKR_QUERY_ID_CASH_LIVE="${IBKR_QUERY_ID_CASH_LIVE}" \
+          kairos-test:latest bash -c "
+            echo 'Running analytics tests...' && 
+            python -m pytest tests/analytics -v && 
+            echo 'Running API tests...' && 
+            python -m pytest tests/api -v && 
+            echo 'Running utils tests...' && 
+            python -m pytest tests/utils -v && 
+            echo 'Running any remaining tests...' && 
+            python -m pytest tests/_utils -v
+          "
     
     # Temp fix for cache size
     - name: Move cache
