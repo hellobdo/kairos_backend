@@ -4,7 +4,7 @@ import os
 
 # Add the project root to Python path
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-from backtests.backtest_runner import run_backtest, get_backtest_files_for_display
+from backtests.backtest_runner import run_backtest, get_backtest_files_for_display, get_latest_trades_files
 from backtests.utils.backtest_data_to_db import insert_to_db
 
 def view_backtest_results():
@@ -13,6 +13,25 @@ def view_backtest_results():
     
     # Get list of backtest files
     backtest_files = get_backtest_files_for_display()
+    
+    # Load the latest trades and reports if not already in session state
+    if 'executions_df' not in st.session_state or 'trades_df' not in st.session_state or 'reports' not in st.session_state:
+        try:
+            latest_executions_csv = get_latest_trades_files()
+            if latest_executions_csv is None:
+                st.warning("No previous backtest results found")
+            else:
+                executions_df, trades_df, reports = run_backtest(latest_executions_csv, backtest=False)
+                if executions_df is None:
+                    st.error("Loading latest backtest results failed!")
+                else:
+                    # Store in session state
+                    st.session_state['executions_df'] = executions_df
+                    st.session_state['trades_df'] = trades_df
+                    st.session_state['reports'] = reports
+                    st.info("Loaded latest backtest results")
+        except Exception as e:
+            st.warning(f"Could not load latest backtest results: {str(e)}")
     
     # Add file selector and run button in the same row
     col1, col2, col3 = st.columns([3, 1, 1])
@@ -28,7 +47,7 @@ def view_backtest_results():
             if selected_path:
                 try:
                     full_path = backtest_files[selected_path]
-                    executions_df, trades_df, reports = run_backtest(full_path)
+                    executions_df, trades_df, reports = run_backtest(full_path, backtest=True)
                     if executions_df is None:
                         st.error("Backtest failed!")
                     else:
@@ -67,6 +86,8 @@ def view_backtest_results():
         'avg_return_per_trade': 'avg return',
         'total_return': 'total return',
         'risk_per_trade_perc': 'risk per trade',
+        'spy_perc_return': 'SPY',
+        'qqq_perc_return': 'QQQ',
     }
 
     # Style formatting for percentage columns
@@ -91,7 +112,9 @@ def view_backtest_results():
         'risk_per_trade': '{:.2%}', # trades
         'perc_return': '{:.2%}', # trades
         'duration_hours': '{:,.4f}', # trades
-        'risk_per_trade_amount': '{:,.2f}' # trades
+        'risk_per_trade_amount': '{:,.2f}', # trades
+        'SPY': '{:.2%}', # trades
+        'QQQ': '{:.2%}', # trades
     }
 
     # Display reports if they exist
