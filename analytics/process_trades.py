@@ -753,7 +753,7 @@ class TradeProcessor:
     def _get_stop_prices(self) -> pd.Series:
         """
         Get stop prices from entry executions
-        
+
         Returns:
             Series with stop prices indexed by trade_id
         """
