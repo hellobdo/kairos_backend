@@ -1,5 +1,5 @@
 import pandas as pd
-from utils.pandas_utils import csv_to_dataframe, clean_empty_rows, convert_to_numeric
+from utils.pandas_utils import csv_to_dataframe, convert_to_numeric
 from utils.process_executions_utils import process_datetime_fields, identify_trade_ids
 from analytics.process_trades import process_trades
 
@@ -77,7 +77,6 @@ def process_csv_to_executions(csv_path):
     
     Args:
         csv_path (str): Path to the CSV file
-        run_id (str, optional): ID for the backtest run
         
     Returns:
         pd.DataFrame: Processed DataFrame containing execution data

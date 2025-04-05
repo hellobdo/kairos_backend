@@ -100,8 +100,16 @@ class DatabaseManager:
         with self.connection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT MAX(trade_id) FROM executions")
-        result = cursor.fetchone()
-        return result[0] if result[0] is not None else 0
+            result = cursor.fetchone()
+            return result[0] if result[0] is not None else 0
+    
+    def get_max_run_id(self):
+        """Get the maximum run_id from the backtest_runs table"""
+        with self.connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT MAX(run_id) FROM backtest_runs")
+            result = cursor.fetchone()
+            return result[0] if result[0] is not None else 0
     
     def get_open_positions(self):
         """Get current open positions from the executions table based on sum of quantities"""
@@ -115,37 +123,6 @@ class DatabaseManager:
             cursor = conn.cursor()
             cursor.execute(query)
         return cursor.fetchall()
-    
-    def save_to_backtest_runs(self, data):
-        """
-        Save mapped data to the backtest_runs table.
-        
-        Args:
-            data (dict): Dictionary containing the source_file
-            
-        Returns:
-            int: The ID of the inserted run
-        """
-        insert_sql = """
-        INSERT INTO backtest_runs (
-            timestamp, indicators, symbols_traded, direction,
-            stop_loss, risk_reward, risk_per_trade,
-            backtest_start_date, backtest_end_date, source_file, is_valid
-        ) VALUES (
-            :timestamp, :indicators, :symbols_traded, :direction,
-            :stop_loss, :risk_reward, :risk_per_trade,
-            :backtest_start_date, :backtest_end_date, :source_file, :is_valid
-        )
-        """
-        
-        with self.connection() as conn:
-            cursor = conn.cursor()
-            
-            # Insert new run
-            cursor.execute(insert_sql, data)
-            run_id = cursor.lastrowid
-            conn.commit()
-            return run_id
     
     def get_backtest_runs(self, run_id=None, symbol=None, direction=None, is_valid=None, as_df=True):
         """

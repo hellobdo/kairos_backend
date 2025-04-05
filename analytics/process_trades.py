@@ -488,6 +488,7 @@ class TradeProcessor:
                 'risk_amount_per_share': risk_amount_per_share,
                 'risk_reward': risk_reward,
                 'perc_return': perc_return,
+                'day': entry_info['day'],
                 'week': entry_info['week'],
                 'month': entry_info['month'],
                 'year': entry_info['year']
@@ -562,6 +563,7 @@ class TradeProcessor:
         return pd.DataFrame({
             'start_date': start_dates,
             'start_time': start_times,
+            'day': date_objects.dt.day,
             'week': date_objects.dt.isocalendar().week,
             'month': date_objects.dt.month,
             'year': date_objects.dt.year
@@ -823,7 +825,7 @@ class TradeProcessor:
                 else:
                     # Use the account balance on the trade entry date
                     balance = matching_balances['cash_balance'].iloc[0]
-                    risk_per_trade_amount = risk_amount_per_share.get(trade_id)
+                    risk_per_trade_amount = self._get_risk_per_trade_amount(trade_id)
                     risk_per_trade_perc_dict[trade_id] = risk_per_trade_amount / balance
             
             return pd.Series(risk_per_trade_perc_dict)

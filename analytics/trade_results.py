@@ -168,8 +168,10 @@ def calculate_average_risk_reward_on_wins(df: pd.DataFrame) -> pd.Series:
     Name: avg_risk_reward_wins, dtype: float64
     """
     # Check if required columns exist
-    if 'risk_reward' not in df.columns or 'is_winner' not in df.columns:
-        raise ValueError("DataFrame must contain 'risk_reward' and 'is_winner' columns")
+    if 'risk_reward' not in df.columns:
+        raise ValueError("DataFrame must contain a 'risk_reward' column")
+    if 'is_winner' not in df.columns:
+        raise ValueError("DataFrame must contain a 'is_winner' column")
     if 'period' not in df.columns:
         raise ValueError("DataFrame must contain a 'period' column")
     
@@ -434,6 +436,7 @@ def run_report(df: pd.DataFrame, group_by: str) -> pd.DataFrame:
         - period
         - nr_trades (number of trades)
         - accuracy
+        - avg_duration_hours (average duration)
         - avg_risk_per_trade (risk per trade)
         - avg_risk_reward_wins (average win)
         - avg_risk_reward_losses (average loss)
@@ -454,6 +457,7 @@ def run_report(df: pd.DataFrame, group_by: str) -> pd.DataFrame:
     metrics = {
         'nr_trades': calculate_nr_of_trades(df),
         'accuracy': calculate_accuracy(df),
+        'avg_duration_hours': calculate_average_duration(df),
         'avg_risk_per_trade_perc': calculate_risk_per_trade_perc(df),
         'avg_risk_reward_wins': calculate_average_risk_reward_on_wins(df),
         'avg_risk_reward_losses': calculate_average_risk_reward_on_losses(df),
@@ -472,6 +476,7 @@ def run_report(df: pd.DataFrame, group_by: str) -> pd.DataFrame:
         'period',
         'nr_trades',
         'accuracy',
+        'avg_duration_hours',
         'avg_risk_per_trade_perc',
         'avg_risk_reward_wins',
         'avg_risk_reward_losses',

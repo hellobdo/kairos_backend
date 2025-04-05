@@ -1,142 +1,141 @@
 import streamlit as st
-import pandas as pd
 import sys
 import os
-import asyncio
-from pathlib import Path
 
 # Add the project root to Python path
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-from backtests.backtest_runner import get_latest_backtest_files, process_data, generate_reports, run_backtest, get_backtest_files
-
+from backtests.backtest_runner import run_backtest, get_backtest_files_for_display
+from backtests.utils.backtest_data_to_db import insert_to_db
 
 def view_backtest_results():
     
     st.title("Backtest Results Viewer")
     
-    # Create a row with button and dropdown side by side
-    col1, col2 = st.columns([1, 3])
+    # Get list of backtest files
+    backtest_files = get_backtest_files_for_display()
     
-    # Add dropdown to select backtest in second column
-    with col2:
-        backtest_files = get_backtest_files()
-        if backtest_files:
-            selected_file = st.selectbox(
-                "Select backtest file",
-                options=list(backtest_files.keys()),
-                key="backtest_selector"
-            )
-            selected_path = backtest_files[selected_file]
-        else:
-            st.warning("No backtest files found")
-            return
-    
-    # Add button to run new backtest in first column
+    # Add file selector and run button in the same row
+    col1, col2, col3 = st.columns([3, 1, 1])
     with col1:
-        if st.button("Run New Backtest"):
-            with st.spinner('Running backtest...'):
-                try:# Run the backtest asynchronously
-                    executions_df, trades_df, reports = run_backtest(selected_path, insert_to_db=False)
-                    
-                    if executions_df is not None:
-                        st.success("Backtest completed successfully!")
+        selected_path = st.selectbox(
+            "Select backtest file",
+            options=list(backtest_files.keys()),
+            format_func=lambda x: x
+        )
+    
+    with col2:
+        if st.button("Run Backtest"):
+            if selected_path:
+                try:
+                    full_path = backtest_files[selected_path]
+                    executions_df, trades_df, reports = run_backtest(full_path)
+                    if executions_df is None:
+                        st.error("Backtest failed!")
                     else:
-                        st.error("Failed to run backtest")
-                        return
+                        # Store in session state
+                        st.session_state['executions_df'] = executions_df
+                        st.session_state['trades_df'] = trades_df
+                        st.session_state['reports'] = reports
+                        st.success("Backtest completed successfully!")
                 except Exception as e:
                     st.error(f"Error running backtest: {str(e)}")
-                    return
-    
-    # If we haven't just run a backtest, load latest data
-    if 'executions_df' not in locals():
-        settings_file, trades_file = get_latest_backtest_files()
-        if settings_file and trades_file:
-            executions_df, trades_df = process_data(trades_file)
-            reports = generate_reports(trades_df)
-        else:
-            executions_df, trades_df = None, None
-    
-    if executions_df is None or trades_df is None:
-        st.warning("No backtest data found. Run a backtest first!")
-        return
-    
-      # reports
-    reports = generate_reports(trades_df)
-    if reports:
-        # Column display names
-        column_display_names = {
-            'nr_trades': 'nr trades',
-            'accuracy': 'accuracy',
-            'avg_risk_per_trade': 'risk per trade',
-            'avg_risk_reward_wins': 'avg win',
-            'avg_risk_reward_losses': 'avg loss',
-            'avg_return_per_trade': 'avg return',
-            'total_return': 'total return'
-        }
+            else:
+                st.warning("Please select a backtest file first")
 
-        # Style formatting for percentage columns
-        reports_format = {
-            'accuracy': '{:.2%}',
-            'risk per trade': '{:.2%}',
-            'avg win': '{:.2%}',
-            'avg loss': '{:.2%}',
-            'avg return': '{:.2%}',
-            'total return': '{:.2%}'
-        }
+    with col3:
+        if st.button("Insert to DB"):
+            if 'executions_df' in st.session_state and 'trades_df' in st.session_state:
+                st.write("Ready to insert data from previous backtest run")
+                try:
+                    success = insert_to_db(st.session_state['executions_df'], st.session_state['trades_df'])
+                    if success:
+                        st.success("Data successfully inserted into database!")
+                    else:
+                        st.error("Failed to insert data into database. Check the logs for details.")
+                except Exception as e:
+                    st.error(f"Error inserting to database: {str(e)}")
+            else:
+                st.warning("No backtest data available. Run a backtest first!")
 
-        # Style formatting for number columns
-        base_dfs_format = {
-            'capital_required': '{:,.2f}', # trades
-            'entry_price': '{:,.2f}', # trades
-            'exit_price': '{:,.2f}', # trades
-            'stop_price': '{:,.2f}', # trades
-            'take_profit_price': '{:,.2f}', # trades
-            'price': '{:,.2f}', # executions
-            'trade_cost': '{:,.2f}', # executions
-            'quantity': '{:,.0f}', # executions and trades
-            'risk_reward': '{:,.2f}', # trades
-            'risk_amount_per_share': '{:,.2f}', # trades
-            'risk_per_trade': '{:.2%}', # trades
-            'perc_return': '{:.2%}', # trades
-            'duration_hours': '{:,.4f}', # trades
-        }
+    # Column display names
+    column_display_names = {
+        'nr_trades': 'nr trades',
+        'accuracy': 'accuracy',
+        'avg_risk_per_trade_perc': 'risk per trade',
+        'avg_risk_reward_wins': 'avg win',
+        'avg_risk_reward_losses': 'avg loss',
+        'avg_return_per_trade': 'avg return',
+        'total_return': 'total return',
+        'risk_per_trade_perc': 'risk per trade',
+    }
 
+    # Style formatting for percentage columns
+    styling_format = {
+        'accuracy': '{:.2%}', # reports
+        'avg_duration_hours': '{:.4f}', # reports
+        'risk per trade': '{:.2%}', # reports
+        'avg win': '{:.2}', # reports
+        'avg loss': '{:.2}', # reports
+        'avg return': '{:.2%}', # reports
+        'total return': '{:.2%}', # reports
+        'capital_required': '{:,.2f}', # trades
+        'entry_price': '{:,.2f}', # trades
+        'exit_price': '{:,.2f}', # trades
+        'stop_price': '{:,.2f}', # trades
+        'take_profit_price': '{:,.2f}', # trades
+        'price': '{:,.2f}', # executions
+        'trade_cost': '{:,.2f}', # executions
+        'quantity': '{:,.0f}', # executions and trades
+        'risk_reward': '{:,.2f}', # trades
+        'risk_amount_per_share': '{:,.2f}', # trades
+        'risk_per_trade': '{:.2%}', # trades
+        'perc_return': '{:.2%}', # trades
+        'duration_hours': '{:,.4f}', # trades
+        'risk_per_trade_amount': '{:,.2f}' # trades
+    }
+
+    # Display reports if they exist
+    if 'reports' in st.session_state:
         st.subheader("Yearly Report")
         st.dataframe(
-            reports['year']
+            st.session_state['reports']['year']
             .rename(columns=column_display_names)
-            .style.format(reports_format),
+            .style.format(styling_format),
             hide_index=True
         )
 
         st.subheader("Monthly Report")
         st.dataframe(
-            reports['month']
+            st.session_state['reports']['month']
             .rename(columns=column_display_names)
-            .style.format(reports_format),
+            .style.format(styling_format),
             hide_index=True
         )
 
         st.subheader("Weekly Report")
         st.dataframe(
-            reports['week']
+            st.session_state['reports']['week']
             .rename(columns=column_display_names)
-            .style.format(reports_format),
+            .style.format(styling_format),
             hide_index=True
         )
 
-    # trades
-    st.subheader("Trades")
-    st.dataframe(
-        trades_df
-        .style.format(base_dfs_format),
-        hide_index=True)
+    # Display trades if they exist
+    if 'trades_df' in st.session_state:
+        st.subheader("Trades")
+        st.dataframe(
+            st.session_state['trades_df']
+            .rename(columns=column_display_names)
+            .style.format(styling_format),
+            hide_index=True)
 
-    # executions
-    st.subheader("Executions")
-    st.dataframe(executions_df
-        .style.format(base_dfs_format),
-         hide_index=True)
+    # Display executions if they exist
+    if 'executions_df' in st.session_state:
+        st.subheader("Executions")
+        st.dataframe(
+            st.session_state['executions_df']
+            .style.format(styling_format),
+            hide_index=True)
 
 if __name__ == "__main__":
     view_backtest_results() 

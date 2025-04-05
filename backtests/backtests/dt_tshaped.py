@@ -3,7 +3,7 @@ from datetime import datetime
 import os
 import sys
 from pathlib import Path
-from backtests.backtest_runner import get_latest_backtest_files
+from backtests.utils.backtest_data_to_db import get_latest_settings_file
 
 # Add the project root directory to the Python path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -189,7 +189,7 @@ if __name__ == "__main__":
     result = run_strategy()
     
     # Get the identifier from latest files
-    settings_file, _ = get_latest_backtest_files()
+    settings_file = str(get_latest_settings_file())
     print(f"\nLooking for files to rename:")
     print(f"Settings file found: {settings_file}")
     
