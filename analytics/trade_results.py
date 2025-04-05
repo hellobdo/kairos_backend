@@ -1,38 +1,4 @@
 import pandas as pd
-import numpy as np
-
-def check_columns(df: pd.DataFrame) -> bool:
-
-    required_columns = [
-        "num_executions",
-        "symbol",
-        "direction",
-        "quantity",
-        "entry_price",
-        "capital_required",
-        "exit_price",
-        "stop_price",
-        "take_profit_price",
-        "risk_reward",
-        "risk_amount_per_share",
-        "is_winner",
-        "risk_per_trade",
-        "perc_return",
-        "status",
-        "exit_type",
-        "end_date",
-        "end_time",
-        "duration_hours",
-        "commission",
-        "start_date",
-        "start_time",
-        "week",
-        "month",
-        "year"
-    ]
-
-    return True if all(col in df.columns for col in required_columns) else False
-
 
 def calculate_accuracy(df: pd.DataFrame) -> pd.Series:
     """
@@ -79,12 +45,9 @@ def calculate_accuracy(df: pd.DataFrame) -> pd.Series:
     # Append total to the Series
     accuracy['Total'] = total_accuracy
     
-    # Name the series for identification
-    accuracy.name = 'accuracy'
-    
     return accuracy
 
-def calculate_risk_per_trade(df: pd.DataFrame) -> pd.Series:
+def calculate_risk_per_trade_perc(df: pd.DataFrame) -> pd.Series:
     """
     Calculate the average risk per trade from a DataFrame of trade data.
     Returns both period-by-period risk and total risk.
@@ -92,7 +55,7 @@ def calculate_risk_per_trade(df: pd.DataFrame) -> pd.Series:
     Parameters
     ----------
     df : pd.DataFrame
-        DataFrame containing trade data with 'risk_per_trade' and 'period' columns
+        DataFrame containing trade data with 'risk_per_trade_perc' and 'period' columns
         
     Returns
     -------
@@ -102,34 +65,31 @@ def calculate_risk_per_trade(df: pd.DataFrame) -> pd.Series:
     Examples
     --------
     >>> df = pd.DataFrame({
-    ...     'risk_per_trade': [0.02, 0.01, 0.03, 0.02],
+    ...     'risk_per_trade_perc': [0.02, 0.01, 0.03, 0.02],
     ...     'period': ['2024-01-15', '2024-01-15', '2024-01-16', '2024-01-16']
     ... })
-    >>> calculate_risk_per_trade(df)
+    >>> calculate_risk_per_trade_perc(df)
     2024-01-15    0.015
     2024-01-16    0.025
     Total         0.020
     Name: avg_risk_per_trade, dtype: float64
     """
     # Check if required columns exist
-    if 'risk_per_trade' not in df.columns:
-        raise ValueError("DataFrame must contain a 'risk_per_trade' column")
+    if 'risk_per_trade_perc' not in df.columns:
+        raise ValueError("DataFrame must contain a 'risk_per_trade_perc' column")
     if 'period' not in df.columns:
         raise ValueError("DataFrame must contain a 'period' column")
     
     # Calculate mean risk per trade for each period
-    risk_per_trade = df.groupby('period')['risk_per_trade'].mean()
+    risk_per_trade_perc = df.groupby('period')['risk_per_trade_perc'].mean()
     
     # Calculate total average risk
-    total_risk = df['risk_per_trade'].mean()
+    total_risk_perc = df['risk_per_trade_perc'].mean()
     
     # Append total to the Series
-    risk_per_trade['Total'] = total_risk
+    risk_per_trade_perc['Total'] = total_risk_perc
     
-    # Name the series for identification
-    risk_per_trade.name = 'avg_risk_per_trade'
-    
-    return risk_per_trade
+    return risk_per_trade_perc
 
 def calculate_average_risk_reward_on_losses(df: pd.DataFrame) -> pd.Series:
     """
@@ -177,9 +137,6 @@ def calculate_average_risk_reward_on_losses(df: pd.DataFrame) -> pd.Series:
     # Append total to the Series
     risk_reward_losses['Total'] = total_risk_reward
     
-    # Name the series for identification
-    risk_reward_losses.name = 'avg_risk_reward_losses'
-    
     return risk_reward_losses
 
 def calculate_average_risk_reward_on_wins(df: pd.DataFrame) -> pd.Series:
@@ -211,8 +168,10 @@ def calculate_average_risk_reward_on_wins(df: pd.DataFrame) -> pd.Series:
     Name: avg_risk_reward_wins, dtype: float64
     """
     # Check if required columns exist
-    if 'risk_reward' not in df.columns or 'is_winner' not in df.columns:
-        raise ValueError("DataFrame must contain 'risk_reward' and 'is_winner' columns")
+    if 'risk_reward' not in df.columns:
+        raise ValueError("DataFrame must contain a 'risk_reward' column")
+    if 'is_winner' not in df.columns:
+        raise ValueError("DataFrame must contain a 'is_winner' column")
     if 'period' not in df.columns:
         raise ValueError("DataFrame must contain a 'period' column")
     
@@ -227,9 +186,6 @@ def calculate_average_risk_reward_on_wins(df: pd.DataFrame) -> pd.Series:
     
     # Append total to the Series
     risk_reward_wins['Total'] = total_risk_reward
-    
-    # Name the series for identification
-    risk_reward_wins.name = 'avg_risk_reward_wins'
     
     return risk_reward_wins
 
@@ -275,9 +231,6 @@ def calculate_average_return_per_trade(df: pd.DataFrame) -> pd.Series:
     # Append total to the Series
     avg_return['Total'] = total_return
     
-    # Name the series for identification
-    avg_return.name = 'avg_return_per_trade'
-    
     return avg_return
 
 def calculate_total_return(df: pd.DataFrame) -> pd.Series:
@@ -321,9 +274,6 @@ def calculate_total_return(df: pd.DataFrame) -> pd.Series:
     
     # Append total to the Series
     total_return['Total'] = overall_total
-    
-    # Name the series for identification
-    total_return.name = 'total_return'
     
     return total_return
 
@@ -369,9 +319,6 @@ def calculate_average_duration(df: pd.DataFrame) -> pd.Series:
     # Append total to the Series
     avg_duration['Total'] = total_duration
     
-    # Name the series for identification
-    avg_duration.name = 'avg_duration_hours'
-    
     return avg_duration
 
 def generate_periods(df: pd.DataFrame, group_by: str) -> pd.Series:
@@ -415,13 +362,13 @@ def generate_periods(df: pd.DataFrame, group_by: str) -> pd.Series:
     if group_by == 'day':
         period = df['start_date']
     elif group_by == 'week':
-        # Ensure week is zero-padded to 2 digits
-        period = df['year'] + '-W' + df['week'].str.zfill(2)
+        # Ensure week is zero-padded to 2 digits and year is string
+        period = df['year'].astype(str) + '-W' + df['week'].astype(str).str.zfill(2)
     elif group_by == 'month':
-        # Ensure month is zero-padded to 2 digits
-        period = df['year'] + '-' + df['month'].str.zfill(2)
+        # Ensure month is zero-padded to 2 digits and year is string
+        period = df['year'].astype(str) + '-' + df['month'].astype(str).str.zfill(2)
     else:  # year
-        period = df['year']
+        period = df['year'].astype(str)
     
     # Name the series for identification
     period.name = 'period'
@@ -468,9 +415,6 @@ def calculate_nr_of_trades(df: pd.DataFrame) -> pd.Series:
     # Append total to the Series
     nr_trades['Total'] = total_trades
     
-    # Name the series for identification
-    nr_trades.name = 'nr_trades'
-    
     return nr_trades
 
 def run_report(df: pd.DataFrame, group_by: str) -> pd.DataFrame:
@@ -492,12 +436,15 @@ def run_report(df: pd.DataFrame, group_by: str) -> pd.DataFrame:
         - period
         - nr_trades (number of trades)
         - accuracy
+        - avg_duration_hours (average duration)
         - avg_risk_per_trade (risk per trade)
         - avg_risk_reward_wins (average win)
         - avg_risk_reward_losses (average loss)
         - avg_return_per_trade (average return)
         - total_return
     """
+    df = df.copy()
+    
     # Validate group_by parameter
     valid_groups = {'day', 'week', 'month', 'year'}
     if group_by not in valid_groups:
@@ -510,7 +457,8 @@ def run_report(df: pd.DataFrame, group_by: str) -> pd.DataFrame:
     metrics = {
         'nr_trades': calculate_nr_of_trades(df),
         'accuracy': calculate_accuracy(df),
-        'avg_risk_per_trade': calculate_risk_per_trade(df),
+        'avg_duration_hours': calculate_average_duration(df),
+        'avg_risk_per_trade_perc': calculate_risk_per_trade_perc(df),
         'avg_risk_reward_wins': calculate_average_risk_reward_on_wins(df),
         'avg_risk_reward_losses': calculate_average_risk_reward_on_losses(df),
         'avg_return_per_trade': calculate_average_return_per_trade(df),
@@ -528,7 +476,8 @@ def run_report(df: pd.DataFrame, group_by: str) -> pd.DataFrame:
         'period',
         'nr_trades',
         'accuracy',
-        'avg_risk_per_trade',
+        'avg_duration_hours',
+        'avg_risk_per_trade_perc',
         'avg_risk_reward_wins',
         'avg_risk_reward_losses',
         'avg_return_per_trade',

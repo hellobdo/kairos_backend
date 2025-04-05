@@ -1,64 +1,14 @@
 import pandas as pd
-from utils.pandas_utils import csv_to_dataframe, clean_empty_rows, convert_to_numeric
+from utils.pandas_utils import csv_to_dataframe, convert_to_numeric
 from utils.process_executions_utils import process_datetime_fields, identify_trade_ids
-from utils.db_utils import DatabaseManager
-
-# Initialize database manager
-db = DatabaseManager()
-
-def insert_executions_to_db(df):
-    """
-    Insert processed backtest data into the backtest_executions table.
-    
-    Args:
-        df (pandas.DataFrame): Processed DataFrame with trade_id assignments
-        
-    Returns:
-        int: Number of records inserted
-    """
-    if df.empty:
-        return 0
-    
-    try:
-        # Create a copy of the DataFrame and prepare for database insertion
-        backtest_executions_df = pd.DataFrame({
-            'execution_timestamp': df['execution_timestamp'],
-            'identifier': df['order_id'],
-            'symbol': df['symbol'],
-            'side': df['side'],
-            'type': df['order_type'],
-            'price': df['price'],
-            'quantity': df['quantity'],
-            'trade_cost': df['commission'],
-            'date': df['date'],
-            'time_of_day': df['time_of_day'],
-            'trade_id': df['trade_id'],
-            'is_entry': df['is_entry'].astype(int),
-            'is_exit': df['is_exit'].astype(int),
-            'net_cash_with_billable': df['quantity'] * df['price'] + df['commission']
-        })
-        
-        # Add run_id only if it exists in the DataFrame
-        if 'run_id' in df.columns:
-            backtest_executions_df['run_id'] = df['run_id']
-        
-        # Insert the DataFrame into the database
-        records_inserted = db.insert_dataframe(backtest_executions_df, 'backtest_executions')
-        
-        print(f"Successfully inserted {records_inserted} records into backtest_executions table")
-        return records_inserted
-        
-    except Exception as e:
-        print(f"Error inserting backtest executions into database: {e}")
-        raise
-
+from analytics.process_trades import process_trades
 
 def side_follows_qty(df):
     """
     Standardizes the 'side' column to "buy" or "sell" and 
-    adjusts filled_quantity based on side:
-    - If side contains 'sell', makes filled_quantity negative
-    - If side contains 'buy', leaves filled_quantity as is
+    adjusts quantity based on side:
+    - If side contains 'sell', makes quantity negative
+    - If side contains 'buy', leaves quantity as is
     """
     # Create a copy to avoid modifying the original DataFrame
     processed_df = df.copy()
@@ -78,7 +28,7 @@ def side_follows_qty(df):
         processed_df.loc[sell_mask, 'side'] = 'sell'
         
         # Now apply the quantity adjustment for sell orders
-        processed_df.loc[sell_mask, 'filled_quantity'] = processed_df.loc[sell_mask, 'filled_quantity'] * -1
+        processed_df.loc[sell_mask, 'quantity'] = processed_df.loc[sell_mask, 'quantity'] * -1
     
     return processed_df
 
@@ -114,20 +64,23 @@ def drop_columns(df):
         
     return df
 
-def process_csv(csv_path, run_id=None):
+def process_csv_to_executions(csv_path):
     """
-    Orchestration function that reads a CSV file and processes the resulting DataFrame.
+    Process a CSV file containing execution data and return a processed DataFrame.
     
     This function:
     1. Reads the CSV file into a DataFrame
-    2. Drops unnecessary columns from the DataFrame
+    2. Drops unnecessary columns
+    3. Cleans empty rows
+    4. Converts numeric fields
+    5. Processes datetime fields
     
     Args:
         csv_path (str): Path to the CSV file
-        run_id (str, optional): ID for the backtest run
         
     Returns:
-        bool: True if processing and database insertion succeeded, False otherwise
+        pd.DataFrame: Processed DataFrame containing execution data
+        False: If any processing step fails
     """
     print(f"Processing CSV file: {csv_path}")
     
@@ -154,16 +107,8 @@ def process_csv(csv_path, run_id=None):
         return False
 
     try:
-        # Step 3: Clean empty rows
-        df = clean_empty_rows(df, 'filled_quantity')
-        print("Empty rows cleaned successfully")
-    except Exception as e:
-        print(f"Error cleaning empty rows: {e}")
-        return False
-
-    try:
-        # Step 4: Convert numeric fields
-        numeric_fields = ['filled_quantity', 'price', 'trade_cost']
+        # Step 3: Convert numeric fields
+        numeric_fields = ['quantity', 'price', 'trade_cost']
         df = convert_to_numeric(df, numeric_fields)
         print("Numeric conversion successful")
     except Exception as e:
@@ -171,9 +116,9 @@ def process_csv(csv_path, run_id=None):
         return False
     
     try:    
-        # Step 5: Process date and time fields
+        # Step 4: Process date and time fields
         # This also validates execution_timestamp and sorts the DataFrame
-        df = process_datetime_fields(df, 'time')
+        df = process_datetime_fields(df, 'timestamp')
         if df.empty:
             print("WARNING: process_datetime_fields returned an empty DataFrame")
             return False
@@ -183,39 +128,38 @@ def process_csv(csv_path, run_id=None):
         print(f"Error processing datetime fields: {e}")
         return False
 
-    try:
-        # Step 6: Rename quantity field for compatibility with identify_trade_ids
-        df = df.rename(columns={
-            'filled_quantity': 'quantity', 
-            })
-        print("Column renaming successful")
-    except Exception as e:
-        print(f"Error renaming columns: {e}")
-        return False
+    # Step 5: Standardize sides and adjust quantities
+    df = side_follows_qty(df)
 
-    try:
-        # Step 7: Identify trade IDs
-        df_executions_with_trade_ids = identify_trade_ids(df)
-        print("Trade IDs identification successful")
-        
-        # Step 8: Add run_id if provided
-        if run_id is not None:
-            df_executions_with_trade_ids['run_id'] = run_id
-            print(f"Added run_id: {run_id}")
-    except Exception as e:
-        print(f"Error in trade ID identification: {e}")
-        return False
+    # Step 6: Identify trade IDs
+    df = identify_trade_ids(df, db_validation=False)
+    print("Trade IDs identification successful")
 
+    # Convert is_entry and is_exit to boolean
+    df['is_entry'] = df['is_entry'].astype(bool)
+    df['is_exit'] = df['is_exit'].astype(bool)
+
+    return df
+
+def process_executions_to_trades(df, backtest: bool = True):
+    """
+    Process a DataFrame of executions into trades.
+    
+    Args:
+        df (pandas.DataFrame): DataFrame containing execution data
+            
+    Returns:
+        pandas.DataFrame: DataFrame with processed trades, or False if processing fails
+    """
     try:
-        # Step 9: Insert into database
-        inserted = insert_executions_to_db(df_executions_with_trade_ids)
-        
-        if inserted:
-            print(f"Updated database with {inserted} new executions for {run_id} backtest")
-            return True
-        else:
-            print(f"No new executions inserted for {run_id} backtest")
+        trades_df = process_trades(df, backtest)
+        if trades_df is None:
+            print("Processing trades failed")
             return False
+        print("Trades processing successful")
+    
+        return trades_df
+            
     except Exception as e:
-        print(f"Error during database insertion: {e}")
+        print(f"Error in trade processing: {e}")
         return False

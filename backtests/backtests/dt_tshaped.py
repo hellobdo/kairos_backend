@@ -2,6 +2,8 @@ import pandas as pd
 from datetime import datetime
 import os
 import sys
+from pathlib import Path
+from backtests.utils.backtest_data_to_db import get_latest_settings_file
 
 # Add the project root directory to the Python path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -107,24 +109,36 @@ class Strategy(BaseStrategy):
                 type="bracket",  # This makes it a bracket order
                 stop_loss_price=stop_loss_price,  # Exit stop loss price
                 take_profit_price=take_profit_price,  # Exit take profit price
-                custom_params={"margin": True},
+                custom_params={
+                    "margin": True,
+                    "stop_loss_price": stop_loss_price,
+                    "take_profit_price": take_profit_price
+                },
                 time_in_force="day"
             )
             self.submit_order(entry_order)
 
     def on_filled_order(self, position, order, price, quantity, multiplier):
+
+        stop_loss = None
+        take_profit = None
+        if order.custom_params:
+            stop_loss = order.custom_params.get('stop_loss_price')
+            take_profit = order.custom_params.get('take_profit_price')
+
         trade_info = {
+            "name": self.name,
             "order_id": order.identifier,
             "symbol": order.asset if isinstance(order.asset, str) else order.asset.symbol,
-            "filled_price": price,
+            "price": price,
             "quantity": quantity,
             "side": order.side,
             "timestamp": self.get_datetime(),  # The time this fill was processed
-            "take_profit_price": getattr(order, 'take_profit_price', None),
-            "stop_loss_price": getattr(order, 'stop_loss_price', None),
-            "custom_params": order.custom_params,
-            "order_type": getattr(order, 'type', None),
-            "date_created": getattr(order, 'date_created', None),
+            "stop_loss": stop_loss,
+            "take_profit": take_profit,
+            "status": order.status,
+            "type": order.order_type,
+            "risk_per_trade": self.parameters.get("risk_per_trade")
         }
 
         self.vars.trade_log.append(trade_info)
@@ -137,11 +151,14 @@ class Strategy(BaseStrategy):
 
     def after_market_closes(self):
         self.vars.daily_loss_count = 0
+        current_time = self.get_datetime()
+        self._save_trades_at_end(current_time, backtesting_end)
 
-if __name__ == "__main__":
+def run_strategy():
+    """Run the backtest strategy and return the result."""
     if data_source == "polygon":
         polygon_api_key = os.getenv("POLYGON_API_KEY")
-        result = Strategy.run_backtest(
+        return Strategy.run_backtest(
             PolygonDataBacktesting,
             backtesting_start,
             backtesting_end,
@@ -160,10 +177,40 @@ if __name__ == "__main__":
             asset: Data(asset, df, timestep="minute"),
         }
 
-        result = Strategy.run_backtest(
+        return Strategy.run_backtest(
             PandasDataBacktesting,
             backtesting_start,
             backtesting_end,
             parameters=Strategy.parameters,
             pandas_data=pandas_data
         )
+
+if __name__ == "__main__":
+    result = run_strategy()
+    
+    # Get the identifier from latest files
+    settings_file = str(get_latest_settings_file())
+    print(f"\nLooking for files to rename:")
+    print(f"Settings file found: {settings_file}")
+    
+    if settings_file:
+        # Extract identifier and timestamp from settings file name
+        parts = settings_file.split('_')
+        identifier = parts[-2]
+        timestamp = f"{parts[1]}_{parts[2]}"  # Gets YYYY-MM-DD_HH-MM
+        print(f"Extracted timestamp: {timestamp}")
+        print(f"Extracted identifier: {identifier}")
+        
+        # Find and rename files from current run containing 'id'
+        logs_dir = Path("logs")
+        if logs_dir.exists():
+            pattern = f"*_{timestamp}_id_*"
+            print(f"Looking for files matching pattern: {pattern}")
+            for file in logs_dir.glob(pattern):
+                print(f"Found file to rename: {file}")
+                new_name = str(file).replace("_id_", f"_{identifier}_")
+                os.rename(file, new_name)
+                print(f"Renamed to: {new_name}")
+    else:
+        identifier = "id"
+        print(f"Identifier not replaced")

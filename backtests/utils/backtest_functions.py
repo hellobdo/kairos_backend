@@ -1,5 +1,8 @@
 from lumibot.strategies.strategy import Strategy
 from lumibot.entities import Asset
+import pandas as pd
+from datetime import datetime
+from pathlib import Path
 
 class BaseStrategy(Strategy):
     """
@@ -83,3 +86,22 @@ class BaseStrategy(Strategy):
             take_profit_price = entry_price - (stop_loss_amount * risk_reward)
             
         return stop_loss_price, take_profit_price 
+
+    def _save_trades_at_end(self, current_time, backtesting_end):
+        """Save trades to CSV when reaching the end of backtest"""
+        next_day = current_time + pd.Timedelta(days=1)
+        if next_day.date() == backtesting_end.date():
+            if hasattr(self.vars, 'trade_log') and self.vars.trade_log:
+                timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
+                df = pd.DataFrame(self.vars.trade_log)
+                
+                # Ensure logs directory exists
+                logs_dir = Path("logs")
+                logs_dir.mkdir(exist_ok=True)
+                
+                # Save file in logs directory with same identifier
+                filename = logs_dir / f"{self.name}_{timestamp}_{'id'}_custom_trades.csv"
+                df.to_csv(filename, index=False)
+                print(f"Custom trades saved to {filename}")
+            else:
+                print("No trade log to save.") 

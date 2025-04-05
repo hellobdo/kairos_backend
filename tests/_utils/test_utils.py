@@ -92,23 +92,31 @@ class BaseTestCase(unittest.TestCase):
         super().run(result)
         
         # Check if this test failed or had an error
-        if result and (result.failures or result.errors):
-            # Check if this test specifically failed
-            for failure in result.failures:
-                if failure[0] == self:
-                    # Update our tracking to mark the test as failed
-                    test_results[self.class_name]["methods"][self.test_name]["passed"] = False
-                    test_results[self.class_name]["passed"] = False
-                    has_test_failures = True
-                    break
+        if result:
+            # With pytest, result might be a TestCaseFunction which doesn't have failures/errors attributes
+            # Check if the attributes exist before using them
+            has_failures = hasattr(result, 'failures') and result.failures
+            has_errors = hasattr(result, 'errors') and result.errors
             
-            for error in result.errors:
-                if error[0] == self:
-                    # Update our tracking to mark the test as failed
-                    test_results[self.class_name]["methods"][self.test_name]["passed"] = False
-                    test_results[self.class_name]["passed"] = False
-                    has_test_failures = True
-                    break
+            if has_failures or has_errors:
+                # Check if this test specifically failed
+                if has_failures:
+                    for failure in result.failures:
+                        if failure[0] == self:
+                            # Update our tracking to mark the test as failed
+                            test_results[self.class_name]["methods"][self.test_name]["passed"] = False
+                            test_results[self.class_name]["passed"] = False
+                            has_test_failures = True
+                            break
+                
+                if has_errors:
+                    for error in result.errors:
+                        if error[0] == self:
+                            # Update our tracking to mark the test as failed
+                            test_results[self.class_name]["methods"][self.test_name]["passed"] = False
+                            test_results[self.class_name]["passed"] = False
+                            has_test_failures = True
+                            break
 
 def print_summary():
     """Print a summary of all test results"""
