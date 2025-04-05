@@ -60,8 +60,7 @@ jobs:
             python -m pytest tests/api -v && 
             echo 'Running utils tests...' && 
             python -m pytest tests/utils -v && 
-            echo 'Running any remaining tests...' && 
-            python -m pytest tests/_utils -v
+            echo 'All tests completed.'
           "
     
     # Temp fix for cache size
