@@ -1,9 +1,7 @@
 import sys
 import os
 import pandas as pd
-from datetime import datetime
 from pathlib import Path
-import json
 from sklearn.model_selection import ParameterGrid
 from backtests import backtest_runner
 from backtests.backtests.dt_tshaped import Strategy
@@ -32,9 +30,6 @@ class StrategyOptimizer:
         # Create results directory
         self.results_dir = Path("optimization_results")
         self.results_dir.mkdir(exist_ok=True)
-        
-        # Add timestamp for this optimization run
-        self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     
     def fit(self):
         """
@@ -43,10 +38,15 @@ class StrategyOptimizer:
         Returns:
             None: The function now just saves CSV files without returning results
         """
+        # First, run a baseline with original parameters
+        print("Running baseline with original parameters...")
+        original_params = self.strategy_class.parameters.copy()
+        self._evaluate_params(original_params, -1)  # Use -1 as index to indicate baseline
+        
         # Create a grid of all parameter combinations
         param_combinations = list(ParameterGrid(self.param_grid))
         
-        print(f"Testing {len(param_combinations)} parameter combinations")
+        print(f"\nTesting {len(param_combinations)} parameter combinations")
         print(f"Using default values from Strategy.parameters for unspecified parameters")
         print(f"CSV files will be saved to {self.results_dir}")
         
@@ -109,14 +109,18 @@ class StrategyOptimizer:
         Args:
             df: Either a single DataFrame or a dictionary of DataFrames (like reports)
             params (dict): Parameters used in this run
-            run_index (int): Index of this run
+            run_index (int): Index of this run (-1 for baseline)
         """
         # Create parameter dictionary for optimization params only and run_id
         params_for_df = {k: v for k, v in params.items() if k in self.param_grid}
-        run_id = f"run_{run_index + 1:03d}"
         
-        # Create parameter string for filenames
-        param_str = "_".join([f"{k}_{v}" for k, v in params_for_df.items()])
+        # Handle baseline run (run_index = -1)
+        if run_index == -1:
+            run_id = "baseline"
+            param_str = "original"
+        else:
+            run_id = f"run_{run_index + 1:03d}"
+            param_str = "_".join([f"{k}_{v}" for k, v in params_for_df.items()])
         
         if isinstance(df, dict):
             # If it's a dictionary, process each item

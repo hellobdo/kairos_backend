@@ -7,7 +7,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from backtests.backtest_runner import run_backtest, get_backtest_files_for_display
 from backtests.utils.backtest_data_to_db import insert_to_db
 
-def view_backtest_results():
+def main_page():
     
     st.title("Kairos")
     
@@ -157,4 +157,4 @@ def view_backtest_results():
             hide_index=True)
 
 if __name__ == "__main__":
-    view_backtest_results() 
+    main_page() 
