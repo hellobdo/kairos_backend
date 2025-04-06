@@ -123,6 +123,7 @@ def insert_backtest_info(settings_file):
               - stop_loss_rules
               - risk_reward
               - risk_per_trade
+              - out_before_end_of_day
               - backtest_name (extracted from filename)
     """
     try:
@@ -148,7 +149,8 @@ def insert_backtest_info(settings_file):
             'stop_loss': json.dumps(params.get('stop_loss_rules', [])),  # Convert list to JSON string
             'risk_reward': params.get('risk_reward'),
             'risk_per_trade': params.get('risk_per_trade'),
-            'source_file': source_file
+            'source_file': source_file,
+            'out_before_end_of_day': params.get('out_before_end_of_day')
         }])
         
     except Exception as e:
