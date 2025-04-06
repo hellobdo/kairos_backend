@@ -507,7 +507,18 @@ def run_report(df: pd.DataFrame, group_by: str) -> pd.DataFrame:
     # Reset index to make period a column
     result = result.reset_index().rename(columns={'index': 'period'})
 
-    
+    # Generate comparison data
+    comparison_data = generate_comparison_data(df, group_by)
+
+    # Extract just the periods and percentage returns from comparison data
+    spy_returns = comparison_data['SPY'][['period', 'perc_return']].rename(columns={'perc_return': 'spy_perc_return'})
+    qqq_returns = comparison_data['QQQ'][['period', 'perc_return']].rename(columns={'perc_return': 'qqq_perc_return'})
+
+    # First, merge with SPY returns
+    result = pd.merge(result, spy_returns, on='period', how='left')
+
+    # Then, merge with QQQ returns
+    result = pd.merge(result, qqq_returns, on='period', how='left')
     
     # Ensure columns are in the desired order
     column_order = [
@@ -526,10 +537,10 @@ def run_report(df: pd.DataFrame, group_by: str) -> pd.DataFrame:
     
     return result[column_order]
 
-def get_backtest_timeframe(df: pd.DataFrame) -> pd.DataFrame:
+def get_backtest_timeframe(df: pd.DataFrame) -> dict:
     """
     Get the date range for the backtest for filtering comparison data.
-    Returns all dates between the last business day before first trade and last trade end.
+    Finds the range from the last business day before first trade to last trade end.
     
     Parameters
     ----------
@@ -538,8 +549,8 @@ def get_backtest_timeframe(df: pd.DataFrame) -> pd.DataFrame:
         
     Returns
     -------
-    pd.DataFrame
-        DataFrame containing all dates between min and max trade dates
+    dict
+        Dictionary containing 'start_date' and 'end_date' for the backtest timeframe
     """
     # Make a copy to avoid modifying the original
     df = df.copy()
@@ -565,15 +576,15 @@ def get_backtest_timeframe(df: pd.DataFrame) -> pd.DataFrame:
     
     print(f"get_backtest_timeframe: Date range: {earliest_date} to {max_date}")
     
-    # Create a DatetimeIndex with all days between min and max dates (not just business days)
-    all_dates = pd.date_range(start=earliest_date, end=max_date)
-    print(f"get_backtest_timeframe: Generated {len(all_dates)} dates in date range")
-    
-    return pd.DataFrame({'date': all_dates})
+    # Return the start and end dates as a dictionary
+    return {
+        'start_date': earliest_date.strftime('%Y-%m-%d'),
+        'end_date': max_date.strftime('%Y-%m-%d')
+    }
 
-def generate_comparison_data(df: pd.DataFrame, group_by: str) -> tuple:
+def generate_comparison_data(df: pd.DataFrame, group_by: str, tickers: list[str] = ["SPY", "QQQ"]) -> dict:
     """
-    Generate comparison data for SPY and QQQ
+    Generate comparison data for market benchmarks.
     
     Parameters
     ----------
@@ -581,13 +592,42 @@ def generate_comparison_data(df: pd.DataFrame, group_by: str) -> tuple:
         DataFrame containing backtest data
     group_by : str
         Time period to group the data by ('day', 'week', 'month', 'year')
+    tickers : list[str], optional
+        List of ticker symbols to download data for, by default ["SPY", "QQQ"]
         
     Returns
     -------
-    tuple
-        Tuple containing (spy_df, qqq_df) with return data
+    dict
+        Dictionary with ticker symbols as keys and processed DataFrames as values
+        The DataFrames contain one row per period with the percentage return for that period
     """
     
+    # Get timeframe dictionary with start_date and end_date
+    timeframe = get_backtest_timeframe(df)
+    
+    # Adjust start date to be 30 days earlier to ensure we have data for calculating returns in the first period
+    adjusted_start_date = pd.to_datetime(timeframe['start_date']) - pd.Timedelta(days=30)
+    adjusted_start_date = adjusted_start_date.strftime('%Y-%m-%d')
+    
+    print(f"generate_comparison_data: Adjusted start date from {timeframe['start_date']} to {adjusted_start_date}")
+    
+    # Download data with adjusted start date
+    comparison_dict = download_data(tickers=tickers, start=adjusted_start_date, end=timeframe['end_date'])
+
+    # Process each ticker's data
+    for key in comparison_dict:
+        # Add period column
+        comparison_dict[key]['period'] = generate_periods(comparison_dict[key], group_by)
+        
+        # Calculate returns
+        comparison_dict[key] = calculate_returns_based_on_close(comparison_dict[key], group_by)
+        
+        # Group by period and keep only the last row per period
+        # (since all rows in a period have the same percentage return after calculate_returns_based_on_close)
+        # We use drop_duplicates instead of groupby to preserve the Total row
+        comparison_dict[key] = comparison_dict[key][['period', 'perc_return']].drop_duplicates(subset=['period'])
+    
+    return comparison_dict
 
 def calculate_returns_based_on_close(df: pd.DataFrame, group_by: str) -> pd.DataFrame:
     """
@@ -595,6 +635,7 @@ def calculate_returns_based_on_close(df: pd.DataFrame, group_by: str) -> pd.Data
     
     For daily returns: (current_close - previous_close) / previous_close
     For week/month/year: (period_last_close - previous_period_last_close) / previous_period_last_close
+    Also calculates total return from first to last date.
     
     Args:
         df: DataFrame with 'close' prices, 'date', 'ticker', and 'period' columns
@@ -605,3 +646,36 @@ def calculate_returns_based_on_close(df: pd.DataFrame, group_by: str) -> pd.Data
     """
     # Make a copy to avoid modifying the original
     df = df.copy()
+    
+    # Sort by date to ensure proper ordering
+    df = df.sort_values('date')
+    
+    # Calculate total return from first to last date
+    first_close = df['close'].iloc[0]
+    last_close = df['close'].iloc[-1]
+    total_return = (last_close - first_close) / first_close
+    
+    if group_by == 'day':
+        # For daily returns, simply calculate day-to-day percentage change
+        df['perc_return'] = df['close'].pct_change()
+    else:
+        # For other periods, we need to calculate returns between periods
+        # Get the last close price for each period
+        period_last_close = df.groupby('period')['close'].last()
+        
+        # Calculate period-to-period percentage change
+        period_returns = period_last_close.pct_change()
+        
+        # Map the period returns back to the original DataFrame
+        # Each row in a period gets the same period return value
+        df['perc_return'] = df['period'].map(period_returns)
+    
+    # Create a total row
+    total_row = df.iloc[-1].copy()
+    total_row['period'] = 'Total'
+    total_row['perc_return'] = total_return
+    
+    # Append the total row to the DataFrame
+    df = pd.concat([df, pd.DataFrame([total_row])], ignore_index=True)
+    
+    return df
