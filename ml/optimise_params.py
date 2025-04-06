@@ -169,7 +169,12 @@ def main():
 
     # Define parameters to optimize
     param_grid = {
-        'risk_reward': [1.5],
+        'stop_loss_rules': [
+            [{"price_above": 150, "amount": 0.20}],
+            [{"price_above": 150, "amount": 0.30}],
+            [{"price_above": 150, "amount": 0.40}],
+            [{"price_above": 150, "amount": 0.50}],
+        ]
     }
     
     # Create and run optimizer

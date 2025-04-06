@@ -53,6 +53,49 @@ def load_optimization_results():
     
     return result_groups
 
+def extract_parameter_info(results, run_id):
+    """
+    Extract and format parameter information from a run's results
+    
+    Args:
+        results: Dictionary containing all optimization results
+        run_id: The run ID to extract parameters for
+        
+    Returns:
+        Formatted parameter string
+    """
+    param_info = ""
+    if run_id in results and run_id.startswith("run_"):
+        # Check if "params" column exists in any of the DataFrames
+        for data_type in results[run_id]:
+            if isinstance(results[run_id][data_type], pd.DataFrame) and 'params' in results[run_id][data_type].columns:
+                params_str = str(results[run_id][data_type]['params'].iloc[0])
+                
+                # Try to parse the params string into a cleaner format
+                try:
+                    # Remove the curly braces
+                    params_str = params_str.strip('{}')
+                    
+                    # Split by comma and clean up each key-value pair
+                    param_parts = []
+                    for part in params_str.split(','):
+                        if ':' in part:
+                            key, value = part.split(':', 1)
+                            key = key.strip().strip("'\"")
+                            value = value.strip().strip("'\"")
+                            param_parts.append(f"{key}: {value}")
+                    
+                    # Join the cleaned parts
+                    if param_parts:
+                        param_info = ", ".join(param_parts)
+                except Exception:
+                    # If parsing fails, just use the original string
+                    param_info = params_str
+                
+                break
+    
+    return param_info
+
 def main_page():
     st.title("Kairos")
     
@@ -83,13 +126,32 @@ def main_page():
         if not run_ids:
             st.warning("No optimization runs found to compare with baseline.")
         else:
+            # Sort run IDs alphabetically
+            run_ids.sort()
+            
+            # Create a list of display names with parameters
+            run_display_options = []
+            run_id_to_display_map = {}
+            
+            for run_id in run_ids:
+                # Get parameter info for this run
+                param_info = extract_parameter_info(results, run_id)
+                
+                # Create a display option with run_id and parameters
+                display_option = f"{run_id} | {param_info}" if param_info else run_id
+                run_display_options.append(display_option)
+                run_id_to_display_map[display_option] = run_id
+            
             # Create a selectbox to choose which run to compare with baseline
-            selected_run = st.selectbox(
+            selected_display_option = st.selectbox(
                 "Select optimization run to compare with baseline:",
-                run_ids,
+                run_display_options,
                 index=0,
-                key="run_selection"
+                key="run_display_selection"
             )
+            
+            # Get the actual run_id from the selected display option
+            selected_run = run_id_to_display_map[selected_display_option]
             
             # Check if baseline exists
             if "baseline" not in results:
@@ -195,36 +257,8 @@ def main_page():
 
 def show_comparison(baseline_results, comparison_results, comparison_name):
     """Show side-by-side comparison of baseline and selected optimization results"""
-    # Extract parameter information from file name if available
-    param_info = ""
-    if comparison_name.startswith("run_"):
-        # Check if "params" column exists in any of the DataFrames
-        for data_type in comparison_results:
-            if isinstance(comparison_results[data_type], pd.DataFrame) and 'params' in comparison_results[data_type].columns:
-                params_str = str(comparison_results[data_type]['params'].iloc[0])
-                
-                # Try to parse the params string into a cleaner format
-                try:
-                    # Remove the curly braces
-                    params_str = params_str.strip('{}')
-                    
-                    # Split by comma and clean up each key-value pair
-                    param_parts = []
-                    for part in params_str.split(','):
-                        if ':' in part:
-                            key, value = part.split(':', 1)
-                            key = key.strip().strip("'\"")
-                            value = value.strip().strip("'\"")
-                            param_parts.append(f"{key}: {value}")
-                    
-                    # Join the cleaned parts
-                    if param_parts:
-                        param_info = ", ".join(param_parts)
-                except Exception:
-                    # If parsing fails, just use the original string
-                    param_info = params_str
-                
-                break
+    # Get parameter info
+    param_info = extract_parameter_info({'comparison_name': comparison_results}, 'comparison_name')
     
     st.header(f"Comparing Baseline vs {comparison_name}")
     
