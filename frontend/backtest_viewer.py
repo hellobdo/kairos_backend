@@ -4,10 +4,10 @@ import os
 
 # Add the project root to Python path
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-from backtests.backtest_runner import run_backtest, get_backtest_files_for_display, get_latest_trades_files
+from backtests.backtest_runner import run_backtest, get_backtest_files_for_display
 from backtests.utils.backtest_data_to_db import insert_to_db
 
-def view_backtest_results():
+def main_page():
     
     st.title("Kairos")
     
@@ -17,19 +17,15 @@ def view_backtest_results():
     # Load the latest trades and reports if not already in session state
     if 'executions_df' not in st.session_state or 'trades_df' not in st.session_state or 'reports' not in st.session_state:
         try:
-            latest_executions_csv = get_latest_trades_files()
-            if latest_executions_csv is None:
-                st.warning("No previous backtest results found")
+            executions_df, trades_df, reports = run_backtest(backtest=False)
+            if executions_df is None:
+                st.error("Loading latest backtest results failed!")
             else:
-                executions_df, trades_df, reports = run_backtest(latest_executions_csv, backtest=False)
-                if executions_df is None:
-                    st.error("Loading latest backtest results failed!")
-                else:
-                    # Store in session state
-                    st.session_state['executions_df'] = executions_df
-                    st.session_state['trades_df'] = trades_df
-                    st.session_state['reports'] = reports
-                    st.info("Loaded latest backtest results")
+                # Store in session state
+                st.session_state['executions_df'] = executions_df
+                st.session_state['trades_df'] = trades_df
+                st.session_state['reports'] = reports
+                st.info("Loaded latest backtest results")
         except Exception as e:
             st.warning(f"Could not load latest backtest results: {str(e)}")
     
@@ -161,4 +157,4 @@ def view_backtest_results():
             hide_index=True)
 
 if __name__ == "__main__":
-    view_backtest_results() 
+    main_page() 
