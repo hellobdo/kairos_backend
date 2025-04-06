@@ -42,6 +42,7 @@ myenv/
 *.log 
 logs/
 indicators/examples/
+machine_learning/optimization_results/
 
 # Data
 *.csv

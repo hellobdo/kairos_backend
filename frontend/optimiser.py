@@ -5,9 +5,10 @@ import glob
 import pandas as pd
 
 def load_optimization_results():
-    """Load optimization results from the optimization_results directory"""
-    # Find all CSV files in the optimization_results directory
-    optimization_dir = os.path.join(os.getcwd(), "optimization_results")
+    """Load optimization results from the ml/optimization_results directory"""
+    # Find all CSV files in the ml/optimization_results directory
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    optimization_dir = os.path.join(project_root, "ml", "optimization_results")
     if not os.path.exists(optimization_dir):
         return None
         

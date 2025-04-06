@@ -28,7 +28,7 @@ class StrategyOptimizer:
         self.param_grid = param_grid
         
         # Create results directory
-        self.results_dir = Path("optimization_results")
+        self.results_dir = Path(__file__).parent / "optimization_results"
         self.results_dir.mkdir(exist_ok=True)
     
     def fit(self):
