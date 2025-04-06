@@ -29,7 +29,6 @@ class Strategy(BaseStrategy):
         "data_source": data_source,
         "out_before_end_of_day": True,
         "stop_loss_rules": [
-            {"price_below": 150, "amount": 0.30},
             {"price_above": 150, "amount": 1.00}
         ]
     }
