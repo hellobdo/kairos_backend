@@ -79,12 +79,13 @@ def get_latest_trades_files():
         print(f"Error finding latest files: {str(e)}")
         return None
 
-def run_backtest(file_path, backtest=False):
+def run_backtest(file_path=None, backtest=False):
     """
     Run a backtest file and process its results.
     
     Args:
-        file_path (str): Path to the Python file containing the Strategy class
+        file_path (str, optional): Path to the Python file containing the Strategy class. 
+                                   Required only if backtest=True.
         backtest (bool): Whether to run the backtest or not
     Returns:
         tuple: (executions_df, trades_df, reports) containing the processed data and reports
@@ -92,6 +93,9 @@ def run_backtest(file_path, backtest=False):
     trades_file = None
     
     if backtest:
+        if file_path is None:
+            raise ValueError("file_path is required when backtest=True")
+            
         try:
             # Convert file path to module path (e.g. backtests/backtests/dt-tshaped.py -> backtests.backtests.dt_tshaped)
             rel_path = os.path.relpath(file_path)
@@ -102,33 +106,31 @@ def run_backtest(file_path, backtest=False):
             if result.returncode != 0:
                 raise Exception(f"Backtest failed with return code {result.returncode}")
             
+        except Exception as e:
+            print(f"Error in backtest pipeline: {str(e)}")
+            return None, None, None
+    else:
+        
+        try:
             # Get latest files
             trades_file = get_latest_trades_files()
             if not trades_file:
                 raise Exception("Could not find output files after running backtest")
             
-        except Exception as e:
-            print(f"Error in backtest pipeline: {str(e)}")
-            return None, None, None
-    else:
-        # When not running a backtest, use the provided file path directly
-        trades_file = file_path
-        
-    try:
-        # Process the trades file
-        executions_df, trades_df = process_data(trades_file)
-        if executions_df is None or trades_df is None:
-            raise Exception("Failed to process backtest data")
-            
-        # Generate reports
-        reports = generate_reports(trades_df)
-        if not reports:
-            raise Exception("Failed to generate reports")
+            # Process the trades file
+            executions_df, trades_df = process_data(trades_file)
+            if executions_df is None or trades_df is None:
+                raise Exception("Failed to process backtest data")
                 
-        return executions_df, trades_df, reports
-    except Exception as e:
-        print(f"Error processing results: {str(e)}")
-        return None, None, None
+            # Generate reports
+            reports = generate_reports(trades_df)
+            if not reports:
+                raise Exception("Failed to generate reports")
+                    
+            return executions_df, trades_df, reports
+        except Exception as e:
+            print(f"Error processing results: {str(e)}")
+            return None, None, None
 
 def generate_reports(trades_df):
     """
