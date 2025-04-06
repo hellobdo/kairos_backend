@@ -37,18 +37,18 @@ def prepare_data(df: pd.DataFrame) -> pd.DataFrame:
         
         # Create a new DataFrame with proper column names
         new_df = pd.DataFrame()
-        new_df['Open'] = df[('Open', symbol)] if symbol else df['Open']
-        new_df['High'] = df[('High', symbol)] if symbol else df['High']
-        new_df['Low'] = df[('Low', symbol)] if symbol else df['Low']
-        new_df['Close'] = df[('Close', symbol)] if symbol else df['Close']
-        new_df['Volume'] = df[('Volume', symbol)] if symbol else df['Volume']
+        new_df['open'] = df[('open', symbol)] if symbol else df['open']
+        new_df['high'] = df[('high', symbol)] if symbol else df['high']
+        new_df['low'] = df[('low', symbol)] if symbol else df['low']
+        new_df['close'] = df[('close', symbol)] if symbol else df['close']
+        new_df['volume'] = df[('volume', symbol)] if symbol else df['volume']
         # Set the index to match the original dataframe
         new_df.index = df.index
         return new_df
     
     # Create case-insensitive column mapping
     column_mapping = {}
-    expected_columns = {'Open', 'High', 'Low', 'Close', 'Volume'}
+    expected_columns = {'open', 'high', 'low', 'close', 'volume'}
     
     # Create mapping for both lowercase and original columns
     for col in df.columns:
@@ -113,11 +113,11 @@ def plot_candlestick_window(
         if isinstance(window_df.columns, pd.MultiIndex):
             # Create a mapping of OHLCV columns
             col_map = {
-                'Open': ('Open', window_df.columns.levels[1][0]),
-                'High': ('High', window_df.columns.levels[1][0]),
-                'Low': ('Low', window_df.columns.levels[1][0]),
-                'Close': ('Close', window_df.columns.levels[1][0]),
-                'Volume': ('Volume', window_df.columns.levels[1][0])
+                'open': ('open', window_df.columns.levels[1][0]),
+                'high': ('high', window_df.columns.levels[1][0]),
+                'low': ('low', window_df.columns.levels[1][0]),
+                'close': ('close', window_df.columns.levels[1][0]),
+                'volume': ('volume', window_df.columns.levels[1][0])
             }
             
             # Create a new DataFrame with flattened columns
@@ -127,7 +127,7 @@ def plot_candlestick_window(
         else:
             # Create a new DataFrame with numeric columns
             plot_df = pd.DataFrame(index=window_df.index)
-            for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
+            for col in ['open', 'high', 'low', 'close', 'volume']:
                 plot_df[col] = pd.to_numeric(window_df[col], errors='coerce')
         
         # Ensure output directory exists
@@ -166,8 +166,8 @@ def plot_candlestick_window(
         
         if annotation:
             # Calculate position for annotation
-            price_range = plot_df['High'].max() - plot_df['Low'].min()
-            annotation_y = plot_df.loc[target_idx, 'High'] + price_range * 0.02
+            price_range = plot_df['high'].max() - plot_df['low'].min()
+            annotation_y = plot_df.loc[target_idx, 'high'] + price_range * 0.02
             
             # Add annotation with arrow
             ax.annotate(
