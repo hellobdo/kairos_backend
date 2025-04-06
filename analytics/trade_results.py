@@ -507,17 +507,7 @@ def run_report(df: pd.DataFrame, group_by: str) -> pd.DataFrame:
     # Reset index to make period a column
     result = result.reset_index().rename(columns={'index': 'period'})
 
-    # Generate comparison data
-    comparison_data = generate_comparison_data(df, group_by)
     
-    spy_df = comparison_data['SPY']
-    spy_returns = spy_df.groupby('period')['perc_return'].sum().to_dict()
-    qqq_df = comparison_data['QQQ']
-    qqq_returns = qqq_df.groupby('period')['perc_return'].sum().to_dict()
-    
-    # Add SPY and QQQ returns to result DataFrame
-    result['spy_perc_return'] = result['period'].map(spy_returns)
-    result['qqq_perc_return'] = result['period'].map(qqq_returns)
     
     # Ensure columns are in the desired order
     column_order = [
@@ -538,7 +528,8 @@ def run_report(df: pd.DataFrame, group_by: str) -> pd.DataFrame:
 
 def get_backtest_timeframe(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Get the unique dates from the backtest for filtering comparison data.
+    Get the date range for the backtest for filtering comparison data.
+    Returns all dates between the last business day before first trade and last trade end.
     
     Parameters
     ----------
@@ -548,32 +539,39 @@ def get_backtest_timeframe(df: pd.DataFrame) -> pd.DataFrame:
     Returns
     -------
     pd.DataFrame
-        DataFrame containing only the unique dates from the backtest
+        DataFrame containing all dates between min and max trade dates
     """
     # Make a copy to avoid modifying the original
     df = df.copy()
-    
     print(f"get_backtest_timeframe: DataFrame shape: {df.shape}")
     print(f"get_backtest_timeframe: Columns available: {df.columns.tolist()}")
     
-    # Extract unique dates from the DataFrame
-    if 'start_date' in df.columns:
-        print(f"get_backtest_timeframe: Found 'start_date' column with {df['start_date'].count()} non-null values")
-        print(f"get_backtest_timeframe: Sample values: {df['start_date'].head().tolist()}")
-        
-        # Make sure dates are in datetime format
-        dates = pd.to_datetime(df['start_date']).unique()
-        print(f"get_backtest_timeframe: Extracted {len(dates)} unique dates")
-        if len(dates) > 0:
-            print(f"get_backtest_timeframe: First few dates: {dates[:5]}")
-            
-        return pd.DataFrame({'date': dates})
-    else:
-        print("get_backtest_timeframe: ERROR - 'start_date' column not found!")
-        available_cols = ", ".join(df.columns.tolist())
-        raise ValueError(f"DataFrame must contain 'start_date' column. Available columns: {available_cols}")
+    # Extract date range from the DataFrame
+    print(f"get_backtest_timeframe: Found 'start_date' column with {df['start_date'].count()} non-null values")
+    
+    # Convert dates to datetime
+    start_dates = pd.to_datetime(df['start_date'])
+    min_trade_date = start_dates.min()
+    
+    # Create business day range ending exactly at min_trade_date with one extra day before
+    # This gives us exactly the previous business day
+    earliest_date = pd.bdate_range(end=min_trade_date, periods=2)[0]
+    print(f"get_backtest_timeframe: Original min date: {min_trade_date}, Previous business day: {earliest_date}")
+    
+    # Get the max date from either end_date or start_date
+    end_dates = pd.to_datetime(df['end_date'], errors='coerce')
+    # Use max of valid end dates and start dates
+    max_date = max(start_dates.max(), end_dates.max()) if not end_dates.isna().all() else start_dates.max()
+    
+    print(f"get_backtest_timeframe: Date range: {earliest_date} to {max_date}")
+    
+    # Create a DatetimeIndex with all days between min and max dates (not just business days)
+    all_dates = pd.date_range(start=earliest_date, end=max_date)
+    print(f"get_backtest_timeframe: Generated {len(all_dates)} dates in date range")
+    
+    return pd.DataFrame({'date': all_dates})
 
-def generate_comparison_data(df: pd.DataFrame, group_by: str) -> dict:
+def generate_comparison_data(df: pd.DataFrame, group_by: str) -> tuple:
     """
     Generate comparison data for SPY and QQQ
     
@@ -586,114 +584,24 @@ def generate_comparison_data(df: pd.DataFrame, group_by: str) -> dict:
         
     Returns
     -------
-    dict
-        Dictionary containing returns for SPY and QQQ
+    tuple
+        Tuple containing (spy_df, qqq_df) with return data
     """
-    # Get market data and backtest dates
-    print("Calling download_data()...")
-    data_dict = download_data()
-    print(f"Downloaded data for tickers: {list(data_dict.keys())}")
     
-    print("Getting backtest timeframe...")
-    unique_dates = get_backtest_timeframe(df)
-    
-    unique_dates['date'] = pd.to_datetime(unique_dates['date']).dt.strftime('%Y-%m-%d')
-    
-    returns = {}
 
-    # Process each ticker's data
-    for ticker, ticker_df in data_dict.items():
-        ticker_df['date'] = pd.to_datetime(ticker_df['date']).dt.strftime('%Y-%m-%d')
-        
-        filtered_df = ticker_df[ticker_df['date'].isin(unique_dates['date'])]
-        
-        # Create a copy to avoid SettingWithCopyWarning
-        filtered_df = filtered_df.copy()
-            
-        # Add period column
-        try:
-            filtered_df['period'] = generate_periods(filtered_df, group_by)
-        except Exception as e:
-            print(f"Error generating periods: {str(e)}")
-            print(f"DataFrame columns: {filtered_df.columns.tolist()}")
-            continue
-            
-        # Calculate returns
-        try:
-            print("Calculating returns...")
-            returns_df = calculate_returns_based_on_close_and_open(filtered_df, group_by)
-            print(f"Returns calculated for {ticker}")
-        except Exception as e:
-            print(f"Error calculating returns: {str(e)}")
-            continue
-        
-        # Store in dictionary
-        returns[ticker] = returns_df
-    
-    print(f"Completed generate_comparison_data, returns contain data for: {list(returns.keys())}")
-    return returns
-
-
-def calculate_returns_based_on_close_and_open(df: pd.DataFrame, group_by: str) -> pd.DataFrame:
+def calculate_returns_based_on_close(df: pd.DataFrame, group_by: str) -> pd.DataFrame:
     """
-    Calculate the returns based on the first open and last close price in each period.
-    Also adds a 'Total' row with the performance from first date to last date.
+    Calculate returns based on closing prices.
+    
+    For daily returns: (current_close - previous_close) / previous_close
+    For week/month/year: (period_last_close - previous_period_last_close) / previous_period_last_close
     
     Args:
-        df: DataFrame with 'open', 'close' prices and 'period' column
+        df: DataFrame with 'close' prices, 'date', 'ticker', and 'period' columns
         group_by: String indicating the time period ('day', 'week', 'month', 'year')
     
     Returns:
         DataFrame with percentage returns for each period, including a 'Total' row
     """
-    if group_by == 'day':
-        # For daily returns, use the daily open and close directly
-        df['perc_return'] = (df['close'] - df['open']) / df['open']
-        result_df = df.copy()
-    else:
-        # For week, month, year: group by period and calculate return using
-        # first open and last close of each period
-        try:
-            result_df = df.groupby(['ticker', 'period']).agg({
-                'open': 'first',  # First open price of the period
-                'close': 'last',  # Last close price of the period
-                'date': 'first',  # Keep the first date for reference
-            }).reset_index()
-            
-            # Calculate percentage return for each period
-            result_df['perc_return'] = (result_df['close'] - result_df['open']) / result_df['open']
-        except Exception as e:
-            print(f"Error in aggregation: {str(e)}")
-            print(f"Available columns: {df.columns.tolist()}")
-            print(f"First few rows: {df.head().to_dict()}")
-            raise
-
-    # Add a 'Total' row using first open and last close across all dates
-    try:
-        if len(df) > 0:
-            # Sort by date to get first and last point
-            sorted_df = df.sort_values('date')
-            
-            # Get the very first open price
-            first_open = sorted_df['open'].iloc[0]
-            
-            # Get the very last close price
-            last_close = sorted_df['close'].iloc[-1]
-            
-            # Calculate total return
-            total_return = (last_close - first_open) / first_open
-            
-            # Create a Total row with only essential columns
-            total_row = pd.DataFrame([{
-                'period': 'Total',
-                'perc_return': total_return
-            }])
-            
-            # Append total row to result
-            result_df = pd.concat([result_df, total_row], ignore_index=True)
-    except Exception as e:
-        print(f"Error calculating total return: {str(e)}")
-        # Silently fail for total calculation
-
-    
-    return result_df
+    # Make a copy to avoid modifying the original
+    df = df.copy()

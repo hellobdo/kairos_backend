@@ -2,239 +2,279 @@ import unittest
 import pandas as pd
 import numpy as np
 from tests._utils.test_utils import BaseTestCase, print_summary
-from analytics.trade_results import calculate_returns_based_on_close_and_open
+from analytics.trade_results import get_backtest_timeframe
 
-class TestCalculateReturnsBasedOnCloseAndOpen(BaseTestCase):
-    """Test cases for calculate_returns_based_on_close_and_open function"""
+
+class TestGetBacktestTimeframe(BaseTestCase):
+    """Tests for the get_backtest_timeframe function"""
     
-    def test_daily_returns(self):
-        """Test calculation of daily returns"""
-        # Capture stdout to suppress function output during testing
+    @classmethod
+    def tearDownClass(cls):
+        """Print summary after all tests have completed"""
+        print_summary()
+    
+    def test_basic_functionality(self):
+        """Test that function generates correct date range from earliest start date to latest end date"""
+        # Create sample data
+        data = {
+            'start_date': ['2023-01-05', '2023-01-10'],
+            'end_date': ['2023-01-20', '2023-01-15']
+        }
+        df = pd.DataFrame(data)
+        
+        # Capture stdout to check logging statements
         original_stdout = self.capture_stdout()
         
-        # Create test data for daily returns
-        df = pd.DataFrame({
-            'ticker': ['SPY', 'SPY', 'QQQ', 'QQQ'],
-            'date': ['2023-01-01', '2023-01-02', '2023-01-01', '2023-01-02'],
-            'open': [100.0, 102.0, 300.0, 305.0],
-            'close': [101.0, 104.0, 305.0, 310.0],
-            'period': ['2023-01-01', '2023-01-02', '2023-01-01', '2023-01-02']
-        })
-        
-        # Calculate returns
-        result = calculate_returns_based_on_close_and_open(df, 'day')
-        
-        # Restore stdout
-        self.restore_stdout(original_stdout)
-        
-        # Check that the result is a DataFrame
-        self.assertIsInstance(result, pd.DataFrame)
-        
-        # Check that perc_return is calculated correctly for each row
-        expected_returns = [(101.0 - 100.0) / 100.0, (104.0 - 102.0) / 102.0, 
-                            (305.0 - 300.0) / 300.0, (310.0 - 305.0) / 305.0]
-        for i, expected in enumerate(expected_returns):
-            self.assertAlmostEqual(result.iloc[i]['perc_return'], expected)
+        try:
+            # Call function
+            result = get_backtest_timeframe(df)
             
-        # Check that a Total row was added
-        self.assertIn('Total', result['period'].values)
-        
-        # Validate Total calculation (first open to last close for each ticker)
-        total_row_spy = result[(result['period'] == 'Total')].iloc[0]
-        self.log_case_result('Daily returns calculation', True)
-    
-    def test_weekly_returns(self):
-        """Test calculation of weekly returns"""
-        # Capture stdout to suppress function output during testing
-        original_stdout = self.capture_stdout()
-        
-        # Create test data for weekly returns
-        df = pd.DataFrame({
-            'ticker': ['SPY', 'SPY', 'SPY', 'QQQ', 'QQQ', 'QQQ'],
-            'date': ['2023-01-02', '2023-01-03', '2023-01-04', '2023-01-02', '2023-01-03', '2023-01-04'],
-            'open': [100.0, 101.0, 102.0, 300.0, 305.0, 310.0],
-            'close': [101.0, 102.0, 104.0, 305.0, 310.0, 315.0],
-            'period': ['2023-W01', '2023-W01', '2023-W01', '2023-W01', '2023-W01', '2023-W01']
-        })
-        
-        # Calculate returns
-        result = calculate_returns_based_on_close_and_open(df, 'week')
-        
-        # Restore stdout
-        self.restore_stdout(original_stdout)
-        
-        # Check that the result aggregates by ticker and period
-        self.assertEqual(len(result[result['period'] != 'Total']), 2)  # One row per ticker
-        
-        # Check that first open and last close are used
-        spy_row = result[(result['ticker'] == 'SPY') & (result['period'] == '2023-W01')].iloc[0]
-        self.assertEqual(spy_row['open'], 100.0)  # First open of the week
-        self.assertEqual(spy_row['close'], 104.0)  # Last close of the week
-        
-        # Check perc_return calculation for the period
-        expected_spy_return = (104.0 - 100.0) / 100.0
-        self.assertAlmostEqual(spy_row['perc_return'], expected_spy_return)
-        
-        # Check QQQ row
-        qqq_row = result[(result['ticker'] == 'QQQ') & (result['period'] == '2023-W01')].iloc[0]
-        expected_qqq_return = (315.0 - 300.0) / 300.0
-        self.assertAlmostEqual(qqq_row['perc_return'], expected_qqq_return)
-        
-        # Check Total rows
-        self.assertIn('Total', result['period'].values)
-        self.log_case_result('Weekly returns calculation', True)
-    
-    def test_monthly_returns(self):
-        """Test calculation of monthly returns"""
-        # Capture stdout to suppress function output during testing
-        original_stdout = self.capture_stdout()
-        
-        # Create test data for monthly returns
-        df = pd.DataFrame({
-            'ticker': ['SPY', 'SPY', 'SPY', 'QQQ', 'QQQ', 'QQQ'],
-            'date': ['2023-01-02', '2023-01-15', '2023-01-30', '2023-01-02', '2023-01-15', '2023-01-30'],
-            'open': [100.0, 105.0, 110.0, 300.0, 310.0, 320.0],
-            'close': [105.0, 110.0, 115.0, 310.0, 320.0, 330.0],
-            'period': ['2023-01', '2023-01', '2023-01', '2023-01', '2023-01', '2023-01']
-        })
-        
-        # Calculate returns
-        result = calculate_returns_based_on_close_and_open(df, 'month')
-        
-        # Restore stdout
-        self.restore_stdout(original_stdout)
-        
-        # Check that the result aggregates by ticker and period
-        self.assertEqual(len(result[result['period'] != 'Total']), 2)  # One row per ticker per month
-        
-        # Check that first open and last close are used
-        spy_row = result[(result['ticker'] == 'SPY') & (result['period'] == '2023-01')].iloc[0]
-        self.assertEqual(spy_row['open'], 100.0)  # First open of the month
-        self.assertEqual(spy_row['close'], 115.0)  # Last close of the month
-        
-        # Check perc_return calculation for the period
-        expected_spy_return = (115.0 - 100.0) / 100.0
-        self.assertAlmostEqual(spy_row['perc_return'], expected_spy_return)
-        
-        self.log_case_result('Monthly returns calculation', True)
-    
-    def test_yearly_returns(self):
-        """Test calculation of yearly returns"""
-        # Capture stdout to suppress function output during testing
-        original_stdout = self.capture_stdout()
-        
-        # Create test data for yearly returns
-        df = pd.DataFrame({
-            'ticker': ['SPY', 'SPY', 'SPY', 'QQQ', 'QQQ', 'QQQ'],
-            'date': ['2023-01-02', '2023-06-15', '2023-12-30', '2023-01-02', '2023-06-15', '2023-12-30'],
-            'open': [100.0, 110.0, 120.0, 300.0, 330.0, 360.0],
-            'close': [110.0, 120.0, 130.0, 330.0, 360.0, 390.0],
-            'period': ['2023', '2023', '2023', '2023', '2023', '2023']
-        })
-        
-        # Calculate returns
-        result = calculate_returns_based_on_close_and_open(df, 'year')
-        
-        # Restore stdout
-        self.restore_stdout(original_stdout)
-        
-        # Check that the result aggregates by ticker and period
-        self.assertEqual(len(result[result['period'] != 'Total']), 2)  # One row per ticker per year
-        
-        # Check that first open and last close are used
-        spy_row = result[(result['ticker'] == 'SPY') & (result['period'] == '2023')].iloc[0]
-        self.assertEqual(spy_row['open'], 100.0)  # First open of the year
-        self.assertEqual(spy_row['close'], 130.0)  # Last close of the year
-        
-        # Check perc_return calculation for the period
-        expected_spy_return = (130.0 - 100.0) / 100.0
-        self.assertAlmostEqual(spy_row['perc_return'], expected_spy_return)
-        
-        self.log_case_result('Yearly returns calculation', True)
+            # Verify results
+            self.assertIsInstance(result, pd.DataFrame)
+            self.assertTrue('date' in result.columns)
+            
+            # Check date range
+            # The expected start date should be the business day before min(start_date)
+            # Finding the expected start date manually
+            expected_start_date = pd.bdate_range(end=pd.Timestamp('2023-01-05'), periods=2)[0]
+            expected_end_date = pd.Timestamp('2023-01-20')
+            
+            # Get actual date range
+            min_date = result['date'].min()
+            max_date = result['date'].max()
+            
+            self.assertEqual(min_date, expected_start_date)
+            self.assertEqual(max_date, expected_end_date)
+            
+            # Check that all dates are included, not just business days
+            self.assertEqual(len(result), (expected_end_date - expected_start_date).days + 1)
+            
+            # Check output logging
+            output = self.captured_output.get_value()
+            self.assertIn("Date range:", output)
+            self.assertIn("Generated", output)
+            
+            self.log_case_result("Date range test", True)
+        except Exception as e:
+            self.log_case_result("Date range test", False)
+            raise e
+        finally:
+            self.restore_stdout(original_stdout)
     
     def test_empty_dataframe(self):
-        """Test handling of empty dataframe"""
-        # Capture stdout to suppress function output during testing
-        original_stdout = self.capture_stdout()
+        """Test behavior with empty DataFrame"""
+        df = pd.DataFrame(columns=['start_date', 'end_date'])
         
-        # Create empty dataframe with required columns
-        df = pd.DataFrame(columns=['ticker', 'date', 'open', 'close', 'period'])
-        
-        # Calculate returns
-        result = calculate_returns_based_on_close_and_open(df, 'day')
-        
-        # Restore stdout
-        self.restore_stdout(original_stdout)
-        
-        # Check that the result is a DataFrame
-        self.assertIsInstance(result, pd.DataFrame)
-        
-        # Check that the result is empty
-        self.assertEqual(len(result), 0)
-        
-        self.log_case_result('Empty dataframe handling', True)
+        try:
+            # This should raise an exception since there are no dates
+            with self.assertRaises(Exception):
+                get_backtest_timeframe(df)
+            
+            self.log_case_result("Empty DataFrame test", True)
+        except Exception as e:
+            self.log_case_result("Empty DataFrame test", False)
+            raise e
     
-    def test_missing_columns(self):
-        """Test error handling when required columns are missing"""
-        # Capture stdout to suppress function output during testing
+    def test_missing_end_dates(self):
+        """Test when all end dates are NaN"""
+        data = {
+            'start_date': ['2023-01-05', '2023-01-10'],
+            'end_date': [None, None]
+        }
+        df = pd.DataFrame(data)
+        
+        # Capture stdout
         original_stdout = self.capture_stdout()
         
-        # Create dataframe with missing columns
-        df = pd.DataFrame({
-            'ticker': ['SPY', 'QQQ'],
-            'date': ['2023-01-01', '2023-01-01']
-            # Missing 'open' and 'close'
-        })
-        
-        # Check that function raises an error
-        with self.assertRaises(Exception):
-            calculate_returns_based_on_close_and_open(df, 'day')
-        
-        # Restore stdout
-        self.restore_stdout(original_stdout)
-        
-        self.log_case_result('Missing columns error handling', True)
+        try:
+            result = get_backtest_timeframe(df)
+            
+            # Verify max date is max of start dates
+            expected_start_date = pd.bdate_range(end=pd.Timestamp('2023-01-05'), periods=2)[0]
+            expected_end_date = pd.Timestamp('2023-01-10')
+            
+            min_date = result['date'].min()
+            max_date = result['date'].max()
+            
+            self.assertEqual(min_date, expected_start_date)
+            self.assertEqual(max_date, expected_end_date)
+            
+            # Verify logging message about end dates
+            output = self.captured_output.get_value()
+            self.log_case_result("Missing end dates test", True)
+        except Exception as e:
+            self.log_case_result("Missing end dates test", False)
+            raise e
+        finally:
+            self.restore_stdout(original_stdout)
     
-    def test_total_row_calculation(self):
-        """Test that the Total row calculation is correct"""
-        # Capture stdout to suppress function output during testing
+    def test_single_date(self):
+        """Test with only one date in the input"""
+        data = {
+            'start_date': ['2023-01-05'],
+            'end_date': ['2023-01-05']
+        }
+        df = pd.DataFrame(data)
+        
         original_stdout = self.capture_stdout()
         
-        # Create test data with specific values to test Total row
-        df = pd.DataFrame({
-            'ticker': ['SPY', 'SPY', 'SPY'],
-            'date': ['2023-01-01', '2023-01-02', '2023-01-03'],
-            'open': [100.0, 105.0, 110.0],
-            'close': [105.0, 110.0, 120.0],
-            'period': ['2023-01-01', '2023-01-02', '2023-01-03']
-        })
+        try:
+            result = get_backtest_timeframe(df)
+            
+            # The timeframe should include the previous business day plus the date itself
+            expected_start_date = pd.bdate_range(end=pd.Timestamp('2023-01-05'), periods=2)[0]
+            expected_end_date = pd.Timestamp('2023-01-05')
+            
+            min_date = result['date'].min()
+            max_date = result['date'].max()
+            
+            self.assertEqual(min_date, expected_start_date)
+            self.assertEqual(max_date, expected_end_date)
+            self.assertEqual(len(result), 2)  # Should have 2 dates (the start date and end date)
+            
+            self.log_case_result("Single date test", True)
+        except Exception as e:
+            self.log_case_result("Single date test", False)
+            raise e
+        finally:
+            self.restore_stdout(original_stdout)
+    
+    def test_start_equals_end(self):
+        """Test when earliest date equals max date"""
+        data = {
+            'start_date': ['2023-01-05', '2023-01-05'],
+            'end_date': ['2023-01-05', '2023-01-05']
+        }
+        df = pd.DataFrame(data)
         
-        # Calculate returns
-        result = calculate_returns_based_on_close_and_open(df, 'day')
+        original_stdout = self.capture_stdout()
         
-        # Restore stdout
-        self.restore_stdout(original_stdout)
+        try:
+            result = get_backtest_timeframe(df)
+            
+            # Should still include previous business day
+            expected_start_date = pd.bdate_range(end=pd.Timestamp('2023-01-05'), periods=2)[0]
+            expected_end_date = pd.Timestamp('2023-01-05')
+            
+            self.assertEqual(result['date'].min(), expected_start_date)
+            self.assertEqual(result['date'].max(), expected_end_date)
+            
+            self.log_case_result("Start equals end test", True)
+        except Exception as e:
+            self.log_case_result("Start equals end test", False)
+            raise e
+        finally:
+            self.restore_stdout(original_stdout)
+    
+    def test_date_ordering(self):
+        """Test that returned dates are in chronological order"""
+        data = {
+            'start_date': ['2023-01-05', '2023-01-10'],
+            'end_date': ['2023-01-20', '2023-01-15']
+        }
+        df = pd.DataFrame(data)
         
-        # Check that a Total row exists
-        self.assertIn('Total', result['period'].values)
+        original_stdout = self.capture_stdout()
         
-        # Check that the Total row calculation uses first open and last close
-        total_row = result[result['period'] == 'Total'].iloc[0]
-        expected_total_return = (120.0 - 100.0) / 100.0  # (last close - first open) / first open
-        self.assertAlmostEqual(total_row['perc_return'], expected_total_return)
+        try:
+            result = get_backtest_timeframe(df)
+            
+            # Check that dates are ordered
+            date_list = result['date'].tolist()
+            sorted_date_list = sorted(date_list)
+            self.assertEqual(date_list, sorted_date_list)
+            
+            self.log_case_result("Date ordering test", True)
+        except Exception as e:
+            self.log_case_result("Date ordering test", False)
+            raise e
+        finally:
+            self.restore_stdout(original_stdout)
+    
+    def test_weekend_inclusion(self):
+        """Test that weekends are included in output"""
+        # Create a date range that spans a weekend
+        data = {
+            'start_date': ['2023-01-05'],  # Thursday
+            'end_date': ['2023-01-09']     # Monday
+        }
+        df = pd.DataFrame(data)
         
-        self.log_case_result('Total row calculation', True)
+        original_stdout = self.capture_stdout()
+        
+        try:
+            result = get_backtest_timeframe(df)
+            
+            # Check if Saturday (2023-01-07) and Sunday (2023-01-08) are included
+            saturdays = result[result['date'].dt.day_name() == 'Saturday']
+            sundays = result[result['date'].dt.day_name() == 'Sunday']
+            
+            self.assertGreater(len(saturdays), 0, "Saturday should be included in date range")
+            self.assertGreater(len(sundays), 0, "Sunday should be included in date range")
+            
+            self.log_case_result("Weekend inclusion test", True)
+        except Exception as e:
+            self.log_case_result("Weekend inclusion test", False)
+            raise e
+        finally:
+            self.restore_stdout(original_stdout)
+    
+    def test_date_format(self):
+        """Test that output dates are datetime objects"""
+        data = {
+            'start_date': ['2023-01-05', '2023-01-10'],
+            'end_date': ['2023-01-20', '2023-01-15']
+        }
+        df = pd.DataFrame(data)
+        
+        original_stdout = self.capture_stdout()
+        
+        try:
+            result = get_backtest_timeframe(df)
+            
+            # Check that dates are datetime objects
+            self.assertTrue(pd.api.types.is_datetime64_dtype(result['date']))
+            
+            self.log_case_result("Date format test", True)
+        except Exception as e:
+            self.log_case_result("Date format test", False)
+            raise e
+        finally:
+            self.restore_stdout(original_stdout)
+    
+    def test_large_date_range(self):
+        """Test with dates spanning several years"""
+        data = {
+            'start_date': ['2020-01-01'],
+            'end_date': ['2023-01-01']
+        }
+        df = pd.DataFrame(data)
+        
+        original_stdout = self.capture_stdout()
+        
+        try:
+            result = get_backtest_timeframe(df)
+            
+            # Expected number of days: approximately 3 years + 1 day
+            expected_days = (pd.Timestamp('2023-01-01') - pd.bdate_range(end=pd.Timestamp('2020-01-01'), periods=2)[0]).days + 1
+            self.assertEqual(len(result), expected_days)
+            
+            # Check first and last dates
+            expected_start_date = pd.bdate_range(end=pd.Timestamp('2020-01-01'), periods=2)[0]
+            expected_end_date = pd.Timestamp('2023-01-01')
+            
+            self.assertEqual(result['date'].min(), expected_start_date)
+            self.assertEqual(result['date'].max(), expected_end_date)
+            
+            self.log_case_result("Large date range test", True)
+        except Exception as e:
+            self.log_case_result("Large date range test", False)
+            raise e
+        finally:
+            self.restore_stdout(original_stdout)
 
-def run_tests():
-    """Run all test cases and print summary"""
-    # Create test suite with all test cases
-    suite = unittest.TestLoader().loadTestsFromTestCase(TestCalculateReturnsBasedOnCloseAndOpen)
-    
-    # Run the tests
-    unittest.TextTestRunner(verbosity=0).run(suite)
-    
-    # Print summary of test results
-    print_summary()
 
 if __name__ == '__main__':
-    run_tests()
+    unittest.main()
+    print_summary()
+

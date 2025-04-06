@@ -30,13 +30,14 @@ def download_data(tickers=["SPY", "QQQ"], period="5y"):
         df.columns = df.columns.str.lower()
         
         # Standardize date handling
+        # Convert to datetime object first
         df['date'] = pd.to_datetime(df['date'])
-        
-        # Format for period generation
-        df['start_date'] = df['date'].dt.strftime('%Y-%m-%d')
-        df['year'] = df['date'].dt.strftime('%Y')
-        df['month'] = df['date'].dt.strftime('%m')
-        df['week'] = df['date'].dt.strftime('%U')
+        # Extract date components before converting to string
+        df['year'] = df['date'].dt.year
+        df['month'] = df['date'].dt.month
+        df['week'] = df['date'].dt.isocalendar().week
+        # Convert to string format after extracting components
+        df['date'] = df['date'].dt.strftime('%Y-%m-%d')
         df['ticker'] = ticker
                 
         # Store in dictionary
