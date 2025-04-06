@@ -23,7 +23,7 @@ class Strategy(BaseStrategy):
     # Define strategy parameters that can be adjusted by the user
     parameters = {
         "symbols": tickers,
-        "risk_reward": 3,                  # risk reward multiplier, meaning the profit target is risk*4
+        "risk_reward": 3,                  # risk reward multiplier, meaning the take profit price is risk*risk_reward
         "side": "buy",
         "risk_per_trade": 0.005,
         "max_loss_positions": 2,
@@ -144,10 +144,7 @@ class Strategy(BaseStrategy):
         self.vars.trade_log.append(trade_info)
 
     def before_market_closes(self): 
-        self.cancel_open_orders()
-        positions = self.get_positions()
-        if len(positions) > 0:
-            self.sell_all()
+        self._out_before_market_closes()
 
     def after_market_closes(self):
         self.vars.daily_loss_count = 0

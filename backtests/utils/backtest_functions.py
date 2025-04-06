@@ -105,3 +105,10 @@ class BaseStrategy(Strategy):
                 print(f"Custom trades saved to {filename}")
             else:
                 print("No trade log to save.") 
+
+    def _out_before_market_closes(self):
+        """Cancel all open orders and sell all positions"""
+        self.cancel_open_orders()
+        positions = self.get_positions()
+        if len(positions) > 0:
+            self.sell_all()
