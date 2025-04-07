@@ -582,7 +582,7 @@ def get_backtest_timeframe(df: pd.DataFrame) -> dict:
         'end_date': max_date.strftime('%Y-%m-%d')
     }
 
-def generate_comparison_data(df: pd.DataFrame, group_by: str, tickers: list[str] = ["SPY", "QQQ"]) -> dict:
+def generate_comparison_data(df: pd.DataFrame, group_by: str, tickers: list[str] = ["SPY", "QQQ"], pad_start_days: int = 0) -> dict:
     """
     Generate comparison data for market benchmarks.
     
@@ -594,6 +594,9 @@ def generate_comparison_data(df: pd.DataFrame, group_by: str, tickers: list[str]
         Time period to group the data by ('day', 'week', 'month', 'year')
     tickers : list[str], optional
         List of ticker symbols to download data for, by default ["SPY", "QQQ"]
+    pad_start_days : int, optional
+        Number of days to pad before the start date, by default 30.
+        Set to 0 to make total returns match period returns when there's only one period.
         
     Returns
     -------
@@ -605,11 +608,14 @@ def generate_comparison_data(df: pd.DataFrame, group_by: str, tickers: list[str]
     # Get timeframe dictionary with start_date and end_date
     timeframe = get_backtest_timeframe(df)
     
-    # Adjust start date to be 30 days earlier to ensure we have data for calculating returns in the first period
-    adjusted_start_date = pd.to_datetime(timeframe['start_date']) - pd.Timedelta(days=30)
-    adjusted_start_date = adjusted_start_date.strftime('%Y-%m-%d')
-    
-    print(f"generate_comparison_data: Adjusted start date from {timeframe['start_date']} to {adjusted_start_date}")
+    # Adjust start date to be earlier if padding is requested
+    if pad_start_days > 0:
+        adjusted_start_date = pd.to_datetime(timeframe['start_date']) - pd.Timedelta(days=pad_start_days)
+        adjusted_start_date = adjusted_start_date.strftime('%Y-%m-%d')
+        print(f"generate_comparison_data: Adjusted start date from {timeframe['start_date']} to {adjusted_start_date}")
+    else:
+        adjusted_start_date = timeframe['start_date']
+        print(f"generate_comparison_data: Using exact start date without padding: {adjusted_start_date}")
     
     # Download data with adjusted start date
     comparison_dict = download_data(tickers=tickers, start=adjusted_start_date, end=timeframe['end_date'])
@@ -633,8 +639,7 @@ def calculate_returns_based_on_close(df: pd.DataFrame, group_by: str) -> pd.Data
     """
     Calculate returns based on closing prices.
     
-    For daily returns: (current_close - previous_close) / previous_close
-    For week/month/year: (period_last_close - previous_period_last_close) / previous_period_last_close
+    For all groupings: (last_close - first_close) / first_close
     Also calculates total return from first to last date.
     
     Args:
@@ -655,20 +660,21 @@ def calculate_returns_based_on_close(df: pd.DataFrame, group_by: str) -> pd.Data
     last_close = df['close'].iloc[-1]
     total_return = (last_close - first_close) / first_close
     
-    if group_by == 'day':
-        # For daily returns, simply calculate day-to-day percentage change
-        df['perc_return'] = df['close'].pct_change()
-    else:
-        # For other periods, we need to calculate returns between periods
-        # Get the last close price for each period
-        period_last_close = df.groupby('period')['close'].last()
-        
-        # Calculate period-to-period percentage change
-        period_returns = period_last_close.pct_change()
-        
-        # Map the period returns back to the original DataFrame
-        # Each row in a period gets the same period return value
-        df['perc_return'] = df['period'].map(period_returns)
+    # For all periods, calculate returns using first and last prices in each period
+    period_first = df.groupby('period')['close'].first()
+    period_last = df.groupby('period')['close'].last()
+    
+    # Log close prices for month or year grouping
+    if group_by in ['month', 'year']:
+        print(f"\nClose prices for {group_by} grouping ({df['ticker'].iloc[0]}):")
+        for period in period_first.index:
+            print(f"  {period}: First: {period_first[period]:.2f}, Last: {period_last[period]:.2f}")
+    
+    # Calculate period returns
+    period_return = (period_last - period_first) / period_first
+    
+    # Map the period returns back to the original DataFrame
+    df['perc_return'] = df['period'].map(period_return)
     
     # Create a total row
     total_row = df.iloc[-1].copy()
