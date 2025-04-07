@@ -70,7 +70,7 @@ def identify_trade_ids(df, db_validation=True):
     
     if db_validation:
         # Get current state from database
-        current_trade_id = db.get_max_trade_id()
+        current_trade_id = db.get_max_id("executions","trade_id")
         # Handle None case by defaulting to 0
         if current_trade_id is None:
             current_trade_id = 0

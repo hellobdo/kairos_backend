@@ -2,7 +2,6 @@ import sqlite3
 import pandas as pd
 from contextlib import contextmanager
 import os
-from pathlib import Path
 
 class DatabaseManager:
     """
@@ -41,23 +40,6 @@ class DatabaseManager:
             if conn:
                 conn.close()
     
-    def execute_query(self, query, params=None):
-        """Execute a query and return the cursor"""
-        with self.connection() as conn:
-            cursor = conn.cursor()
-            if params:
-                cursor.execute(query, params)
-            else:
-                cursor.execute(query)
-            return cursor
-    
-    def execute_many(self, query, params_list):
-        """Execute a query with multiple parameter sets"""
-        with self.connection() as conn:
-            cursor = conn.cursor()
-            cursor.executemany(query, params_list)
-            return cursor.rowcount
-    
     def fetch_df(self, query, params=None):
         """Fetch query results as a pandas DataFrame"""
         with self.connection() as conn:
@@ -95,19 +77,11 @@ class DatabaseManager:
             cursor.execute("SELECT execution_external_id FROM executions")
         return {row[0] for row in cursor.fetchall()}
     
-    def get_max_trade_id(self):
-        """Get the maximum trade_id from the executions table"""
+    def get_max_id(self,table,column):
+        """Get the maximum id from a table"""
         with self.connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT MAX(trade_id) FROM executions")
-            result = cursor.fetchone()
-            return result[0] if result[0] is not None else 0
-    
-    def get_max_run_id(self):
-        """Get the maximum run_id from the backtest_runs table"""
-        with self.connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT MAX(run_id) FROM backtest_runs")
+            cursor.execute(f"SELECT MAX({column}) FROM {table}")
             result = cursor.fetchone()
             return result[0] if result[0] is not None else 0
     
@@ -123,62 +97,8 @@ class DatabaseManager:
             cursor = conn.cursor()
             cursor.execute(query)
         return cursor.fetchall()
-    
-    def get_backtest_runs(self, run_id=None, symbol=None, direction=None, is_valid=None, as_df=True):
-        """
-        Retrieve backtest runs from the database with optional filtering.
-        
-        Args:
-            run_id (int, optional): Filter by specific run ID
-            symbol (str, optional): Filter by symbol traded 
-            direction (str, optional): Filter by direction (long/short)
-            is_valid (bool, optional): Filter by is_valid (True/False)
-            as_df (bool, optional): Return results as pandas DataFrame if True, list of dicts if False
             
-        Returns:
-            If as_df=True: pandas DataFrame containing the backtest runs
-            If as_df=False: List of dictionaries containing the backtest runs
-        """
-        query = "SELECT * FROM backtest_runs"
-        params = []
-        conditions = []
-        
-        # Add filters
-        if run_id:
-            conditions.append("run_id = ?")
-            params.append(run_id)
-        
-        if symbol:
-            conditions.append("symbols_traded LIKE ?")
-            params.append(f"%{symbol}%")
-        
-        if direction:
-            conditions.append("direction = ?")
-            params.append(direction)
-        
-        if is_valid is not None:
-            conditions.append("is_valid = ?")
-            params.append(is_valid)
-        
-        # Add WHERE clause if needed
-        if conditions:
-            query += " WHERE " + " AND ".join(conditions)
-        
-        # Add sorting and limit
-        query += " ORDER BY timestamp DESC"
-        
-        # Return as DataFrame if requested
-        if as_df:
-            return self.fetch_df(query, params)
-        
-        # Otherwise return as list of dictionaries
-        with self.connection() as conn:
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-            cursor.execute(query, params)
-            return [dict(row) for row in cursor.fetchall()]
-            
-    def insert_dataframe(self, df, table_name, if_exists='append', index=False, **kwargs):
+    def insert_dataframe(self, df, table_name, if_exists='append', index=False, update_existing=False, id_field=None, **kwargs):
         """
         Insert a pandas DataFrame into a database table.
         
@@ -188,80 +108,86 @@ class DatabaseManager:
             if_exists (str): How to behave if the table already exists:
                              'fail', 'replace', or 'append' (default: 'append')
             index (bool): Whether to include the DataFrame's index (default: False)
+            update_existing (bool): Whether to update existing records (default: False)
+            id_field (str): The column to use as unique identifier for updates (required if update_existing=True)
             **kwargs: Additional arguments to pass to pandas.to_sql
             
         Returns:
-            int: Number of records inserted
+            int: Number of records inserted or updated
         """
+        if update_existing and id_field is None:
+            raise ValueError("id_field must be specified when update_existing is True")
+        
         try:
+            # If we're not updating existing records, just insert normally
+            if not update_existing:
+                with self.connection() as conn:
+                    df.to_sql(
+                        table_name, 
+                        conn, 
+                        if_exists=if_exists,
+                        index=index,
+                        method='multi',
+                        **kwargs
+                    )
+                    return len(df)
+            
+            # For updates, we need to handle each record individually
             with self.connection() as conn:
-                df.to_sql(
-                    table_name, 
-                    conn, 
-                    if_exists=if_exists,
-                    index=index,
-                    method='multi',
-                    **kwargs
-                )
-                return len(df)
+                cursor = conn.cursor()
+                
+                # Get list of all column names except the ID field
+                columns = [col for col in df.columns if col != id_field]
+                
+                # Build SQL for UPDATE statement
+                set_clause = ", ".join([f"{col} = ?" for col in columns])
+                
+                # Process each row for update or insert
+                records_modified = 0
+                
+                for _, row in df.iterrows():
+                    # Check if record exists
+                    id_value = row[id_field]
+                    exists_query = f"SELECT 1 FROM {table_name} WHERE {id_field} = ?"
+                    cursor.execute(exists_query, (id_value,))
+                    
+                    if cursor.fetchone():
+                        # Update existing record
+                        update_query = f"UPDATE {table_name} SET {set_clause} WHERE {id_field} = ?"
+                        values = [row[col] for col in columns] + [id_value]
+                        cursor.execute(update_query, values)
+                    else:
+                        # Insert new record
+                        cols = ", ".join(df.columns)
+                        placeholders = ", ".join(["?"] * len(df.columns))
+                        insert_query = f"INSERT INTO {table_name} ({cols}) VALUES ({placeholders})"
+                        values = [row[col] for col in df.columns]
+                        cursor.execute(insert_query, values)
+                    
+                    records_modified += 1
+                
+                return records_modified
+                
         except Exception as e:
             print(f"Error inserting DataFrame into {table_name}: {e}")
             raise
-
-    def get_backtest_executions(self):
-        """
-        Retrieve all records from the backtest_executions table.
-        
-        Returns:
-            pandas.DataFrame: DataFrame containing all backtest executions
-        """
-        query = "SELECT * FROM backtest_executions ORDER BY execution_timestamp"
-        try:
-            return self.fetch_df(query)
-        except Exception as e:
-            print(f"Error retrieving backtest executions: {e}")
-            return pd.DataFrame()
             
-    def get_executions(self):
+    def get_table_data(self, table, order_by='timestamp'):
         """
-        Retrieve all records from the executions table.
+        Retrieve all records from a specified table ordered by timestamp.
+        
+        Args:
+            table (str): Name of the database table to query
         
         Returns:
-            pandas.DataFrame: DataFrame containing all broker executions
+            pandas.DataFrame: DataFrame containing all records from the specified table
         """
-        query = "SELECT * FROM executions ORDER BY execution_timestamp"
+        query = f"SELECT * FROM {table} ORDER BY {order_by}"
+        
         try:
             return self.fetch_df(query)
         except Exception as e:
-            print(f"Error retrieving executions: {e}")
-            return pd.DataFrame()
-            
-    def get_trades(self):
-        """
-        Retrieve all records from the trades table.
-        
-        Returns:
-            pandas.DataFrame: DataFrame containing all broker trades
-        """
-        query = "SELECT * FROM trades ORDER BY entry_timestamp"
-        try:
-            return self.fetch_df(query)
-        except Exception as e:
-            print(f"Error retrieving trades: {e}")
-            return pd.DataFrame()
-            
-    def get_backtest_trades(self):
-        """
-        Retrieve all records from the backtest_trades table.
-        
-        Returns:
-            pandas.DataFrame: DataFrame containing all backtest trades
-        """
-        query = "SELECT * FROM backtest_trades ORDER BY entry_timestamp"
-        try:
-            return self.fetch_df(query)
-        except Exception as e:
-            print(f"Error retrieving backtest trades: {e}")
+            print(f"Error retrieving data from {table}: {e}")
             return pd.DataFrame()
             
     def get_account_balances(self):
