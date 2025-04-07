@@ -160,7 +160,7 @@ def insert_backtest_info(settings_file):
     try:
         inserted = db_manager.insert_dataframe(df, 'backtest_runs')
         if inserted > 0:  # Check if any records were actually inserted
-            run_id = db_manager.get_max_run_id()
+            run_id = db_manager.get_max_id("backtest_runs","run_id")
             return run_id
     except Exception as e:
         print(f"Error saving backtest info: {e}")

@@ -274,8 +274,8 @@ class TestDatabaseUtils(BaseTestCase):
         
         self.log_case_result("get_existing_trade_external_ids returns correct data", True)
     
-    def test_get_max_trade_id(self):
-        """Test getting maximum trade ID"""
+    def test_get_max_id(self):
+        """Test getting maximum id from any table and column"""
         # Create a context manager mock to simulate the self.connection() behavior
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
@@ -288,7 +288,7 @@ class TestDatabaseUtils(BaseTestCase):
             mock_conn.cursor.return_value = mock_cursor
             
             # Call the method
-            result = self.db_manager.get_max_trade_id()
+            result = self.db_manager.get_max_id('test_table', 'id')
             
             # Verify
             self.assertEqual(result, 5)
@@ -298,10 +298,10 @@ class TestDatabaseUtils(BaseTestCase):
             mock_conn.cursor.assert_called_once()
             
             # Verify cursor operations
-            mock_cursor.execute.assert_called_with("SELECT MAX(trade_id) FROM executions")
+            mock_cursor.execute.assert_called_with("SELECT MAX(id) FROM test_table")
             mock_cursor.fetchone.assert_called_once()
         
-        # Test when no trades exist
+        # Test when no records exist
         mock_cursor.fetchone.return_value = (None,)
         
         with patch.object(self.db_manager, 'connection') as mock_cm:
@@ -309,10 +309,10 @@ class TestDatabaseUtils(BaseTestCase):
             mock_cm.return_value.__enter__.return_value = mock_conn
             mock_conn.cursor.return_value = mock_cursor
             
-            result = self.db_manager.get_max_trade_id()
+            result = self.db_manager.get_max_id('test_table', 'id')
             self.assertEqual(result, 0)  # Should default to 0
         
-        self.log_case_result("get_max_trade_id returns correct value", True)
+        self.log_case_result("get_max_id returns correct value", True)
     
     def test_get_open_positions(self):
         """Test getting open positions from executions table based on sum of quantities"""
@@ -350,107 +350,6 @@ class TestDatabaseUtils(BaseTestCase):
         
         self.log_case_result("get_open_positions returns correct data from executions table", True)
     
-    def test_get_backtest_runs(self):
-        """Test getting backtest runs with various filtering options"""
-        # Test 1: Test with dataframe return and no filters
-        with patch.object(self.db_manager, 'fetch_df', return_value=self.fixtures['backtest_runs_df']) as mock_fetch_df:
-            result = self.db_manager.get_backtest_runs()
-            self.assertEqual(result.to_dict(), self.fixtures['backtest_runs_df'].to_dict())
-            mock_fetch_df.assert_called_once()
-            
-            # Verify query has no WHERE clause and has ORDER BY
-            query, params = mock_fetch_df.call_args[0]
-            self.assertIn("SELECT * FROM backtest_runs", query)
-            self.assertIn("ORDER BY timestamp DESC", query)
-            self.assertEqual(params, [])
-            
-        # Test 2: Test with run_id filter
-        with patch.object(self.db_manager, 'fetch_df', return_value=self.fixtures['backtest_runs_df'].iloc[[0]]) as mock_fetch_df:
-            result = self.db_manager.get_backtest_runs(run_id=1)
-            self.assertEqual(result.to_dict(), self.fixtures['backtest_runs_df'].iloc[[0]].to_dict())
-            
-            # Verify query has correct WHERE clause
-            query, params = mock_fetch_df.call_args[0]
-            self.assertIn("WHERE run_id = ?", query)
-            self.assertEqual(params, [1])
-            
-        # Test 3: Test with symbol filter
-        with patch.object(self.db_manager, 'fetch_df', return_value=self.fixtures['backtest_runs_df'].iloc[[0, 2]]) as mock_fetch_df:
-            result = self.db_manager.get_backtest_runs(symbol='AAPL')
-            self.assertEqual(result.to_dict(), self.fixtures['backtest_runs_df'].iloc[[0, 2]].to_dict())
-            
-            # Verify query has correct WHERE clause
-            query, params = mock_fetch_df.call_args[0]
-            self.assertIn("WHERE symbols_traded LIKE ?", query)
-            self.assertEqual(params, ['%AAPL%'])
-            
-        # Test 4: Test with direction filter
-        with patch.object(self.db_manager, 'fetch_df', return_value=self.fixtures['backtest_runs_df'].iloc[[1]]) as mock_fetch_df:
-            result = self.db_manager.get_backtest_runs(direction='short')
-            self.assertEqual(result.to_dict(), self.fixtures['backtest_runs_df'].iloc[[1]].to_dict())
-            
-            # Verify query has correct WHERE clause
-            query, params = mock_fetch_df.call_args[0]
-            self.assertIn("WHERE direction = ?", query)
-            self.assertEqual(params, ['short'])
-            
-        # Test 5: Test with multiple filters
-        with patch.object(self.db_manager, 'fetch_df', return_value=self.fixtures['backtest_runs_df'].iloc[[0]]) as mock_fetch_df:
-            result = self.db_manager.get_backtest_runs(symbol='AAPL', direction='long')
-            self.assertEqual(result.to_dict(), self.fixtures['backtest_runs_df'].iloc[[0]].to_dict())
-            
-            # Verify query has correct WHERE clause with AND
-            query, params = mock_fetch_df.call_args[0]
-            self.assertIn("WHERE", query)
-            self.assertIn("AND", query)
-            self.assertEqual(params, ['%AAPL%', 'long'])
-        
-        # Test 6: Test with is_valid filter
-        with patch.object(self.db_manager, 'fetch_df', return_value=self.fixtures['backtest_runs_df'].iloc[[0, 2]]) as mock_fetch_df:
-            result = self.db_manager.get_backtest_runs(is_valid=True)
-            self.assertEqual(result.to_dict(), self.fixtures['backtest_runs_df'].iloc[[0, 2]].to_dict())
-            
-            # Verify query has correct WHERE clause
-            query, params = mock_fetch_df.call_args[0]
-            self.assertIn("WHERE is_valid = ?", query)
-            self.assertEqual(params, [True])
-            
-        # Test 7: Test with multiple filters including is_valid
-        with patch.object(self.db_manager, 'fetch_df', return_value=self.fixtures['backtest_runs_df'].iloc[[0]]) as mock_fetch_df:
-            result = self.db_manager.get_backtest_runs(symbol='AAPL', is_valid=True)
-            self.assertEqual(result.to_dict(), self.fixtures['backtest_runs_df'].iloc[[0]].to_dict())
-            
-            # Verify query has correct WHERE clause with AND
-            query, params = mock_fetch_df.call_args[0]
-            self.assertIn("WHERE", query)
-            self.assertIn("AND", query)
-            self.assertEqual(params, ['%AAPL%', True])
-            
-        # Test 8: Test with list of dictionaries return
-        mock_cursor = MagicMock()
-        mock_conn = MagicMock()
-        mock_cursor.fetchall.return_value = self.fixtures['backtest_dict_list']
-        
-        with patch.object(self.db_manager, 'connection') as mock_cm:
-            # When connection is called, return our mock connection
-            mock_cm.return_value.__enter__.return_value = mock_conn
-            mock_conn.cursor.return_value = mock_cursor
-            
-            # Call with as_df=False
-            result = self.db_manager.get_backtest_runs(as_df=False)
-            
-            # Verify correct SQL and row_factory was set
-            self.assertTrue(hasattr(mock_conn, 'row_factory'))
-            self.assertEqual(mock_conn.row_factory, sqlite3.Row)
-            
-            # Verify cursor operations and result conversion
-            sql = mock_cursor.execute.call_args[0][0]
-            self.assertIn("SELECT * FROM backtest_runs", sql)
-            self.assertIn("ORDER BY timestamp DESC", sql)
-            mock_cursor.fetchall.assert_called_once()
-        
-        self.log_case_result("get_backtest_runs works correctly with various filters", True)
-        
     def test_insert_dataframe(self):
         """Test inserting a DataFrame into a database table"""
         # Get test DataFrame
@@ -508,173 +407,74 @@ class TestDatabaseUtils(BaseTestCase):
                 output = self.captured_output.get_value()
                 self.assertIn("Error inserting DataFrame into executions", output)
         
+        # Test update_existing functionality
+        test_update_df = pd.DataFrame({
+            'id': [1, 4],  # one existing, one new
+            'account_id': ['U1234567_updated', 'U8888888'],
+            'execution_external_id': ['T123456', 'T123460'],
+            'symbol': ['AAPL', 'TSLA']
+        })
+        
+        with patch.object(self.db_manager, 'connection') as mock_cm:
+            # Create mock connection and cursor
+            mock_conn = MagicMock()
+            mock_cursor = MagicMock()
+            mock_conn.cursor.return_value = mock_cursor
+            
+            # First row exists, second doesn't
+            mock_cursor.fetchone.side_effect = [True, None]
+            
+            # When connection is called, return our mock connection
+            mock_cm.return_value.__enter__.return_value = mock_conn
+            
+            # Call the method with update_existing=True
+            result = self.db_manager.insert_dataframe(
+                test_update_df, 'executions', 
+                update_existing=True, 
+                id_field='id'
+            )
+            
+            # Verify the result (2 records modified)
+            self.assertEqual(result, 2)
+            
+            # Verify connection was used correctly
+            mock_cm.assert_called_once()
+            
+            # Verify cursor was created
+            mock_conn.cursor.assert_called_once()
+            
+            # Verify cursor operations (2 exists checks, 1 update, 1 insert)
+            self.assertEqual(mock_cursor.execute.call_count, 4)
+            
+            # Check first call: EXISTS query for ID 1
+            args, kwargs = mock_cursor.execute.call_args_list[0]
+            self.assertIn("SELECT 1 FROM executions WHERE id = ?", args[0])
+            self.assertEqual(args[1], (1,))
+            
+            # Check second call: UPDATE query for ID 1
+            args, kwargs = mock_cursor.execute.call_args_list[1]
+            self.assertIn("UPDATE executions SET", args[0])
+            self.assertIn("WHERE id = ?", args[0])
+            
+            # Check third call: EXISTS query for ID 4
+            args, kwargs = mock_cursor.execute.call_args_list[2]
+            self.assertIn("SELECT 1 FROM executions WHERE id = ?", args[0])
+            self.assertEqual(args[1], (4,))
+            
+            # Check fourth call: INSERT query for ID 4
+            args, kwargs = mock_cursor.execute.call_args_list[3]
+            self.assertIn("INSERT INTO executions", args[0])
+        
+        # Test update_existing with missing id_field
+        with self.assertRaises(ValueError) as context:
+            self.db_manager.insert_dataframe(
+                test_update_df, 'executions', 
+                update_existing=True
+            )
+        self.assertIn("id_field must be specified", str(context.exception))
+        
         self.log_case_result("insert_dataframe works correctly", True)
     
-    def test_get_backtest_executions(self):
-        """Test retrieving all records from the backtest_executions table"""
-        # Create expected DataFrame
-        expected_df = pd.DataFrame({
-            'id': [1, 2, 3],
-            'run_id': [1, 1, 2],
-            'execution_timestamp': ['2023-06-01 10:00:00', '2023-06-01 11:00:00', '2023-06-02 10:30:00'],
-            'symbol': ['AAPL', 'AAPL', 'MSFT'],
-            'quantity': [100, -100, 50]
-        })
-        
-        # Test successful retrieval
-        with patch.object(self.db_manager, 'fetch_df', return_value=expected_df) as mock_fetch_df:
-            result = self.db_manager.get_backtest_executions()
-            
-            # Verify result
-            pd.testing.assert_frame_equal(result, expected_df)
-            
-            # Verify fetch_df was called with correct query
-            mock_fetch_df.assert_called_once()
-            query = mock_fetch_df.call_args[0][0]
-            self.assertEqual(query, "SELECT * FROM backtest_executions ORDER BY execution_timestamp")
-        
-        # Test error handling
-        with patch.object(self.db_manager, 'fetch_df', side_effect=Exception("Test error")) as mock_fetch_df:
-            # Setup capture to check error message
-            original_stdout = self.capture_stdout()
-            
-            # Call method
-            result = self.db_manager.get_backtest_executions()
-            
-            # Restore stdout
-            self.restore_stdout(original_stdout)
-            
-            # Verify empty DataFrame is returned
-            self.assertTrue(result.empty)
-            self.assertIsInstance(result, pd.DataFrame)
-            
-            # Verify error message
-            output = self.captured_output.get_value()
-            self.assertIn("Error retrieving backtest executions", output)
-        
-        self.log_case_result("get_backtest_executions works correctly", True)
-    
-    def test_get_executions(self):
-        """Test retrieving all records from the executions table"""
-        # Use existing executions DataFrame from fixtures
-        expected_df = self.fixtures['executions_df']
-        
-        # Test successful retrieval
-        with patch.object(self.db_manager, 'fetch_df', return_value=expected_df) as mock_fetch_df:
-            result = self.db_manager.get_executions()
-            
-            # Verify result
-            pd.testing.assert_frame_equal(result, expected_df)
-            
-            # Verify fetch_df was called with correct query
-            mock_fetch_df.assert_called_once()
-            query = mock_fetch_df.call_args[0][0]
-            self.assertEqual(query, "SELECT * FROM executions ORDER BY execution_timestamp")
-        
-        # Test error handling
-        with patch.object(self.db_manager, 'fetch_df', side_effect=Exception("Test error")) as mock_fetch_df:
-            # Setup capture to check error message
-            original_stdout = self.capture_stdout()
-            
-            # Call method
-            result = self.db_manager.get_executions()
-            
-            # Restore stdout
-            self.restore_stdout(original_stdout)
-            
-            # Verify empty DataFrame is returned
-            self.assertTrue(result.empty)
-            self.assertIsInstance(result, pd.DataFrame)
-            
-            # Verify error message
-            output = self.captured_output.get_value()
-            self.assertIn("Error retrieving executions", output)
-        
-        self.log_case_result("get_executions works correctly", True)
-    
-    def test_get_trades(self):
-        """Test retrieving all records from the trades table"""
-        # Use existing trades DataFrame from fixtures
-        expected_df = self.fixtures['trades_df']
-        
-        # Test successful retrieval
-        with patch.object(self.db_manager, 'fetch_df', return_value=expected_df) as mock_fetch_df:
-            result = self.db_manager.get_trades()
-            
-            # Verify result
-            pd.testing.assert_frame_equal(result, expected_df)
-            
-            # Verify fetch_df was called with correct query
-            mock_fetch_df.assert_called_once()
-            query = mock_fetch_df.call_args[0][0]
-            self.assertEqual(query, "SELECT * FROM trades ORDER BY entry_timestamp")
-        
-        # Test error handling
-        with patch.object(self.db_manager, 'fetch_df', side_effect=Exception("Test error")) as mock_fetch_df:
-            # Setup capture to check error message
-            original_stdout = self.capture_stdout()
-            
-            # Call method
-            result = self.db_manager.get_trades()
-            
-            # Restore stdout
-            self.restore_stdout(original_stdout)
-            
-            # Verify empty DataFrame is returned
-            self.assertTrue(result.empty)
-            self.assertIsInstance(result, pd.DataFrame)
-            
-            # Verify error message
-            output = self.captured_output.get_value()
-            self.assertIn("Error retrieving trades", output)
-        
-        self.log_case_result("get_trades works correctly", True)
-    
-    def test_get_backtest_trades(self):
-        """Test retrieving all records from the backtest_trades table"""
-        # Create expected DataFrame for backtest trades
-        expected_df = pd.DataFrame({
-            'trade_id': [1, 2, 3],
-            'run_id': [1, 1, 2],
-            'symbol': ['AAPL', 'MSFT', 'GOOGL'],
-            'entry_timestamp': ['2023-06-01 10:00:00', '2023-06-02 10:00:00', '2023-06-03 10:00:00'],
-            'exit_timestamp': ['2023-06-01 14:00:00', '2023-06-02 15:00:00', None],
-            'status': ['closed', 'closed', 'open']
-        })
-        
-        # Test successful retrieval
-        with patch.object(self.db_manager, 'fetch_df', return_value=expected_df) as mock_fetch_df:
-            result = self.db_manager.get_backtest_trades()
-            
-            # Verify result
-            pd.testing.assert_frame_equal(result, expected_df)
-            
-            # Verify fetch_df was called with correct query
-            mock_fetch_df.assert_called_once()
-            query = mock_fetch_df.call_args[0][0]
-            self.assertEqual(query, "SELECT * FROM backtest_trades ORDER BY entry_timestamp")
-        
-        # Test error handling
-        with patch.object(self.db_manager, 'fetch_df', side_effect=Exception("Test error")) as mock_fetch_df:
-            # Setup capture to check error message
-            original_stdout = self.capture_stdout()
-            
-            # Call method
-            result = self.db_manager.get_backtest_trades()
-            
-            # Restore stdout
-            self.restore_stdout(original_stdout)
-            
-            # Verify empty DataFrame is returned
-            self.assertTrue(result.empty)
-            self.assertIsInstance(result, pd.DataFrame)
-            
-            # Verify error message
-            output = self.captured_output.get_value()
-            self.assertIn("Error retrieving backtest trades", output)
-        
-        self.log_case_result("get_backtest_trades works correctly", True)
-
     def test_get_account_balances(self):
         """Test get_account_balances method"""
         # Create mock for fetch_df
@@ -706,6 +506,48 @@ class TestDatabaseUtils(BaseTestCase):
         self.assertTrue(result.empty)
         
         self.log_case_result("get_account_balances works correctly", True)
+
+    def test_get_table_data(self):
+        """Test retrieving data from any table using get_table_data"""
+        # Create sample data
+        sample_df = pd.DataFrame({
+            'id': [1, 2, 3],
+            'name': ['Test1', 'Test2', 'Test3'],
+            'timestamp': ['2023-01-01', '2023-01-02', '2023-01-03']
+        })
+        
+        # Test successful retrieval
+        with patch.object(self.db_manager, 'fetch_df', return_value=sample_df) as mock_fetch_df:
+            result = self.db_manager.get_table_data('test_table')
+            
+            # Verify result
+            pd.testing.assert_frame_equal(result, sample_df)
+            
+            # Verify fetch_df was called with correct query
+            mock_fetch_df.assert_called_once()
+            query = mock_fetch_df.call_args[0][0]
+            self.assertEqual(query, "SELECT * FROM test_table ORDER BY timestamp")
+        
+        # Test error handling
+        with patch.object(self.db_manager, 'fetch_df', side_effect=Exception("Test error")) as mock_fetch_df:
+            # Setup capture to check error message
+            original_stdout = self.capture_stdout()
+            
+            # Call method
+            result = self.db_manager.get_table_data('test_table')
+            
+            # Restore stdout
+            self.restore_stdout(original_stdout)
+            
+            # Verify empty DataFrame is returned
+            self.assertTrue(result.empty)
+            self.assertIsInstance(result, pd.DataFrame)
+            
+            # Verify error message
+            output = self.captured_output.get_value()
+            self.assertIn("Error retrieving data from test_table", output)
+        
+        self.log_case_result("get_table_data works correctly", True)
 
 
 if __name__ == '__main__':

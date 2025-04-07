@@ -22,11 +22,15 @@ def load_indicators(indicator_name):
     if indicator_name.endswith('.py'):
         indicator_name = indicator_name[:-3]
         
-    # Get the full path to the indicator file
+    # First try in the main indicators directory
     indicator_file = Path(__file__).parent / f"{indicator_name}.py"
     
+    # If not found, try in the entry subdirectory
     if not indicator_file.exists():
-        raise ValueError(f"Indicator {indicator_name} not found")
+        indicator_file = Path(__file__).parent / "entry" / f"{indicator_name}.py"
+    
+    if not indicator_file.exists():
+        raise ValueError(f"Indicator {indicator_name} not found in indicators/ or indicators/entry/")
     
     # Import the indicator module
     spec = importlib.util.spec_from_file_location(indicator_name, indicator_file)

@@ -239,7 +239,7 @@ class TestIdentifyTradeIds(BaseTestCase):
     def test_db_validation_mode(self, mock_db):
         """Test identify_trade_ids with db_validation=True"""
         # Setup mock database responses
-        mock_db.get_max_trade_id.return_value = 10
+        mock_db.get_max_id.return_value = 10
         mock_db.get_open_positions.return_value = [
             ('AAPL', 50, 5),   # Symbol, volume, trade_id
             ('GOOG', 20, 9)    # Symbol, volume, trade_id
@@ -252,7 +252,7 @@ class TestIdentifyTradeIds(BaseTestCase):
         result = identify_trade_ids(test_df, db_validation=True)
         
         # Verify db was called
-        mock_db.get_max_trade_id.assert_called_once()
+        mock_db.get_max_id.assert_called_once_with("executions", "trade_id")
         mock_db.get_open_positions.assert_called_once()
         
         # Verify required columns exist
@@ -284,7 +284,7 @@ class TestIdentifyTradeIds(BaseTestCase):
     def test_db_validation_with_none_values(self, mock_db):
         """Test identify_trade_ids with db_validation=True returning None values"""
         # Setup mock database to return None values
-        mock_db.get_max_trade_id.return_value = None
+        mock_db.get_max_id.return_value = None
         mock_db.get_open_positions.return_value = None
         
         # Get test data
@@ -294,7 +294,7 @@ class TestIdentifyTradeIds(BaseTestCase):
         result = identify_trade_ids(test_df, db_validation=True)
         
         # Verify db was called
-        mock_db.get_max_trade_id.assert_called_once()
+        mock_db.get_max_id.assert_called_once_with("executions", "trade_id")
         mock_db.get_open_positions.assert_called_once()
         
         # Verify function handled None values properly
