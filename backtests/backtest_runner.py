@@ -109,28 +109,27 @@ def run_backtest(file_path=None, backtest=False):
         except Exception as e:
             print(f"Error in backtest pipeline: {str(e)}")
             return None, None, None
-    else:
         
-        try:
-            # Get latest files
-            trades_file = get_latest_trades_files()
-            if not trades_file:
-                raise Exception("Could not find output files after running backtest")
+    try:
+        # Get latest files
+        trades_file = get_latest_trades_files()
+        if not trades_file:
+            raise Exception("Could not find output files after running backtest")
+        
+        # Process the trades file
+        executions_df, trades_df = process_data(trades_file)
+        if executions_df is None or trades_df is None:
+            raise Exception("Failed to process backtest data")
             
-            # Process the trades file
-            executions_df, trades_df = process_data(trades_file)
-            if executions_df is None or trades_df is None:
-                raise Exception("Failed to process backtest data")
+        # Generate reports
+        reports = generate_reports(trades_df)
+        if not reports:
+            raise Exception("Failed to generate reports")
                 
-            # Generate reports
-            reports = generate_reports(trades_df)
-            if not reports:
-                raise Exception("Failed to generate reports")
-                    
-            return executions_df, trades_df, reports
-        except Exception as e:
-            print(f"Error processing results: {str(e)}")
-            return None, None, None
+        return executions_df, trades_df, reports
+    except Exception as e:
+        print(f"Error processing results: {str(e)}")
+        return None, None, None
 
 def generate_reports(trades_df):
     """
