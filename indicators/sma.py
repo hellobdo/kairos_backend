@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 from indicators.helpers.column_utils import normalize_columns
 
-def calculate_indicator(df: pd.DataFrame, period: int) -> pd.DataFrame:
+def calculate_indicator(df: pd.DataFrame, period: int, sma_threshold: float) -> pd.DataFrame:
     """
     Calculate Simple Moving Average with a period window.
     
@@ -38,5 +38,9 @@ def calculate_indicator(df: pd.DataFrame, period: int) -> pd.DataFrame:
     
     # Calculate period Simple Moving Average
     df['SMA'] = df['close'].rolling(window=period).mean()
+
+    condition1 = df['SMA'] > sma_threshold
+
+    df['is_indicator'] = condition1
     
     return df
