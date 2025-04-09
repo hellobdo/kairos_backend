@@ -128,13 +128,14 @@ class BaseStrategy(Strategy):
 
     def _check_positions_before_end_of_day(self):
         """Cancel all open orders and sell all positions if enabled in parameters"""
-        if not self.parameters.get("out_before_end_of_day", False):
+        if self.out_before_end_of_day:
+            self.cancel_open_orders()
+            positions = self.get_positions()
+            if len(positions) > 0:
+                self.sell_all()
+        
+        else:
             return
-            
-        self.cancel_open_orders()
-        positions = self.get_positions()
-        if len(positions) > 0:
-            self.sell_all()
 
     def _on_filled_order(self, position, order, price, quantity, multiplier):
         """
@@ -182,14 +183,12 @@ class BaseStrategy(Strategy):
 
     def _load_parameters(self):
         parameters = self.parameters
-        if not hasattr(self.vars, 'daily_loss_count'):
-            self.vars.daily_loss_count = 0
         
         # Load indicator calculation functions
-        self.indicators = parameters.get("indicators")
         
-        # close positions before market close, see below def before_market_closes()
         self.minutes_before_closing = 0.1 
+        # close positions before market close, see below def before_market_closes()
+        
         
         # Load additional common parameters from on_trading_iteration
         self.symbols = parameters.get("symbols", [])
@@ -202,7 +201,13 @@ class BaseStrategy(Strategy):
         self.sleeptime = parameters.get("sleeptime")
         self.margin = parameters.get("margin")
         self.day_trading = parameters.get("day_trading")
+        self.indicators = parameters.get("indicators")
+        self.out_before_end_of_day = parameters.get("out_before_end_of_day")
 
+        if self.day_trading:
+            if not hasattr(self.vars, 'daily_loss_count'):
+                self.vars.daily_loss_count = 0
+        
     def _handle_trading_iteration(self, calculate_indicators):
         """
         Handles the common logic for trading iterations.
