@@ -10,8 +10,8 @@ RUN apt-get update && apt-get install -y \
     wget \
     && rm -rf /var/lib/apt/lists/*
 
-# Install wheel first
-RUN pip install --no-cache-dir wheel
+# Install wheel first and upgrade pip
+RUN pip install --no-cache-dir --upgrade pip wheel setuptools
 
 # Copy requirements file
 COPY requirements.txt .

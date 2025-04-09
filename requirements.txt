@@ -3,34 +3,34 @@
 # See Dockerfile for reference
 
 # Core data processing and analysis
-numpy>=1.26.0
-pandas>=2.1.0
-plotly>=5.18.0
-scipy>=1.11.3
+numpy==1.26.0
+pandas==2.1.0
+plotly==5.18.0
+scipy==1.11.3
 
 # Database and ORM
-SQLAlchemy>=2.0.23
+SQLAlchemy==2.0.23
 
 # API and networking
-python-dotenv>=1.0.0
-yfinance>=0.2.31
-requests>=2.31.0
+python-dotenv==1.0.0
+yfinance==0.2.31
+requests==2.31.0
 
 # Testing
-pytest>=7.4.3
+pytest==7.4.3
 
 # Trading and backtesting
-lumibot>=2.9.0
-mplfinance>=0.12.7a17
+lumibot==2.9.0
+mplfinance==0.12.7a17
 
 # Development tools
-black>=23.11.0
-mypy>=1.7.0
-isort>=5.12.0
-jupyter>=1.0.0
+black==23.11.0
+mypy==1.7.0
+isort==5.12.0
+jupyter==1.0.0
 
 # Frontend
-streamlit>=1.29.0
+streamlit==1.29.0
 
 # Machine learning
-scikit-learn>=1.3.0
+scikit-learn==1.3.0
