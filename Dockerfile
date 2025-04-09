@@ -7,7 +7,11 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     build-essential \
     sqlite3 \
+    wget \
     && rm -rf /var/lib/apt/lists/*
+
+# Install wheel first
+RUN pip install --no-cache-dir wheel
 
 # Copy requirements file
 COPY requirements.txt .
