@@ -50,9 +50,8 @@ class BaseStrategy(Strategy):
     
     def _check_position_limits(self):
         """Check if we've reached position or loss limits"""
-        max_loss_positions = self.parameters.get("max_loss_positions")
         open_positions = [p for p in self.get_positions() if not (p.asset.symbol == "USD" and p.asset.asset_type == Asset.AssetType.FOREX)]
-        return len(open_positions) >= max_loss_positions or self.vars.daily_loss_count >= max_loss_positions
+        return len(open_positions) >= self.max_loss_positions or self.vars.daily_loss_count >= self.max_loss_positions
     
     def _check_time_conditions(self, time):
         """Check if current time meets our trading conditions (0 or 30 minutes past the hour)"""
@@ -163,7 +162,7 @@ class BaseStrategy(Strategy):
             "take_profit": take_profit,
             "status": order.status,
             "type": order.order_type,
-            "risk_per_trade": self.parameters.get("risk_per_trade")
+            "risk_per_trade": self.risk_per_trade
         }
 
         # Append to trade log
@@ -248,23 +247,25 @@ class BaseStrategy(Strategy):
             raise ValueError(f"Unsupported data source: {data_source}")
 
     def _load_parameters(self):
-        self.sleeptime = self.parameters.get("sleeptime")
-
+        parameters = self.parameters
         if not hasattr(self.vars, 'daily_loss_count'):
             self.vars.daily_loss_count = 0
         
         # Load indicator calculation functions
-        self.indicators = self.parameters.get("indicators")
+        self.indicators = parameters.get("indicators")
         
-        self.minutes_before_closing = 0.1 # close positions before market close, see below def before_market_closes()
+        # close positions before market close, see below def before_market_closes()
+        self.minutes_before_closing = 0.1 
         
         # Load additional common parameters from on_trading_iteration
-        self.symbols = self.parameters.get("symbols", [])
-        self.bar_signals_length = self.parameters.get("bar_signals_length")
-        self.side = self.parameters.get("side")
-        self.risk_reward = self.parameters.get("risk_reward")
-        self.risk_per_trade = self.parameters.get("risk_per_trade")
-        self.stop_loss_rules = self.parameters.get("stop_loss_rules")
+        self.symbols = parameters.get("symbols", [])
+        self.bar_signals_length = parameters.get("bar_signals_length")
+        self.side = parameters.get("side")
+        self.risk_reward = parameters.get("risk_reward")
+        self.risk_per_trade = parameters.get("risk_per_trade")
+        self.stop_loss_rules = parameters.get("stop_loss_rules")
+        self.max_loss_positions = parameters.get("max_loss_positions")
+        self.sleeptime = parameters.get("sleeptime")
         
     def _handle_trading_iteration(self, calculate_indicators):
         """
@@ -279,6 +280,7 @@ class BaseStrategy(Strategy):
         current_time = self.get_datetime()
 
         # Check if max daily losses reached or position limit reached
+
         if self._check_position_limits():
             return False
 

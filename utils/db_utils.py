@@ -209,3 +209,93 @@ class DatabaseManager:
         except Exception as e:
             print(f"Error retrieving account balances: {e}")
             return pd.DataFrame()
+            
+    def update_avg_daily_volume(self, table_name, asset_ids, window=30):
+        """
+        Calculates and updates the 30-day average daily volume for specified assets.
+        
+        Args:
+            table_name (str): Name of the OHLCV table to update
+            asset_ids (list): List of asset_ids to process
+            window (int): Rolling window size in days (default: 30)
+            
+        Returns:
+            int: Number of rows updated
+        """
+        if not asset_ids:
+            return 0
+            
+        # Format asset_ids for SQL query
+        asset_ids_str = ','.join(str(aid) for aid in asset_ids)
+        
+        # SQL query using window function to calculate rolling average
+        query = f"""
+        UPDATE {table_name} AS t
+        SET avg_daily_vol_30d = subquery.rolling_avg_volume
+        FROM (
+            SELECT 
+                id,
+                AVG(volume) OVER (
+                    PARTITION BY asset_id 
+                    ORDER BY datetime 
+                    ROWS BETWEEN {window-1} PRECEDING AND CURRENT ROW
+                ) AS rolling_avg_volume
+            FROM {table_name}
+            WHERE asset_id IN ({asset_ids_str})
+        ) AS subquery
+        WHERE t.id = subquery.id;
+        """
+        
+        try:
+            with self.connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(query)
+                return cursor.rowcount
+        except Exception as e:
+            print(f"Error updating average daily volume: {e}")
+            return 0
+            
+    def update_avg_daily_range(self, table_name, asset_ids, window=20):
+        """
+        Calculates and updates the 20-day average daily range for specified assets.
+        
+        Args:
+            table_name (str): Name of the OHLCV table to update
+            asset_ids (list): List of asset_ids to process
+            window (int): Rolling window size in days (default: 20)
+            
+        Returns:
+            int: Number of rows updated
+        """
+        if not asset_ids:
+            return 0
+            
+        # Format asset_ids for SQL query
+        asset_ids_str = ','.join(str(aid) for aid in asset_ids)
+        
+        # SQL query using window function to calculate rolling average
+        query = f"""
+        UPDATE {table_name} AS t
+        SET adr_20d = subquery.rolling_avg_range
+        FROM (
+            SELECT 
+                id,
+                AVG(daily_range_perc) OVER (
+                    PARTITION BY asset_id 
+                    ORDER BY datetime 
+                    ROWS BETWEEN {window-1} PRECEDING AND CURRENT ROW
+                ) AS rolling_avg_range
+            FROM {table_name}
+            WHERE asset_id IN ({asset_ids_str})
+        ) AS subquery
+        WHERE t.id = subquery.id;
+        """
+        
+        try:
+            with self.connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(query)
+                return cursor.rowcount
+        except Exception as e:
+            print(f"Error updating average daily range: {e}")
+            return 0
