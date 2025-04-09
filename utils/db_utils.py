@@ -44,6 +44,12 @@ class DatabaseManager:
         """Fetch query results as a pandas DataFrame"""
         with self.connection() as conn:
             return pd.read_sql(query, conn, params=params)
+        
+    def select_distinct(self, table, column):
+        """Select distinct values from a table"""
+        query = f"SELECT DISTINCT {column} FROM {table}"
+        with self.connection() as conn:
+            return pd.read_sql(query, conn)
     
     def record_exists(self, table, conditions):
         """Check if a record exists based on conditions"""

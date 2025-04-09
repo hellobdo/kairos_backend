@@ -5,22 +5,22 @@ import time
 
 db = DatabaseManager()
 
-def map_dataframe_to_ohlcv_table(df, stocks_df):
+def map_dataframe_to_ohlcv_table(df, matching_df):
     """
-    Maps DataFrame columns to match the stocks_ohlcv table structure
+    Maps DataFrame columns to match the ohlcv table structure
     
     Args:
         df: DataFrame with OHLCV data
-        stocks_df: DataFrame with stock information to get stock_id
+        assets_df: DataFrame with asset information to get asset_id
         
     Returns:
-        DataFrame with columns matching stocks_ohlcv table
+        DataFrame with columns matching ohlcv table
     """
     # Create a new DataFrame with only the columns needed for stocks_ohlcv
     ohlcv_df = pd.DataFrame()
     
     # Map date column
-    ohlcv_df['date'] = df['date']
+    ohlcv_df['datetime'] = df['date']
     
     # Map price and volume columns
     ohlcv_df['open'] = df['open']
@@ -30,29 +30,56 @@ def map_dataframe_to_ohlcv_table(df, stocks_df):
     ohlcv_df['volume'] = df['volume']
     ohlcv_df['adjusted_close'] = df['close']
     
-    # We need to map ticker to stock_id using the stocks table
-    # Create a dictionary mapping ticker to stock_id
-    ticker_to_id = dict(zip(stocks_df['ticker'], stocks_df['id']))
-    ohlcv_df['stock_id'] = df['ticker'].map(ticker_to_id)
+    # We need to map ticker to asset_id using the assets table
+    # Create a dictionary mapping ticker to asset_id
+    ticker_to_id = dict(zip(matching_df['ticker'], matching_df['id']))
+    ohlcv_df['asset_id'] = df['ticker'].map(ticker_to_id)
     
-    # Filter out rows where stock_id is null (ticker not found in stocks table)
-    ohlcv_df = ohlcv_df.dropna(subset=['stock_id'])
+    # Filter out rows where asset_id is null (ticker not found in assets table)
+    ohlcv_df = ohlcv_df.dropna(subset=['asset_id'])
     
-    # Convert stock_id to integer
-    ohlcv_df['stock_id'] = ohlcv_df['stock_id'].astype(int)
+    # Convert asset_id to integer
+    ohlcv_df['asset_id'] = ohlcv_df['asset_id'].astype(int)
 
+    # Format the timestamp as yyyy-mm-dd hh:mm:ss
+    current_time = time.strftime('%Y-%m-%d %H:%M:%S')
+    ohlcv_df['insert_timestamp'] = current_time
+    
     return ohlcv_df
 
-def process_stock_data():
+def get_specific_tickers(assets_df, ticker_list):
+    """
+    Get specific tickers from the database
+    
+    Returns:
+        list: List containing specific ticker symbols
+    """
     try:
-        print("Getting list of stocks from database...")
-        stocks_df = db.get_table_data('stocks')
-        ticker_list = stocks_df['ticker'].unique().tolist()
+        # Filter the assets_df to only include the tickers in the ticker_list
+        ticker_df = assets_df[assets_df['ticker'].isin(ticker_list)]
+        ticker_list = ticker_df['ticker'].tolist()
+        return ticker_list
+    except Exception as e:
+        print(f"Error getting specific tickers: {e}")
+        return []
+
+def process_stock_data(table_name, timeframe, ticker_list=None):
+    try:
+        print(f"Getting list of assets from {table_name} table...")
+        assets_df = db.get_table_data(table_name)
+        if ticker_list is None:
+            ticker_list = assets_df['ticker'].unique().tolist()
+        
+        else:
+            ticker_list = get_specific_tickers(assets_df, ticker_list)
+        
         print(f"Found {len(ticker_list)} unique tickers to process")
+        print(ticker_list)
     except Exception as e:
         print(f"Error getting stock list: {e}")
         exit()
-        
+    
+
     processed_count = 0
     error_count = 0
     
@@ -73,16 +100,22 @@ def process_stock_data():
             df_data = data[ticker]
             
             # Map to OHLCV table format
-            print(f"Mapping {ticker} data to stocks_ohlcv table...")
-            ohlcv_df = map_dataframe_to_ohlcv_table(df_data, stocks_df)
+            print(f"Mapping {ticker} data to {table_name} table...")
+            ohlcv_df = map_dataframe_to_ohlcv_table(df_data, assets_df)
             
             if ohlcv_df.empty:
                 print(f"No mappable data for {ticker}, skipping")
                 continue
             
             # Insert into database
-            print(f"Inserting {ticker} data into stocks_ohlcv table...")
-            rows_inserted = db.insert_dataframe(ohlcv_df, 'stocks_ohlcv')
+            if timeframe == 'daily':
+                table_name = f'{table_name}_ohlcv_daily'
+            else:
+                print(f"Timeframe {timeframe} not supported, skipping")
+                break
+            
+            print(f"Inserting {ticker} data into {table_name} table...")
+            rows_inserted = db.insert_dataframe(ohlcv_df, f'{table_name}')
             print(f"Successfully inserted {rows_inserted} rows for {ticker}")
             
             processed_count += 1
@@ -102,5 +135,8 @@ def process_stock_data():
     
     print(f"Processing complete. Successfully processed: {processed_count}, Errors: {error_count}")
 
+
+
 if __name__ == "__main__":
-    process_stock_data()
+    # needs to pass in table name and ticker list
+    process_stock_data('indexes', 'daily', ['VIX'])

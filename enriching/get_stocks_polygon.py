@@ -305,22 +305,7 @@ def update_stocks(new_stocks, stocks_with_changes, timestamp):
     except Exception as e:
         print(f"Error updating stocks in database: {e}")
         return 0, 0
-    
 
-def get_specific_tickers(polygon_data):
-    """
-    Get specific tickers from the Polygon API.
-    
-    Returns:
-        pandas.DataFrame: DataFrame containing specific tickers
-    """
-    # Filter to only include specific ETFs: QQQ, SPY, DIA, and IWM
-    etf_tickers = ['QQQ', 'SPY', 'DIA', 'IWM']
-    print(f"\nFiltering data to only include these tickers: {', '.join(etf_tickers)}")
-    polygon_data = polygon_data[polygon_data['ticker'].isin(etf_tickers)]
-    print(f"Filtered data contains {len(polygon_data)} tickers")
-
-    return polygon_data
 
 
 if __name__ == "__main__":
@@ -362,16 +347,11 @@ if __name__ == "__main__":
             # Convert to DataFrame
             polygon_data = pd.DataFrame(data)
             polygon_data = clean_up_data(polygon_data)
-
-            polygon_data = get_specific_tickers(polygon_data)
-            print(f"Filtered data contains {len(polygon_data)} tickers")
-            print(polygon_data.head())
     
     except Exception as e:
         raise ValueError(f"Error getting data from Polygon API: {e}")
 
-    # Commenting out database operations temporarily
-    """
+
     try:
         # Use get_table_data to get existing stocks from database
         stocks_in_db = db.get_table_data('stocks')
@@ -413,4 +393,3 @@ if __name__ == "__main__":
         
     except Exception as e:
         raise ValueError(f"Error updating stocks in database: {e}")
-    """

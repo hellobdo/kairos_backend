@@ -26,6 +26,8 @@ def download_data(tickers: list[str], period="5y", start=None, end=None):
     
     for ticker in tickers:
         # Create Ticker object
+        if ticker == 'VIX':
+            ticker = '^VIX'
         ticker_obj = yf.Ticker(ticker)
         
         # Download historical data
@@ -49,10 +51,17 @@ def download_data(tickers: list[str], period="5y", start=None, end=None):
         df['week'] = df['date'].dt.isocalendar().week
         # Convert to string format after extracting components
         df['date'] = df['date'].dt.strftime('%Y-%m-%d')
-        df['ticker'] = ticker
+        # Convert ^VIX back to VIX
+        if ticker == '^VIX':
+            df['ticker'] = 'VIX'
+        else:
+            df['ticker'] = ticker
                 
         # Store in dictionary
-        data[ticker] = df
+        if ticker == '^VIX':
+            data['VIX'] = df
+        else:
+            data[ticker] = df
         
         print(f"Downloaded {len(df)} rows of data for {ticker}")
     
