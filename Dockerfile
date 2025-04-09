@@ -7,7 +7,11 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     build-essential \
     sqlite3 \
+    wget \
     && rm -rf /var/lib/apt/lists/*
+
+# Install wheel first and upgrade pip
+RUN pip install --no-cache-dir --upgrade pip wheel setuptools
 
 # Copy requirements file
 COPY requirements.txt .

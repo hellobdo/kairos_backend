@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 from indicators.helpers.column_utils import normalize_columns
 
-def calculate_indicator(df: pd.DataFrame, period: int) -> pd.DataFrame:
+def calculate_indicator(df: pd.DataFrame, period: int, adr_threshold: float) -> pd.DataFrame:
     """
     Calculate Average Daily Range with a period window.
     
@@ -34,5 +34,9 @@ def calculate_indicator(df: pd.DataFrame, period: int) -> pd.DataFrame:
     df['daily_range'] = df['high'] - df['low']
     df['daily_range_percentage'] = df['daily_range'] / df['open']
     df['adr'] = df['daily_range_percentage'].rolling(window=period).mean()
+
+    condition1 = df['adr'] > adr_threshold
+
+    df['is_indicator'] = condition1
     
     return df

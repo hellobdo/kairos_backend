@@ -1,5 +1,5 @@
 import pandas as pd
-from analytics.download_comparison_data import download_data
+from api.yf import download_data
 
 def calculate_accuracy(df: pd.DataFrame) -> pd.Series:
     """

@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 from indicators.helpers.column_utils import normalize_columns
 
-def calculate_indicator(df: pd.DataFrame, period: int) -> pd.DataFrame:
+def calculate_indicator(df: pd.DataFrame, period: int, adv_threshold: float) -> pd.DataFrame:
     """
     Calculate Average Daily Volume with a period window.
     
@@ -32,5 +32,9 @@ def calculate_indicator(df: pd.DataFrame, period: int) -> pd.DataFrame:
     
     # Calculate ADV
     df['adv'] = df['volume'].rolling(window=period).mean()
+
+    condition1 = df['adv'] > adv_threshold
+
+    df['is_indicator'] = condition1
     
     return df
