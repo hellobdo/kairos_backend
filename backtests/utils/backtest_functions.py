@@ -48,10 +48,14 @@ class BaseStrategy(Strategy):
                 # Continue with other indicators
         return calculate_indicators
     
-    def _check_position_limits(self):
-        """Check if we've reached position or loss limits"""
+    def _check_open_positions(self):
+        """Check if we have open positions"""
         open_positions = [p for p in self.get_positions() if not (p.asset.symbol == "USD" and p.asset.asset_type == Asset.AssetType.FOREX)]
-        return len(open_positions) >= self.max_loss_positions or self.vars.daily_loss_count >= self.max_loss_positions
+        return len(open_positions)
+    
+    def _check_position_limits(self, open_positions):
+        """Check if we've reached position or loss limits"""
+        return (open_positions >= self.max_loss_positions or self.vars.daily_loss_count >= self.max_loss_positions)
     
     def _check_time_conditions(self, time):
         """Check if current time meets our trading conditions (0 or 30 minutes past the hour)"""
@@ -83,17 +87,22 @@ class BaseStrategy(Strategy):
                 return rule["amount"]
         return None  # No matching rule found
     
-    def _calculate_price_levels(self, entry_price, stop_loss_amount, side, risk_reward):
-        """Calculate stop loss and take profit levels based on entry price and trade side"""
+    def _calculate_stop_loss_price(self, entry_price, stop_loss_amount, side):
+        """Calculate stop loss price based on entry price and trade side"""
+        if side == 'buy':
+            return entry_price - stop_loss_amount
+        elif side == 'sell':
+            return entry_price + stop_loss_amount
+    
+    def _calculate_take_profit_price(self, entry_price, stop_loss_amount, side, risk_reward):
+        """Calculate take profit price based on entry price and trade side"""
         
         if side == 'buy':
-            stop_loss_price = entry_price - stop_loss_amount
             take_profit_price = entry_price + (stop_loss_amount * risk_reward)
         elif side == 'sell':
-            stop_loss_price = entry_price + stop_loss_amount
             take_profit_price = entry_price - (stop_loss_amount * risk_reward)
             
-        return stop_loss_price, take_profit_price 
+        return take_profit_price 
 
     def _save_trades_at_end(self):
         """Save trades to CSV when reaching the end of backtest"""
@@ -117,8 +126,11 @@ class BaseStrategy(Strategy):
             else:
                 print("No trade log to save.")
 
-    def _out_before_end_of_day(self):
-        """Cancel all open orders and sell all positions"""
+    def _check_positions_before_end_of_day(self):
+        """Cancel all open orders and sell all positions if enabled in parameters"""
+        if not self.parameters.get("out_before_end_of_day", False):
+            return
+            
         self.cancel_open_orders()
         positions = self.get_positions()
         if len(positions) > 0:
@@ -167,6 +179,154 @@ class BaseStrategy(Strategy):
 
         # Append to trade log
         self.vars.trade_log.append(trade_info)
+
+    def _load_parameters(self):
+        parameters = self.parameters
+        if not hasattr(self.vars, 'daily_loss_count'):
+            self.vars.daily_loss_count = 0
+        
+        # Load indicator calculation functions
+        self.indicators = parameters.get("indicators")
+        
+        # close positions before market close, see below def before_market_closes()
+        self.minutes_before_closing = 0.1 
+        
+        # Load additional common parameters from on_trading_iteration
+        self.symbols = parameters.get("symbols", [])
+        self.bar_signals_length = parameters.get("bar_signals_length")
+        self.side = parameters.get("side")
+        self.risk_reward = parameters.get("risk_reward")
+        self.risk_per_trade = parameters.get("risk_per_trade")
+        self.stop_loss_rules = parameters.get("stop_loss_rules")
+        self.max_loss_positions = parameters.get("max_loss_positions")
+        self.sleeptime = parameters.get("sleeptime")
+        self.margin = parameters.get("margin")
+        self.day_trading = parameters.get("day_trading")
+
+    def _handle_trading_iteration(self, calculate_indicators):
+        """
+        Handles the common logic for trading iterations.
+        
+        Args:
+            calculate_indicators (dict): Dictionary of indicator calculation functions
+            
+        Returns:
+            bool: True if trading was processed, False if early return conditions were met
+        """
+        
+        if self.day_trading:
+            current_time = self.get_datetime()
+            # Check if we're at the right time to trade
+            if not self._check_time_conditions(current_time):
+                return False
+            
+            # Check if max daily losses reached or position limit reached
+            open_positions = self._check_open_positions()
+            if self._check_position_limits(open_positions):
+                return False
+
+        # Loop through each symbol to check if the entry conditions are met
+        for symbol in self.symbols:
+            # Skip if there is already a position in this asset
+            if self.get_position(symbol) is not None:
+                continue
+
+            bars = self.get_historical_prices(symbol, length=1, timestep=self.bar_signals_length)
+            if bars is None or bars.df.empty:
+                continue
+
+            # Apply indicators and check if all signals are valid
+            if self.indicators is not None:
+                signal_valid, df = self._apply_indicators(bars.df.copy(), calculate_indicators)
+                if not signal_valid:
+                    continue
+            
+            # Process valid signal
+            entry_price = self.get_last_price(symbol)
+            if entry_price is None:
+                continue
+
+            # Determine stop loss amount
+            stop_loss_amount = self._determine_stop_loss(entry_price, self.stop_loss_rules)
+            
+            stop_loss_price, take_profit_price, type, quantity = self._prepare_order_parameters(symbol, quantity, stop_loss_amount, entry_price)
+            
+            # Create and submit an order
+            self._create_and_submit_entry_order(symbol, quantity, stop_loss_price, take_profit_price, type, self.margin)
+            
+        return True
+    
+    def _prepare_order_parameters(self, quantity, stop_loss_amount, entry_price):
+        """
+        Prepare order parameters based on stop loss rules and risk reward.
+        
+        Args:
+            symbol (str): Trading symbol
+        """
+        
+        stop_loss_price = None
+        take_profit_price = None
+        type = "market"
+
+        if stop_loss_amount is not None:
+            stop_loss_price = self._calculate_stop_loss_price(entry_price, stop_loss_amount, self.side)
+            
+            if self.risk_reward is not None:
+                take_profit_price = self._calculate_take_profit_price(entry_price, stop_loss_amount, self.side, self.risk_reward)
+
+        if stop_loss_price is not None or take_profit_price is not None:
+            type = "bracket"
+            
+        quantity = self._calculate_qty_based_on_risk_per_trade(stop_loss_amount, self.risk_per_trade)
+
+        return stop_loss_price, take_profit_price, type, quantity
+        
+    def _create_and_submit_entry_order(self, symbol, quantity, stop_loss_price=None, take_profit_price=None, type="market", margin=False):
+        """
+        Creates and submits a bracket order with stop loss and take profit.
+        
+        Args:
+            symbol (str): Trading symbol
+            quantity (float): Order quantity
+            stop_loss_price (float, optional): Stop loss price level
+            take_profit_price (float, optional): Take profit price level
+            type (str, optional): Order type, defaults to "bracket"
+        """
+        # Create a market order with attached stop loss and take profit orders
+        # Trading on margin by passing custom parameter 'margin': True
+        custom_params = {}
+        
+        if stop_loss_price:
+            custom_params["stop_loss_price"] = stop_loss_price
+            
+        if take_profit_price:
+            custom_params["take_profit_price"] = take_profit_price
+
+        if margin:
+            custom_params["margin"] = True
+            
+        entry_order = self.create_order(
+            symbol,
+            quantity,
+            side=self.side,
+            type=type,
+            stop_loss_price=stop_loss_price,
+            take_profit_price=take_profit_price,
+            custom_params=custom_params,
+            time_in_force="day"
+        )
+        self.submit_order(entry_order)
+        
+    def initialize_strategy(self):
+        """
+        Initialize strategy with common parameters and indicator functions.
+        """
+        # Load all common parameters first
+        self._load_parameters()
+        
+        # Load indicator calculation functions and store as instance variable
+        if self.indicators is not None:
+            self.calculate_indicators = self._load_indicators(self.indicators, load_indicators)
 
     @classmethod
     def run_strategy(cls):
@@ -246,119 +406,6 @@ class BaseStrategy(Strategy):
         else:
             raise ValueError(f"Unsupported data source: {data_source}")
 
-    def _load_parameters(self):
-        parameters = self.parameters
-        if not hasattr(self.vars, 'daily_loss_count'):
-            self.vars.daily_loss_count = 0
-        
-        # Load indicator calculation functions
-        self.indicators = parameters.get("indicators")
-        
-        # close positions before market close, see below def before_market_closes()
-        self.minutes_before_closing = 0.1 
-        
-        # Load additional common parameters from on_trading_iteration
-        self.symbols = parameters.get("symbols", [])
-        self.bar_signals_length = parameters.get("bar_signals_length")
-        self.side = parameters.get("side")
-        self.risk_reward = parameters.get("risk_reward")
-        self.risk_per_trade = parameters.get("risk_per_trade")
-        self.stop_loss_rules = parameters.get("stop_loss_rules")
-        self.max_loss_positions = parameters.get("max_loss_positions")
-        self.sleeptime = parameters.get("sleeptime")
-        
-    def _handle_trading_iteration(self, calculate_indicators):
-        """
-        Handles the common logic for trading iterations.
-        
-        Args:
-            calculate_indicators (dict): Dictionary of indicator calculation functions
-            
-        Returns:
-            bool: True if trading was processed, False if early return conditions were met
-        """
-        current_time = self.get_datetime()
-
-        # Check if max daily losses reached or position limit reached
-
-        if self._check_position_limits():
-            return False
-
-        # Check if we're at the right time to trade
-        if not self._check_time_conditions(current_time):
-            return False
-
-        # Loop through each symbol to check if the entry conditions are met
-        for symbol in self.symbols:
-            # Skip if there is already a position in this asset
-            if self.get_position(symbol) is not None:
-                continue
-
-            bars = self.get_historical_prices(symbol, length=1, timestep=self.bar_signals_length)
-            if bars is None or bars.df.empty:
-                continue
-
-            # Apply indicators and check if all signals are valid
-            signal_valid, df = self._apply_indicators(bars.df.copy(), calculate_indicators)
-            if not signal_valid:
-                continue
-            
-            # Process valid signal
-            entry_price = self.get_last_price(symbol)
-            if entry_price is None:
-                continue
-
-            # Determine stop loss amount
-            price = df['close'].iloc[-1]
-            stop_loss_amount = self._determine_stop_loss(price, self.stop_loss_rules)
-            if stop_loss_amount is None:
-                continue  # No matching rule found
-
-            stop_loss_price, take_profit_price = self._calculate_price_levels(entry_price, stop_loss_amount, self.side, self.risk_reward)
-            quantity = self._calculate_qty_based_on_risk_per_trade(stop_loss_amount, self.risk_per_trade)
-            
-            # Create and submit an order
-            self._create_and_submit_entry_order(symbol, quantity, stop_loss_price, take_profit_price)
-            
-        return True
-        
-    def _create_and_submit_entry_order(self, symbol, quantity, stop_loss_price, take_profit_price):
-        """
-        Creates and submits a bracket order with stop loss and take profit.
-        
-        Args:
-            symbol (str): Trading symbol
-            quantity (float): Order quantity
-            stop_loss_price (float): Stop loss price level
-            take_profit_price (float): Take profit price level
-        """
-        # Create a market order with attached stop loss and take profit orders
-        # Trading on margin by passing custom parameter 'margin': True
-        entry_order = self.create_order(
-            symbol,
-            quantity,
-            side=self.side,
-            type="bracket",  # This makes it a bracket order
-            stop_loss_price=stop_loss_price,  # Exit stop loss price
-            take_profit_price=take_profit_price,  # Exit take profit price
-            custom_params={
-                "margin": True,
-                "stop_loss_price": stop_loss_price,
-                "take_profit_price": take_profit_price
-            },
-            time_in_force="day"
-        )
-        self.submit_order(entry_order)
-        
-    def initialize_strategy(self):
-        """
-        Initialize strategy with common parameters and indicator functions.
-        """
-        # Load all common parameters first
-        self._load_parameters()
-        
-        # Load indicator calculation functions and store as instance variable
-        self.calculate_indicators = self._load_indicators(self.indicators, load_indicators)
         
     @classmethod
     def rename_custom_logs(cls):

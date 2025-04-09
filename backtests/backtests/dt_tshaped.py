@@ -49,8 +49,7 @@ class Strategy(BaseStrategy):
         self._on_filled_order(position, order, price, quantity, multiplier)
 
     def before_market_closes(self):
-        if self.parameters.get("out_before_end_of_day"):
-            self._out_before_end_of_day()
+        self._check_positions_before_end_of_day()
 
     def after_market_closes(self):
         self.vars.daily_loss_count = 0

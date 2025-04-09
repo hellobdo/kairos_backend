@@ -21,14 +21,16 @@ class Strategy(BaseStrategy):
         "side": "buy",
         "risk_per_trade": None,
         "max_loss_positions": None,
-        "bar_signals_length": None,
+        "bar_signals_length": "1 day",
         "backtesting_start": backtesting_start.strftime("%Y-%m-%d"),
         "backtesting_end": backtesting_end.strftime("%Y-%m-%d"),
         "sleeptime": "1D",
         "indicators": None,
         "data_source": data_source,
         "out_before_end_of_day": False,
-        "stop_loss_rules": None
+        "stop_loss_rules": None,
+        "margin": True,
+        "day_trading": False
     }
 
     def initialize(self):
@@ -47,8 +49,7 @@ class Strategy(BaseStrategy):
         self._on_filled_order(position, order, price, quantity, multiplier)
 
     def before_market_closes(self):
-        if self.parameters.get("out_before_end_of_day"):
-            self._out_before_end_of_day()
+        self._check_positions_before_end_of_day()
 
     def after_market_closes(self):
         self.vars.daily_loss_count = 0
