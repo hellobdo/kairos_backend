@@ -6,7 +6,7 @@
 numpy==1.26.0
 pandas==2.0.0
 plotly==5.18.0
-scipy==1.11.3
+scipy==1.10.1
 
 # Database and ORM
 SQLAlchemy==2.0.23
