@@ -69,6 +69,8 @@ def calculate_indicators(table_name):
             print(f"Updated {rows_updated} rows for asset_id {asset_id}")
             
             total_updated += 1
+            if total_updated == 1:
+                break
             
         except Exception as e:
             print(f"Error processing asset_id {asset_id}: {e}")
