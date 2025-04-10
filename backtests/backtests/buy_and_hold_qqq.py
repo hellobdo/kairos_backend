@@ -30,7 +30,8 @@ class Strategy(BaseStrategy):
         "out_before_end_of_day": False,
         "stop_loss_rules": None,
         "margin": True,
-        "day_trading": False
+        "day_trading": False,
+        "allow_building_positions": True
     }
 
     def initialize(self):

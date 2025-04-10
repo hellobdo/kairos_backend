@@ -71,10 +71,13 @@ class BaseStrategy(Strategy):
         # All indicators returned True
         return True, df
     
-    def _calculate_qty_based_on_risk_per_trade(self, stop_loss_amount, risk_per_trade):
+    def _calculate_qty_based_on_risk_per_trade(self, stop_loss_amount, risk_per_trade, entry_price):
         """Calculate quantity based on risk per trade and stop loss amount"""
 
-        risk_size = 30000 * risk_per_trade
+        if risk_per_trade is None:
+            return int(self.cash // entry_price)
+        
+        risk_size = self.cash * risk_per_trade
         return int(risk_size // stop_loss_amount)
     
     def _determine_stop_loss(self, price, stop_loss_rules):
@@ -189,7 +192,6 @@ class BaseStrategy(Strategy):
         self.minutes_before_closing = 0.1 
         # close positions before market close, see below def before_market_closes()
         
-        
         # Load additional common parameters from on_trading_iteration
         self.symbols = parameters.get("symbols", [])
         self.bar_signals_length = parameters.get("bar_signals_length")
@@ -203,6 +205,9 @@ class BaseStrategy(Strategy):
         self.day_trading = parameters.get("day_trading")
         self.indicators = parameters.get("indicators")
         self.out_before_end_of_day = parameters.get("out_before_end_of_day")
+        self.allow_building_positions = parameters.get("allow_building_positions")
+        cash = self.get_cash()
+
 
         if self.day_trading:
             if not hasattr(self.vars, 'daily_loss_count'):
@@ -232,16 +237,18 @@ class BaseStrategy(Strategy):
 
         # Loop through each symbol to check if the entry conditions are met
         for symbol in self.symbols:
-            # Skip if there is already a position in this asset
-            if self.get_position(symbol) is not None:
-                continue
 
-            bars = self.get_historical_prices(symbol, length=1, timestep=self.bar_signals_length)
-            if bars is None or bars.df.empty:
-                continue
+            if not self.allow_building_positions:
+                # Skip if there is already a position in this asset
+                if self.get_position(symbol) is not None:
+                    continue
 
             # Apply indicators and check if all signals are valid
             if self.indicators is not None:
+                bars = self.get_historical_prices(symbol, length=1, timestep=self.bar_signals_length)
+                if bars is None or bars.df.empty:
+                    continue
+
                 signal_valid, df = self._apply_indicators(bars.df.copy(), calculate_indicators)
                 if not signal_valid:
                     continue
@@ -254,6 +261,7 @@ class BaseStrategy(Strategy):
             # Determine stop loss amount
             stop_loss_amount = self._determine_stop_loss(entry_price, self.stop_loss_rules)
             
+            # Prepare order parameters
             stop_loss_price, take_profit_price, type, quantity = self._prepare_order_parameters(symbol, quantity, stop_loss_amount, entry_price)
             
             # Create and submit an order
@@ -282,7 +290,7 @@ class BaseStrategy(Strategy):
         if stop_loss_price is not None or take_profit_price is not None:
             type = "bracket"
             
-        quantity = self._calculate_qty_based_on_risk_per_trade(stop_loss_amount, self.risk_per_trade)
+        quantity = self._calculate_qty_based_on_risk_per_trade(stop_loss_amount, self.risk_per_trade, entry_price)
 
         return stop_loss_price, take_profit_price, type, quantity
         
