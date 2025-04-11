@@ -5,6 +5,7 @@ from pathlib import Path
 import argparse
 from backtests.utils import process_csv_to_executions, process_executions_to_trades
 from analytics.trade_results import run_report
+from backtests.utils.backtest_data_to_db import get_backtest_info
 
 def get_backtest_files_for_display():
     """Get all backtest files from backtests/backtests directory.
@@ -142,9 +143,10 @@ def generate_reports(trades_df):
         dict: Dictionary containing reports for week, month, and year periods
     """
     try:
+        settings_df = get_backtest_info()
         reports = {}
         for period in ['week', 'month', 'year']:
-            reports[period] = run_report(trades_df, period)
+            reports[period] = run_report(trades_df, period, settings_df)
         return reports
     except Exception as e:
         print(f"Error generating reports: {str(e)}")

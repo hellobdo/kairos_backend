@@ -1,14 +1,17 @@
-from lumibot.strategies.strategy import Strategy
-from lumibot.entities import Asset
+import os
 import pandas as pd
+import sys
+
 from datetime import datetime
 from pathlib import Path
 from lumibot.entities import Order, Asset, Data
 from lumibot.backtesting import PolygonDataBacktesting, PandasDataBacktesting
-import os
+from lumibot.strategies.strategy import Strategy
+from lumibot.entities import Asset
+
 from backtests.utils.backtest_data_to_db import get_latest_settings_file
 # Import indicators loader
-import sys
+
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from indicators import load_indicators
 
@@ -71,24 +74,34 @@ class BaseStrategy(Strategy):
         # All indicators returned True
         return True, df
     
-    def _calculate_qty_based_on_risk_per_trade(self, stop_loss_amount, risk_per_trade, entry_price):
+    def _calculate_qty(self, stop_loss_amount, entry_price):
         """Calculate quantity based on risk per trade and stop loss amount"""
 
-        if risk_per_trade is None:
-            return int(self.cash // entry_price)
+        if self.risk_per_trade is None:
+            if self.cash < entry_price:
+                return False
+            else:
+                qty = int(self.cash // entry_price)
+        else:
+            qty = int(self.cash * self.risk_per_trade // stop_loss_amount)
         
-        risk_size = self.cash * risk_per_trade
-        return int(risk_size // stop_loss_amount)
+        return qty
     
     def _determine_stop_loss(self, price, stop_loss_rules):
         """Determine stop loss amount based on price and rules"""
 
-        for rule in stop_loss_rules:
-            if "price_below" in rule and price < rule["price_below"]:
-                return rule["amount"]
-            elif "price_above" in rule and price >= rule["price_above"]:
-                return rule["amount"]
-        return None  # No matching rule found
+        if stop_loss_rules is None:
+            return None
+
+        try:
+            for rule in stop_loss_rules:
+                if "price_below" in rule and price < rule["price_below"]:
+                    return rule["amount"]
+                elif "price_above" in rule and price >= rule["price_above"]:
+                    return rule["amount"]
+        except Exception as e:
+            print(f"Error determining stop loss: {e}")
+            return None
     
     def _calculate_stop_loss_price(self, entry_price, stop_loss_amount, side):
         """Calculate stop loss price based on entry price and trade side"""
@@ -106,14 +119,21 @@ class BaseStrategy(Strategy):
             take_profit_price = entry_price - (stop_loss_amount * risk_reward)
             
         return take_profit_price 
+    
+    def _before_starting_trading(self):
+        if self.day_trading:
+            self.vars.daily_loss_count = 0
 
     def _save_trades_at_end(self):
         """Save trades to CSV when reaching the end of backtest"""
         current_time = self.get_datetime()
+        print(current_time.date())
         backtesting_end = datetime.strptime(self.parameters.get("backtesting_end"), "%Y-%m-%d")
+        print(backtesting_end.date())
         
         next_day = current_time + pd.Timedelta(days=1)
-        if next_day.date() == backtesting_end.date():
+
+        if next_day.date() == backtesting_end.date() or current_time.date() == backtesting_end.date():
             if hasattr(self.vars, 'trade_log') and self.vars.trade_log:
                 timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
                 df = pd.DataFrame(self.vars.trade_log)
@@ -178,7 +198,7 @@ class BaseStrategy(Strategy):
             "take_profit": take_profit,
             "status": order.status,
             "type": order.order_type,
-            "risk_per_trade": self.risk_per_trade
+            "risk_per_trade": self.risk_per_trade,
         }
 
         # Append to trade log
@@ -187,39 +207,31 @@ class BaseStrategy(Strategy):
     def _load_parameters(self):
         parameters = self.parameters
         
-        # Load indicator calculation functions
-        
         self.minutes_before_closing = 0.1 
-        # close positions before market close, see below def before_market_closes()
         
         # Load additional common parameters from on_trading_iteration
         self.symbols = parameters.get("symbols", [])
-        self.bar_signals_length = parameters.get("bar_signals_length")
-        self.side = parameters.get("side")
         self.risk_reward = parameters.get("risk_reward")
+        self.side = parameters.get("side")
         self.risk_per_trade = parameters.get("risk_per_trade")
-        self.stop_loss_rules = parameters.get("stop_loss_rules")
         self.max_loss_positions = parameters.get("max_loss_positions")
+        self.bar_signals_length = parameters.get("bar_signals_length")
         self.sleeptime = parameters.get("sleeptime")
-        self.margin = parameters.get("margin")
-        self.day_trading = parameters.get("day_trading")
         self.indicators = parameters.get("indicators")
         self.out_before_end_of_day = parameters.get("out_before_end_of_day")
+        self.stop_loss_rules = parameters.get("stop_loss_rules")
+        self.margin = parameters.get("margin")
+        self.day_trading = parameters.get("day_trading")
         self.allow_building_positions = parameters.get("allow_building_positions")
-        cash = self.get_cash()
-
 
         if self.day_trading:
             if not hasattr(self.vars, 'daily_loss_count'):
                 self.vars.daily_loss_count = 0
         
-    def _handle_trading_iteration(self, calculate_indicators):
+    def _handle_trading_iteration(self):
         """
         Handles the common logic for trading iterations.
         
-        Args:
-            calculate_indicators (dict): Dictionary of indicator calculation functions
-            
         Returns:
             bool: True if trading was processed, False if early return conditions were met
         """
@@ -249,7 +261,7 @@ class BaseStrategy(Strategy):
                 if bars is None or bars.df.empty:
                     continue
 
-                signal_valid, df = self._apply_indicators(bars.df.copy(), calculate_indicators)
+                signal_valid, df = self._apply_indicators(bars.df.copy(), self.calculate_indicators)
                 if not signal_valid:
                     continue
             
@@ -260,26 +272,32 @@ class BaseStrategy(Strategy):
 
             # Determine stop loss amount
             stop_loss_amount = self._determine_stop_loss(entry_price, self.stop_loss_rules)
-            
-            # Prepare order parameters
-            stop_loss_price, take_profit_price, type, quantity = self._prepare_order_parameters(symbol, quantity, stop_loss_amount, entry_price)
-            
-            # Create and submit an order
-            self._create_and_submit_entry_order(symbol, quantity, stop_loss_price, take_profit_price, type, self.margin)
+
+            quantity = self._calculate_qty(stop_loss_amount, entry_price)
+
+            if quantity:
+                # Prepare order parameters
+                stop_loss_price, take_profit_price = self._prepare_order_parameters(stop_loss_amount, entry_price)
+
+                # Create and submit an order
+                self._create_and_submit_entry_order(symbol, quantity, stop_loss_price, take_profit_price)
             
         return True
     
-    def _prepare_order_parameters(self, quantity, stop_loss_amount, entry_price):
+    def _prepare_order_parameters(self, stop_loss_amount, entry_price):
         """
         Prepare order parameters based on stop loss rules and risk reward.
         
         Args:
-            symbol (str): Trading symbol
+            stop_loss_amount (float): Stop loss amount
+            entry_price (float): Entry price
+            
+        Returns:
+            tuple: stop_loss_price, take_profit_price, order_type
         """
         
         stop_loss_price = None
         take_profit_price = None
-        type = "market"
 
         if stop_loss_amount is not None:
             stop_loss_price = self._calculate_stop_loss_price(entry_price, stop_loss_amount, self.side)
@@ -287,14 +305,9 @@ class BaseStrategy(Strategy):
             if self.risk_reward is not None:
                 take_profit_price = self._calculate_take_profit_price(entry_price, stop_loss_amount, self.side, self.risk_reward)
 
-        if stop_loss_price is not None or take_profit_price is not None:
-            type = "bracket"
-            
-        quantity = self._calculate_qty_based_on_risk_per_trade(stop_loss_amount, self.risk_per_trade, entry_price)
-
-        return stop_loss_price, take_profit_price, type, quantity
+        return stop_loss_price, take_profit_price
         
-    def _create_and_submit_entry_order(self, symbol, quantity, stop_loss_price=None, take_profit_price=None, type="market", margin=False):
+    def _create_and_submit_entry_order(self, symbol, quantity, stop_loss_price=None, take_profit_price=None, type="market"):
         """
         Creates and submits a bracket order with stop loss and take profit.
         
@@ -307,7 +320,9 @@ class BaseStrategy(Strategy):
         """
         # Create a market order with attached stop loss and take profit orders
         # Trading on margin by passing custom parameter 'margin': True
-        custom_params = {}
+        custom_params = {"margin": False}
+        if self.margin:
+            custom_params["margin"] = True
         
         if stop_loss_price:
             custom_params["stop_loss_price"] = stop_loss_price
@@ -315,14 +330,14 @@ class BaseStrategy(Strategy):
         if take_profit_price:
             custom_params["take_profit_price"] = take_profit_price
 
-        if margin:
-            custom_params["margin"] = True
+        if stop_loss_price is not None or take_profit_price is not None:
+            type = "bracket"
             
         entry_order = self.create_order(
             symbol,
             quantity,
             side=self.side,
-            type=type,
+            type= type,
             stop_loss_price=stop_loss_price,
             take_profit_price=take_profit_price,
             custom_params=custom_params,
@@ -415,6 +430,7 @@ class BaseStrategy(Strategy):
                 parameters=parameters,
                 pandas_data=pandas_data
             )
+            
         
         else:
             raise ValueError(f"Unsupported data source: {data_source}")
@@ -444,11 +460,18 @@ class BaseStrategy(Strategy):
             if logs_dir.exists():
                 pattern = f"*_{timestamp}_id_*"
                 print(f"Looking for files matching pattern: {pattern}")
-                for file in logs_dir.glob(pattern):
-                    print(f"Found file to rename: {file}")
-                    new_name = str(file).replace("_id_", f"_{identifier}_")
-                    os.rename(file, new_name)
-                    print(f"Renamed to: {new_name}")
+                
+                # Get list of files matching the pattern
+                matching_files = list(logs_dir.glob(pattern))
+                
+                if matching_files:
+                    for file in matching_files:
+                        print(f"Found file to rename: {file}")
+                        new_name = str(file).replace("_id_", f"_{identifier}_")
+                        os.rename(file, new_name)
+                        print(f"Renamed to: {new_name}")
+                else:
+                    print(f"No files found matching pattern: {pattern}")
         else:
             identifier = "id"
             print(f"Identifier not replaced")

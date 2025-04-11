@@ -299,3 +299,110 @@ class DatabaseManager:
         except Exception as e:
             print(f"Error updating average daily range: {e}")
             return 0
+            
+    def get_ticker_ids(self, tickers):
+        """
+        Get IDs for specified ticker symbols.
+        
+        Args:
+            tickers (list): List of ticker symbols
+            
+        Returns:
+            dict: Dictionary mapping ticker symbols to their IDs
+        """
+        if not tickers:
+            return {}
+            
+        ticker_str = "', '".join(tickers)
+        query = f"SELECT id, ticker FROM stocks WHERE ticker IN ('{ticker_str}')"
+        
+        try:
+            ticker_df = self.fetch_df(query)
+            if ticker_df.empty:
+                print(f"No ticker data found for {tickers}")
+                return {}
+                
+            return dict(zip(ticker_df['ticker'], ticker_df['id']))
+        except Exception as e:
+            print(f"Error retrieving ticker IDs: {e}")
+            return {}
+            
+    def get_stock_data_for_dates(self, tickers, dates):
+        """
+        Get stock data for specified tickers on specific dates.
+        
+        Args:
+            tickers (list): List of ticker symbols
+            dates (list): List of dates in 'YYYY-MM-DD' format
+            
+        Returns:
+            pandas.DataFrame: DataFrame containing stock data for specified tickers and dates
+        """
+        if not tickers or not dates:
+            return pd.DataFrame()
+            
+        # Get ticker IDs
+        ticker_to_id = self.get_ticker_ids(tickers)
+        if not ticker_to_id:
+            return pd.DataFrame()
+            
+        # Format asset IDs and dates for the query
+        asset_ids_str = ", ".join(str(ticker_to_id[ticker]) for ticker in tickers if ticker in ticker_to_id)
+        dates_str = "', '".join(dates)
+        
+        # Query the stock data
+        query = f"""
+        SELECT s.ticker, o.* 
+        FROM stocks_ohlcv_daily o
+        JOIN stocks s ON o.asset_id = s.id
+        WHERE o.asset_id IN ({asset_ids_str})
+        AND o.datetime IN ('{dates_str}')
+        ORDER BY s.ticker, o.datetime
+        """
+        
+        try:
+            result_df = self.fetch_df(query)
+            return result_df
+        except Exception as e:
+            print(f"Error retrieving stock data for dates: {e}")
+            return pd.DataFrame()
+            
+    def get_stock_data_for_date_range(self, tickers, start_date, end_date):
+        """
+        Get stock data for specified tickers within a date range.
+        
+        Args:
+            tickers (list): List of ticker symbols
+            start_date (str): Start date in 'YYYY-MM-DD' format
+            end_date (str): End date in 'YYYY-MM-DD' format
+            
+        Returns:
+            pandas.DataFrame: DataFrame containing stock data for specified tickers and date range
+        """
+        if not tickers or not start_date or not end_date:
+            return pd.DataFrame()
+            
+        # Get ticker IDs
+        ticker_to_id = self.get_ticker_ids(tickers)
+        if not ticker_to_id:
+            return pd.DataFrame()
+            
+        # Format asset IDs for the query
+        asset_ids_str = ", ".join(str(ticker_to_id[ticker]) for ticker in tickers if ticker in ticker_to_id)
+        
+        # Query the stock data for the date range
+        query = f"""
+        SELECT s.ticker, o.* 
+        FROM stocks_ohlcv_daily o
+        JOIN stocks s ON o.asset_id = s.id
+        WHERE o.asset_id IN ({asset_ids_str})
+        AND o.datetime BETWEEN '{start_date}' AND '{end_date}'
+        ORDER BY s.ticker, o.datetime
+        """
+        
+        try:
+            result_df = self.fetch_df(query)
+            return result_df
+        except Exception as e:
+            print(f"Error retrieving stock data for date range: {e}")
+            return pd.DataFrame()

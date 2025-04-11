@@ -11,7 +11,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 backtesting_start = datetime.strptime(os.getenv("BACKTESTING_START"), "%Y-%m-%d")
 backtesting_end = datetime.strptime(os.getenv("BACKTESTING_END"), "%Y-%m-%d")
 tickers = ["QQQ"]
-data_source = "polygon"
+data_source = "csv"
 
 class Strategy(BaseStrategy):    
     # Define strategy parameters that can be adjusted by the user
@@ -30,19 +30,22 @@ class Strategy(BaseStrategy):
         "out_before_end_of_day": True,
         "stop_loss_rules": [
             {"price_above": 150, "amount": 1.00}
-        ]
+        ],
+        "margin": True,
+        "day_trading": True,
+        "allow_building_positions": False
     }
 
     def initialize(self):
         # Initialize the strategy with common parameters and indicators
         self.initialize_strategy()
+
+    def before_starting_trading(self):
+        self._before_starting_trading()
             
     def on_trading_iteration(self):
-        # Load common parameters from BaseStrategy
-        self._load_parameters()
-        
         # Use the base strategy's trading iteration handler
-        self._handle_trading_iteration(self.calculate_indicators)
+        self._handle_trading_iteration()
 
     def on_filled_order(self, position, order, price, quantity, multiplier):
         """Call the base class implementation to log trade information"""
@@ -52,7 +55,6 @@ class Strategy(BaseStrategy):
         self._check_positions_before_end_of_day()
 
     def after_market_closes(self):
-        self.vars.daily_loss_count = 0
         self._save_trades_at_end()
 
 if __name__ == "__main__":
