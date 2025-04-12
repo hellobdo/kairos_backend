@@ -4,13 +4,15 @@ from datetime import datetime
 from typing import Tuple, Optional, Dict, Any, Union, List
 from utils.db_utils import DatabaseManager
 
+from api.yf import download_data
+
 db = DatabaseManager()
 
 class TradeProcessor:
     """
     Class for processing trade execution data and aggregating it into trade summaries
     """
-    def __init__(self, executions_df: pd.DataFrame, backtest: bool = True):
+    def __init__(self, executions_df: pd.DataFrame, backtest: bool = True, settings_df = None):
         """
         Initialize with execution data
         
@@ -22,6 +24,7 @@ class TradeProcessor:
         self.entry_execs = None
         self.exit_execs = None
         self.trade_directions = {}
+        self.settings_df = settings_df
         
     def validate(self) -> bool:
         """
@@ -726,8 +729,19 @@ class TradeProcessor:
             exit_prices = {}
             for trade_id in self.trade_directions:
                 try:
-                    _, exit_executions = self._get_direction_executions(trade_id)
-                    exit_prices[trade_id] = self._calculate_vwap(exit_executions)
+                    entry_executions, exit_executions = self._get_direction_executions(trade_id)
+
+                    if exit_executions.empty:                    
+                        symbol = entry_executions['symbol'].iloc[0]
+                        
+                        # Get the specific date as a string, not a Series
+                        specific_date = self.settings_df['backtesting_end'].iloc[0]
+                        df = download_data([symbol], specific_date=specific_date)
+                        exit_prices[trade_id] = float(df['close'].iloc[0])
+                            
+                    else:
+                        exit_prices[trade_id] = self._calculate_vwap(exit_executions)
+                
                 except Exception as e:
                     print(f"Error processing trade_id {trade_id} in _get_exit_price: {str(e)}")
                     raise
@@ -889,7 +903,7 @@ class TradeProcessor:
         
         return pd.Series(risk_per_trade_amount_dict)
 
-def process_trades(executions_df: pd.DataFrame, backtest: bool = False) -> Optional[pd.DataFrame]:
+def process_trades(executions_df: pd.DataFrame, backtest: bool = False, settings_df = None) -> Optional[pd.DataFrame]:
     """
     Generates a trades DataFrame from the executions data
     
@@ -903,7 +917,7 @@ def process_trades(executions_df: pd.DataFrame, backtest: bool = False) -> Optio
         DataFrame with trade information aggregated from executions or None if processing fails
     """
     try:
-        processor = TradeProcessor(executions_df, backtest)
+        processor = TradeProcessor(executions_df, backtest, settings_df)
         return processor.process_trades()
     except Exception as e:
         print(f"Error processing trades: {str(e)}")

@@ -458,7 +458,7 @@ def calculate_nr_of_trades(df: pd.DataFrame) -> pd.Series:
     
     return nr_trades
 
-def run_report(df: pd.DataFrame, group_by: str) -> pd.DataFrame:
+def run_report(df: pd.DataFrame, group_by: str, settings_df: pd.DataFrame) -> pd.DataFrame:
     """
     Run the report on the trade data, combining all metrics in a specific order.
     
@@ -468,6 +468,8 @@ def run_report(df: pd.DataFrame, group_by: str) -> pd.DataFrame:
         DataFrame containing trade data
     group_by : str
         Time period to group by ('day', 'week', 'month', 'year')
+    settings_df : pd.DataFrame
+        DataFrame containing backtest settings
         
     Returns
     -------
@@ -508,17 +510,10 @@ def run_report(df: pd.DataFrame, group_by: str) -> pd.DataFrame:
     result = result.reset_index().rename(columns={'index': 'period'})
 
     # Generate comparison data
-    comparison_data = generate_comparison_data(df, group_by)
+    comparison_data = generate_comparison_data(group_by, settings_df)
 
-    # Extract just the periods and percentage returns from comparison data
-    spy_returns = comparison_data['SPY'][['period', 'perc_return']].rename(columns={'perc_return': 'spy_perc_return'})
-    qqq_returns = comparison_data['QQQ'][['period', 'perc_return']].rename(columns={'perc_return': 'qqq_perc_return'})
-
-    # First, merge with SPY returns
-    result = pd.merge(result, spy_returns, on='period', how='left')
-
-    # Then, merge with QQQ returns
-    result = pd.merge(result, qqq_returns, on='period', how='left')
+    # Merge with comparison data
+    result = pd.merge(result, comparison_data, on='period', how='left')
     
     # Ensure columns are in the desired order
     column_order = [
@@ -537,103 +532,94 @@ def run_report(df: pd.DataFrame, group_by: str) -> pd.DataFrame:
     
     return result[column_order]
 
-def get_backtest_timeframe(df: pd.DataFrame) -> dict:
+def get_backtest_timeframe(settings_df: pd.DataFrame) -> dict:
     """
     Get the date range for the backtest for filtering comparison data.
     Finds the range from the last business day before first trade to last trade end.
     
     Parameters
     ----------
-    df : pd.DataFrame
-        DataFrame containing backtest data with date information
+    settings_df : pd.DataFrame
+        DataFrame containing backtest settings
         
     Returns
     -------
     dict
         Dictionary containing 'start_date' and 'end_date' for the backtest timeframe
     """
-    # Make a copy to avoid modifying the original
-    df = df.copy()
-    print(f"get_backtest_timeframe: DataFrame shape: {df.shape}")
-    print(f"get_backtest_timeframe: Columns available: {df.columns.tolist()}")
-    
-    # Extract date range from the DataFrame
-    print(f"get_backtest_timeframe: Found 'start_date' column with {df['start_date'].count()} non-null values")
     
     # Convert dates to datetime
-    start_dates = pd.to_datetime(df['start_date'])
-    min_trade_date = start_dates.min()
+    start_date = pd.to_datetime(settings_df['backtesting_start'].iloc[0])
+    end_date = pd.to_datetime(settings_df['backtesting_end'].iloc[0])
     
     # Create business day range ending exactly at min_trade_date with one extra day before
     # This gives us exactly the previous business day
-    earliest_date = pd.bdate_range(end=min_trade_date, periods=2)[0]
-    print(f"get_backtest_timeframe: Original min date: {min_trade_date}, Previous business day: {earliest_date}")
-    
-    # Get the max date from either end_date or start_date
-    end_dates = pd.to_datetime(df['end_date'], errors='coerce')
-    # Use max of valid end dates and start dates
-    max_date = max(start_dates.max(), end_dates.max()) if not end_dates.isna().all() else start_dates.max()
-    
-    print(f"get_backtest_timeframe: Date range: {earliest_date} to {max_date}")
+    earliest_date = pd.bdate_range(end=start_date, periods=2)[0]
+    earliest_date = earliest_date.strftime('%Y-%m-%d')
+    print(f"get_backtest_timeframe: Original min date: {start_date}, Previous business day: {earliest_date}")
+
+    end_date = end_date.strftime('%Y-%m-%d')
+    print(f"get_backtest_timeframe: Date range: {earliest_date} to {end_date}")
     
     # Return the start and end dates as a dictionary
-    return {
-        'start_date': earliest_date.strftime('%Y-%m-%d'),
-        'end_date': max_date.strftime('%Y-%m-%d')
-    }
+    return start_date, end_date
 
-def generate_comparison_data(df: pd.DataFrame, group_by: str, tickers: list[str] = ["SPY", "QQQ"], pad_start_days: int = 0) -> dict:
+def generate_comparison_data(group_by: str, settings_df: pd.DataFrame, tickers: list[str] = ["SPY", "QQQ"]) -> pd.DataFrame:
     """
     Generate comparison data for market benchmarks.
     
     Parameters
     ----------
-    df : pd.DataFrame
-        DataFrame containing backtest data
     group_by : str
         Time period to group the data by ('day', 'week', 'month', 'year')
+    settings_df : pd.DataFrame
+        DataFrame containing backtest settings
     tickers : list[str], optional
         List of ticker symbols to download data for, by default ["SPY", "QQQ"]
-    pad_start_days : int, optional
-        Number of days to pad before the start date, by default 30.
-        Set to 0 to make total returns match period returns when there's only one period.
         
     Returns
     -------
-    dict
-        Dictionary with ticker symbols as keys and processed DataFrames as values
-        The DataFrames contain one row per period with the percentage return for that period
+    pd.DataFrame
+        DataFrame with columns for period and each ticker's percentage returns
     """
     
     # Get timeframe dictionary with start_date and end_date
-    timeframe = get_backtest_timeframe(df)
-    
-    # Adjust start date to be earlier if padding is requested
-    if pad_start_days > 0:
-        adjusted_start_date = pd.to_datetime(timeframe['start_date']) - pd.Timedelta(days=pad_start_days)
-        adjusted_start_date = adjusted_start_date.strftime('%Y-%m-%d')
-        print(f"generate_comparison_data: Adjusted start date from {timeframe['start_date']} to {adjusted_start_date}")
-    else:
-        adjusted_start_date = timeframe['start_date']
-        print(f"generate_comparison_data: Using exact start date without padding: {adjusted_start_date}")
+    start_date, end_date = get_backtest_timeframe(settings_df)
     
     # Download data with adjusted start date
-    comparison_dict = download_data(tickers=tickers, start=adjusted_start_date, end=timeframe['end_date'])
-
-    # Process each ticker's data
-    for key in comparison_dict:
-        # Add period column
-        comparison_dict[key]['period'] = generate_periods(comparison_dict[key], group_by)
+    benchmark_data = download_data(tickers, start=start_date, end=end_date)
+    
+    # Process each ticker and prepare a list for concatenation
+    ticker_dfs = []
+    
+    for ticker in tickers:
+        # Filter benchmark data for the current ticker
+        ticker_df = benchmark_data[benchmark_data['ticker'] == ticker].copy()
         
-        # Calculate returns
-        comparison_dict[key] = calculate_returns_based_on_close(comparison_dict[key], group_by)
+        # Add period column
+        ticker_df['period'] = generate_periods(ticker_df, group_by)
+        
+        # Calculate returns 
+        ticker_df = calculate_returns_based_on_close(ticker_df, group_by)
         
         # Group by period and keep only the last row per period
-        # (since all rows in a period have the same percentage return after calculate_returns_based_on_close)
-        # We use drop_duplicates instead of groupby to preserve the Total row
-        comparison_dict[key] = comparison_dict[key][['period', 'perc_return']].drop_duplicates(subset=['period'])
+        ticker_df = ticker_df[['period', 'perc_return', 'ticker']].drop_duplicates(subset=['period'])
+        
+        # Rename the column to include ticker name
+        ticker_df = ticker_df.rename(columns={'perc_return': f'{ticker.lower()}_perc_return'})
+        
+        ticker_dfs.append(ticker_df[['period', f'{ticker.lower()}_perc_return']])
     
-    return comparison_dict
+    # If no data was processed, return empty DataFrame
+    if not ticker_dfs:
+        return pd.DataFrame(columns=['period'])
+    
+    # Merge all ticker DataFrames on period
+    result = ticker_dfs[0]
+    for df in ticker_dfs[1:]:
+        result = pd.merge(result, df, on='period', how='outer')
+    
+    return result
 
 def calculate_returns_based_on_close(df: pd.DataFrame, group_by: str) -> pd.DataFrame:
     """

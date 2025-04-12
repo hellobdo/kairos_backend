@@ -106,7 +106,7 @@ def insert_executions(df):
         print(f"Error inserting backtest executions into database: {e}")
         raise
 
-def insert_backtest_info(settings_file):
+def get_backtest_info():
     """
     Create backtest info from a JSON settings file.
     
@@ -125,7 +125,15 @@ def insert_backtest_info(settings_file):
               - risk_per_trade
               - out_before_end_of_day
               - backtest_name (extracted from filename)
+              - margin
+              - day_trading
+              - sleeptime
     """
+    settings_file = get_latest_settings_file()
+    if not settings_file:
+        print("Error: Could not find settings file")
+        return False
+    
     try:
         # Extract backtest name from the json path
         # From: path/to/Strategy_2025-03-24_15-41_E6mMj9_settings.json
@@ -150,12 +158,27 @@ def insert_backtest_info(settings_file):
             'risk_reward': params.get('risk_reward'),
             'risk_per_trade': params.get('risk_per_trade'),
             'source_file': source_file,
-            'out_before_end_of_day': params.get('out_before_end_of_day')
+            'bar_signals_length': params.get('bar_signals_length'),
+            'margin': params.get('margin'),
+            'sleeptime': params.get('sleeptime'),
         }])
+
+        return df
         
     except Exception as e:
         print(f"Error reading JSON file: {e}")
         return None
+
+def insert_backtest_info(df):
+    """
+    Insert backtest info into the backtest_runs table.
+    
+    Args:
+        df (pd.DataFrame): DataFrame containing the backtest info
+        
+    Returns:
+        int: run_id of the inserted backtest info
+    """
 
     try:
         inserted = db_manager.insert_dataframe(df, 'backtest_runs')
@@ -178,14 +201,10 @@ def insert_to_db(executions_df, trades_df):
         bool: True if successful, False otherwise
     """
     
-    settings_file = get_latest_settings_file()
-    if not settings_file:
-        print("Error: Could not find settings file")
-        return False
-    
     try:
         # First save backtest info and get run_id
-        run_id = insert_backtest_info(settings_file)
+        settings_df = get_backtest_info()
+        run_id = insert_backtest_info(settings_df)
         if run_id is None:
             print("Error: Could not save backtest info")
             return False
