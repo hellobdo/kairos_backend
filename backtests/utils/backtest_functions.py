@@ -15,7 +15,6 @@ from backtests.utils.backtest_data_to_db import get_latest_settings_file
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from indicators import load_indicators
 
-
 class BaseStrategy(Strategy):
     """
     Base Strategy class containing common helper methods for trading strategies.
@@ -50,19 +49,6 @@ class BaseStrategy(Strategy):
                 print(f"Error loading indicator '{indicator}': {str(e)}")
                 # Continue with other indicators
         return calculate_indicators
-    
-    def _check_open_positions(self):
-        """Check if we have open positions"""
-        open_positions = [p for p in self.get_positions() if not (p.asset.symbol == "USD" and p.asset.asset_type == Asset.AssetType.FOREX)]
-        return len(open_positions)
-    
-    def _check_position_limits(self, open_positions):
-        """Check if we've reached position or loss limits"""
-        return (open_positions >= self.max_loss_positions or self.vars.daily_loss_count >= self.max_loss_positions)
-    
-    def _check_time_conditions(self, time):
-        """Check if current time meets our trading conditions (0 or 30 minutes past the hour)"""
-        return time.minute == 0 or time.minute == 30
     
     def _apply_indicators(self, df, calculate_indicators):
         """Apply all indicators sequentially, return True if all signals are valid, False otherwise"""
@@ -119,17 +105,11 @@ class BaseStrategy(Strategy):
             take_profit_price = entry_price - (stop_loss_amount * risk_reward)
             
         return take_profit_price 
-    
-    def _before_starting_trading(self):
-        if self.day_trading:
-            self.vars.daily_loss_count = 0
 
     def _save_trades_at_end(self):
         """Save trades to CSV when reaching the end of backtest"""
         current_time = self.get_datetime()
-        print(current_time.date())
         backtesting_end = datetime.strptime(self.parameters.get("backtesting_end"), "%Y-%m-%d")
-        print(backtesting_end.date())
         
         next_day = current_time + pd.Timedelta(days=1)
 
@@ -148,17 +128,6 @@ class BaseStrategy(Strategy):
                 print(f"Custom trades saved to {filename}")
             else:
                 print("No trade log to save.")
-
-    def _check_positions_before_end_of_day(self):
-        """Cancel all open orders and sell all positions if enabled in parameters"""
-        if self.out_before_end_of_day:
-            self.cancel_open_orders()
-            positions = self.get_positions()
-            if len(positions) > 0:
-                self.sell_all()
-        
-        else:
-            return
 
     def _on_filled_order(self, position, order, price, quantity, multiplier):
         """
@@ -214,19 +183,11 @@ class BaseStrategy(Strategy):
         self.risk_reward = parameters.get("risk_reward")
         self.side = parameters.get("side")
         self.risk_per_trade = parameters.get("risk_per_trade")
-        self.max_loss_positions = parameters.get("max_loss_positions")
         self.bar_signals_length = parameters.get("bar_signals_length")
         self.sleeptime = parameters.get("sleeptime")
         self.indicators = parameters.get("indicators")
-        self.out_before_end_of_day = parameters.get("out_before_end_of_day")
         self.stop_loss_rules = parameters.get("stop_loss_rules")
         self.margin = parameters.get("margin")
-        self.day_trading = parameters.get("day_trading")
-        self.allow_building_positions = parameters.get("allow_building_positions")
-
-        if self.day_trading:
-            if not hasattr(self.vars, 'daily_loss_count'):
-                self.vars.daily_loss_count = 0
         
     def _handle_trading_iteration(self):
         """
@@ -235,25 +196,9 @@ class BaseStrategy(Strategy):
         Returns:
             bool: True if trading was processed, False if early return conditions were met
         """
-        
-        if self.day_trading:
-            current_time = self.get_datetime()
-            # Check if we're at the right time to trade
-            if not self._check_time_conditions(current_time):
-                return False
-            
-            # Check if max daily losses reached or position limit reached
-            open_positions = self._check_open_positions()
-            if self._check_position_limits(open_positions):
-                return False
 
         # Loop through each symbol to check if the entry conditions are met
         for symbol in self.symbols:
-
-            if not self.allow_building_positions:
-                # Skip if there is already a position in this asset
-                if self.get_position(symbol) is not None:
-                    continue
 
             # Apply indicators and check if all signals are valid
             if self.indicators is not None:
@@ -261,7 +206,7 @@ class BaseStrategy(Strategy):
                 if bars is None or bars.df.empty:
                     continue
 
-                signal_valid, df = self._apply_indicators(bars.df.copy(), self.calculate_indicators)
+                signal_valid = self._apply_indicators(bars.df.copy(), self.calculate_indicators)
                 if not signal_valid:
                     continue
             
@@ -273,6 +218,7 @@ class BaseStrategy(Strategy):
             # Determine stop loss amount
             stop_loss_amount = self._determine_stop_loss(entry_price, self.stop_loss_rules)
 
+            # Calculate quantity
             quantity = self._calculate_qty(stop_loss_amount, entry_price)
 
             if quantity:
@@ -295,7 +241,6 @@ class BaseStrategy(Strategy):
         Returns:
             tuple: stop_loss_price, take_profit_price, order_type
         """
-        
         stop_loss_price = None
         take_profit_price = None
 
@@ -369,10 +314,10 @@ class BaseStrategy(Strategy):
         """
         # Get parameters from the class
         parameters = cls.parameters
-        data_source = parameters.get("data_source", "polygon")
         symbols = parameters.get("symbols", [])
         backtesting_start = parameters.get("backtesting_start")
         backtesting_end = parameters.get("backtesting_end")
+        polygon_api_key = os.getenv("POLYGON_API_KEY")
         
         # Validate required parameters
         if not backtesting_start or not backtesting_end:
@@ -389,52 +334,17 @@ class BaseStrategy(Strategy):
             backtesting_end = datetime.strptime(backtesting_end, "%Y-%m-%d")
             
         # Run appropriate backtest based on data source
-        if data_source == "polygon":
-            polygon_api_key = os.getenv("POLYGON_API_KEY")
-            if not polygon_api_key:
-                raise ValueError("POLYGON_API_KEY environment variable not set")
-                
-            return cls.run_backtest(
-                PolygonDataBacktesting,
-                backtesting_start,
-                backtesting_end,
-                parameters=parameters,
-                quote_asset=Asset("USD", asset_type=Asset.AssetType.FOREX),
-                polygon_api_key=polygon_api_key,
-                show_plot=False,
-                show_tearsheet=False
-            ) 
-        
-        elif data_source == "csv":
-            # Ensure we have at least one symbol
-            symbol = symbols[0]
-            csv_path = f'data/csv/{symbol}.csv'
+        if not polygon_api_key:
+            raise ValueError("POLYGON_API_KEY environment variable not set")
             
-            # Check if CSV file exists
-            if not os.path.exists(csv_path):
-                raise FileNotFoundError(f"CSV file not found: {csv_path}")
-                
-            df = pd.read_csv(csv_path)
-            df['datetime'] = pd.to_datetime(df['datetime'])
-            df.set_index('datetime', inplace=True)
-            
-            asset = Asset(symbol, asset_type=Asset.AssetType.STOCK)
-            pandas_data = {
-                asset: Data(asset, df, timestep="minute"),
-            }
-
-            return cls.run_backtest(
-                PandasDataBacktesting,
-                backtesting_start,
-                backtesting_end,
-                parameters=parameters,
-                pandas_data=pandas_data
-            )
-            
-        
-        else:
-            raise ValueError(f"Unsupported data source: {data_source}")
-
+        return cls.run_backtest(
+            PolygonDataBacktesting,
+            backtesting_start,
+            backtesting_end,
+            parameters=parameters,
+            quote_asset=Asset("USD", asset_type=Asset.AssetType.FOREX),
+            polygon_api_key=polygon_api_key,
+        ) 
         
     @classmethod
     def rename_custom_logs(cls):

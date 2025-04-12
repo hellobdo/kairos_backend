@@ -125,8 +125,6 @@ def get_backtest_info():
               - risk_per_trade
               - out_before_end_of_day
               - backtest_name (extracted from filename)
-              - data_source
-              - allow_building_positions
               - margin
               - day_trading
               - sleeptime
@@ -160,13 +158,8 @@ def get_backtest_info():
             'risk_reward': params.get('risk_reward'),
             'risk_per_trade': params.get('risk_per_trade'),
             'source_file': source_file,
-            'out_before_end_of_day': params.get('out_before_end_of_day'),
-            'max_loss_positions': params.get('max_loss_positions'),
             'bar_signals_length': params.get('bar_signals_length'),
-            'data_source': params.get('data_source'),
-            'allow_building_positions': params.get('allow_building_positions'),
             'margin': params.get('margin'),
-            'day_trading': params.get('day_trading'),
             'sleeptime': params.get('sleeptime'),
         }])
 

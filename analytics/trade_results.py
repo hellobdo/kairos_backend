@@ -1,9 +1,5 @@
 import pandas as pd
 from api.yf import download_data
-from utils.db_utils import DatabaseManager
-
-# Initialize database manager
-db_manager = DatabaseManager()
 
 def calculate_accuracy(df: pd.DataFrame) -> pd.Series:
     """
@@ -591,16 +587,7 @@ def generate_comparison_data(group_by: str, settings_df: pd.DataFrame, tickers: 
     start_date, end_date = get_backtest_timeframe(settings_df)
     
     # Download data with adjusted start date
-    benchmark_data = db_manager.get_stock_data_for_date_range(tickers, start_date, end_date)
-    benchmark_data = benchmark_data.rename(columns={'datetime': 'date'})
-
-    benchmark_data['date'] = pd.to_datetime(benchmark_data['date'])
-    # Extract date components before converting to string
-    benchmark_data['year'] = benchmark_data['date'].dt.year
-    benchmark_data['month'] = benchmark_data['date'].dt.month
-    benchmark_data['week'] = benchmark_data['date'].dt.isocalendar().week
-    # Convert to string format after extracting components
-    benchmark_data['date'] = benchmark_data['date'].dt.strftime('%Y-%m-%d')
+    benchmark_data = download_data(tickers, start=start_date, end=end_date)
     
     # Process each ticker and prepare a list for concatenation
     ticker_dfs = []

@@ -2,6 +2,7 @@ import pandas as pd
 from utils.pandas_utils import csv_to_dataframe, convert_to_numeric
 from utils.process_executions_utils import process_datetime_fields, identify_trade_ids
 from analytics.process_trades import process_trades
+from backtests.utils.backtest_data_to_db import get_backtest_info
 
 def side_follows_qty(df):
     """
@@ -152,7 +153,8 @@ def process_executions_to_trades(df, backtest: bool = True):
         pandas.DataFrame: DataFrame with processed trades, or False if processing fails
     """
     try:
-        trades_df = process_trades(df, backtest)
+        settings_df = get_backtest_info()
+        trades_df = process_trades(df, backtest, settings_df)
         if trades_df is None:
             print("Processing trades failed")
             return False
