@@ -9,9 +9,8 @@ and potential support/resistance levels.
 
 import numpy as np
 import pandas as pd
-from indicators.helpers.column_utils import normalize_columns
 
-def calculate_indicator(df: pd.DataFrame, period: int, adr_threshold: float) -> pd.DataFrame:
+def calculate_indicator(df: pd.DataFrame, period: int) -> pd.DataFrame:
     """
     Calculate Average Daily Range with a period window.
     
@@ -19,25 +18,20 @@ def calculate_indicator(df: pd.DataFrame, period: int, adr_threshold: float) -> 
         df: DataFrame with OHLCV columns (can be uppercase or lowercase)
         
     Returns:
-        DataFrame with ADR column added and is_indicator flag
+        DataFrame with ADR column added
     """
-    # Normalize column names to lowercase
-    df = normalize_columns(df)
+    # Create a copy of the DataFrame to avoid SettingWithCopyWarning
+    df_copy = df.copy()
+    
+    # Ensure we have enough data points
+    if len(df_copy) < period:
+        # Add adr column with NaN values if not enough data
+        df_copy['adr'] = np.nan
+        return df_copy
     
     # Calculate period ADR
-    df['daily_range'] = df['high'] - df['low']
-    df['daily_range_percentage'] = df['daily_range'] / df['open']
-
-    if len(df) < period:
-        # Add SMA column with NaN values if not enough data
-        df['adr'] = np.nan
-        return df
+    df_copy['daily_range'] = df_copy['high'] - df_copy['low']
+    df_copy['daily_range_percentage'] = df_copy['daily_range'] / df_copy['open']
+    df_copy['adr'] = df_copy['daily_range_percentage'].rolling(window=period).mean() * 100
     
-    
-    df['adr'] = df['daily_range_percentage'].rolling(window=period).mean()
-
-    condition1 = df['adr'] > adr_threshold
-
-    df['is_indicator'] = condition1
-    
-    return df
+    return df_copy

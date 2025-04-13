@@ -178,7 +178,7 @@ class DatabaseManager:
             print(f"Error inserting DataFrame into {table_name}: {e}")
             raise
             
-    def get_table_data(self, table, order_by='timestamp'):
+    def get_table_data(self, table, order_by=None):
         """
         Retrieve all records from a specified table ordered by timestamp.
         
@@ -188,7 +188,10 @@ class DatabaseManager:
         Returns:
             pandas.DataFrame: DataFrame containing all records from the specified table
         """
-        query = f"SELECT * FROM {table} ORDER BY {order_by}"
+        if order_by:
+            query = f"SELECT * FROM {table} ORDER BY {order_by}"
+        else:
+            query = f"SELECT * FROM {table}"
         
         try:
             return self.fetch_df(query)
@@ -208,4 +211,61 @@ class DatabaseManager:
             return self.fetch_df(query)
         except Exception as e:
             print(f"Error retrieving account balances: {e}")
+            return pd.DataFrame()
+    
+    def get_ohlcv_data(self, asset_type, ticker=None, start_date=None, end_date=None):
+        """
+        Get OHLCV data for either stocks or indexes with a simple interface.
+        
+        Args:
+            asset_type (str): 'stocks' or 'indexes'
+            ticker (str, optional): Ticker symbol to filter by
+            start_date (str, optional): Start date in YYYY-MM-DD format
+            end_date (str, optional): End date in YYYY-MM-DD format
+            
+        Returns:
+            pd.DataFrame: DataFrame with ticker, datetime, open, high, low, close, volume columns
+        """
+        # Validate asset_type
+        if asset_type.lower() not in ['stocks', 'indexes']:
+            print(f"Invalid asset_type: {asset_type}. Must be 'stocks' or 'indexes'")
+            return pd.DataFrame()
+            
+        # Determine table and ID field names based on asset_type
+        base_table = asset_type.lower()
+        ohlcv_table = f"{base_table}_ohlcv_daily"
+        id_field = "asset_id"
+        
+        # Build the query
+        query = f"""
+            SELECT a.ticker, o.datetime, o.open, o.high, o.low, o.close, o.volume
+            FROM {base_table} a
+            JOIN {ohlcv_table} o ON a.id = o.{id_field}
+            WHERE 1=1
+        """
+        
+        params = []
+        
+        # Add filters if provided
+        if ticker:
+            query += " AND a.ticker = ?"
+            params.append(ticker)
+            
+        if start_date:
+            query += " AND o.datetime >= ?"
+            params.append(start_date)
+            
+        if end_date:
+            query += " AND o.datetime <= ?"
+            params.append(end_date)
+            
+        # Add order by clause
+        query += " ORDER BY a.ticker, o.datetime"
+        
+        try:
+            df = self.fetch_df(query, params)
+            print(f"Retrieved {len(df)} rows of OHLCV data for {asset_type}")
+            return df
+        except Exception as e:
+            print(f"Error retrieving OHLCV data: {e}")
             return pd.DataFrame()

@@ -34,9 +34,3 @@ def csv_to_dataframe(csv_path):
     except Exception as e:
         print(f"Error reading CSV file: {e}")
         return None
-    
-def clean_empty_rows(df, field):
-    """
-    Clean empty rows from a DataFrame.
-    """
-    return df[df[field].notna()]

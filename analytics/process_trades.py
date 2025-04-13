@@ -182,11 +182,13 @@ class TradeProcessor:
             direction = info['direction']
             
             # Skip if any price is missing
-            if entry_price is None or exit_price is None or stop_price is None:
+            if entry_price is None or exit_price is None:
                 risk_reward_ratios[trade_id] = None
                 continue
-
             
+            if stop_price is None:
+                risk_reward_ratios[trade_id] = ((exit_price / entry_price) - 1)
+
             if direction == 'bullish':
                 risk = entry_price - stop_price
                 reward = exit_price - entry_price
@@ -223,7 +225,7 @@ class TradeProcessor:
             
         return pd.Series(winners)
 
-    def _calculate_perc_return(self, risk_per_trade_perc: pd.Series, risk_reward: pd.Series) -> pd.Series:
+    def _calculate_perc_return(self, risk_per_trade_perc: pd.Series, risk_reward: pd.Series, exit_prices: pd.Series = None, entry_prices: pd.Series = None) -> pd.Series:
         """
         Calculate the percentage return for each trade
         
@@ -241,12 +243,15 @@ class TradeProcessor:
         # Calculate percentage return
         perc_return = {}
         for trade_id in self.trade_directions.keys():
+            
             rpt = risk_per_trade_perc.get(trade_id)
             rr = risk_reward.get(trade_id)
             
             # Skip if either value is None
             if rpt is None or rr is None:
-                perc_return[trade_id] = None
+                entry_price = entry_prices.get(trade_id)
+                exit_price = exit_prices.get(trade_id)
+                perc_return[trade_id] = (exit_price / entry_price) - 1
             else:
                 # Percentage return = risk per trade * risk reward
                 perc_return[trade_id] = rpt * rr
@@ -415,7 +420,9 @@ class TradeProcessor:
             # 11. Calculate percentage return
             perc_return = self._calculate_perc_return(
                 risk_per_trade_perc=risk_per_trade_perc,
-                risk_reward=risk_reward
+                risk_reward=risk_reward,
+                exit_prices=exit_price,
+                entry_prices=entry_price
             )
             print("\n11. Percentage return:")
             print(f"Sample:\n{perc_return.head()}")
@@ -729,15 +736,10 @@ class TradeProcessor:
             exit_prices = {}
             for trade_id in self.trade_directions:
                 try:
-                    entry_executions, exit_executions = self._get_direction_executions(trade_id)
+                    _, exit_executions = self._get_direction_executions(trade_id)
 
                     if exit_executions.empty:                    
-                        symbol = entry_executions['symbol'].iloc[0]
-                        
-                        # Get the specific date as a string, not a Series
-                        specific_date = self.settings_df['backtesting_end'].iloc[0]
-                        df = download_data([symbol], specific_date=specific_date)
-                        exit_prices[trade_id] = float(df['close'].iloc[0])
+                        exit_prices[trade_id] = None
                             
                     else:
                         exit_prices[trade_id] = self._calculate_vwap(exit_executions)

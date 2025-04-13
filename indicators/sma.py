@@ -9,9 +9,8 @@ and potential support/resistance levels.
 
 import numpy as np
 import pandas as pd
-from indicators.helpers.column_utils import normalize_columns
 
-def calculate_indicator(df: pd.DataFrame, period: int, sma_threshold: float) -> pd.DataFrame:
+def calculate_indicator(df: pd.DataFrame, period: int) -> pd.DataFrame:
     """
     Calculate Simple Moving Average with a period window.
     
@@ -19,22 +18,18 @@ def calculate_indicator(df: pd.DataFrame, period: int, sma_threshold: float) -> 
         df: DataFrame with OHLCV columns (can be uppercase or lowercase)
         
     Returns:
-        DataFrame with SMA column added and is_indicator flag
+        DataFrame with sma column added
     """
-    # Normalize column names to lowercase
-    df = normalize_columns(df)
+    # Create a copy of the DataFrame to avoid SettingWithCopyWarning
+    df_copy = df.copy()
     
     # Ensure we have enough data points
-    if len(df) < period:
+    if len(df_copy) < period:
         # Add SMA column with NaN values if not enough data
-        df['SMA'] = np.nan
-        return df
+        df_copy['sma'] = np.nan
+        return df_copy
     
     # Calculate period Simple Moving Average
-    df['SMA'] = df['close'].rolling(window=period).mean()
-
-    condition1 = df['SMA'] > sma_threshold
-
-    df['is_indicator'] = condition1
+    df_copy['sma'] = df_copy['close'].rolling(window=period).mean()
     
-    return df
+    return df_copy

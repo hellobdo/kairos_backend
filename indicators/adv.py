@@ -9,9 +9,8 @@ and potential support/resistance levels.
 
 import numpy as np
 import pandas as pd
-from indicators.helpers.column_utils import normalize_columns
 
-def calculate_indicator(df: pd.DataFrame, period: int, adv_threshold: float) -> pd.DataFrame:
+def calculate_indicator(df: pd.DataFrame, period: int) -> pd.DataFrame:
     """
     Calculate Average Daily Volume with a period window.
     
@@ -19,16 +18,17 @@ def calculate_indicator(df: pd.DataFrame, period: int, adv_threshold: float) -> 
         df: DataFrame with OHLCV columns (can be uppercase or lowercase)
         
     Returns:
-        DataFrame with ADV column added and is_indicator flag
-    """
-    # Normalize column names to lowercase
-    df = normalize_columns(df)
+        DataFrame with ADV column added
+    """    
+    # Create a copy of the DataFrame to avoid SettingWithCopyWarning
+    df_copy = df.copy()
     
-    # Calculate ADV
-    df['adv'] = df['volume'].rolling(window=period).mean()
+    # Ensure we have enough data points
+    if len(df_copy) < period:
+        # Add adv column with NaN values if not enough data
+        df_copy['adv'] = np.nan
+        return df_copy
 
-    condition1 = df['adv'] > adv_threshold
-
-    df['is_indicator'] = condition1
+    df_copy['adv'] = df_copy['volume'].rolling(window=period).mean()
     
-    return df
+    return df_copy
